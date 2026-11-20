@@ -1,4 +1,11 @@
-# AI DEV DIRECTOR
+# Tribunal AI
+
+> **Tribunal AI**는 MIT 라이선스 오픈소스 [AI DEV DIRECTOR](https://github.com/digilogd-cmd/ai-dev-director)를
+> macOS에서 검증하고 개인용으로 고쳐 쓰는 포크입니다. 아래 본문은 원본 설명이며, 달라진 점은 다음과 같습니다.
+>
+> - macOS에서 실제 미션으로 검증 (콘솔 포트는 `companion.local.json`, 실행은 `sh start-companion.sh`)
+> - 이 컴퓨터 전용 설정은 git에 올리지 않는 `config.local.yaml`에 둠 (Codex 모델, 추론 강도, Claude 경량 호출)
+> - Claude 호출은 기본으로 MCP·스킬을 끄고 읽기 도구만 사용 (호출당 입력 약 51,000 → 8,000 토큰)
 
 **세 개의 AI 코딩 CLI를 한 회사처럼 돌려, 목표 한 줄을 검증된 코드로 바꾸는 로컬 개발 감독관.**
 A local orchestrator that runs three subscription AI CLIs (Claude Code, OpenAI Codex, Google Antigravity) as

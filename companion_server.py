@@ -205,7 +205,7 @@ class CompanionHandler(d.DashboardHandler):
             logging.getLogger('director.companion').warning('shutdown requested from %s', self.headers.get('Referer') or 'local client')
             import threading
             threading.Thread(target=self.server.shutdown, name='director-shutdown', daemon=True).start()
-            return self._send_json({'stopping': True, 'message': 'AI DEV를 멈춥니다. 기록과 작업본은 남고, 다시 켜면 중단된 미션을 이어갑니다.'})
+            return self._send_json({'stopping': True, 'message': 'Tribunal AI를 멈춥니다. 기록과 작업본은 남고, 다시 켜면 중단된 미션을 이어갑니다.'})
         if self.path == '/ops/pick-folder':
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'local authenticated request required'}, 403)
@@ -285,12 +285,12 @@ def run():
         import threading
         threading.Thread(target=d.resume_interrupted_missions, name='director-mission-resume', daemon=True).start()
     server.stopping = False
-    print('AI DEV × SOLOMON http://127.0.0.1:' + str(server.server_address[1]), flush=True)
+    print('Tribunal AI × SOLOMON http://127.0.0.1:' + str(server.server_address[1]), flush=True)
     try:
         server.serve_forever()
     finally:
         server.server_close()
-        print('AI DEV companion stopped (system stop)', flush=True)
+        print('Tribunal AI companion stopped (system stop)', flush=True)
 
 
 if __name__ == '__main__':

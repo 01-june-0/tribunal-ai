@@ -63,7 +63,8 @@ class TriadResearchRunner:
             from core.cli_models import codex_exec_argv, codex_exec_description
             return codex_exec_argv(executable), prompt, codex_exec_description()
         if domain == "ANTHROPIC":
-            return [executable, "--print", "--output-format", "json"], prompt, "claude --print --output-format json"
+            from core.cli_models import claude_print_argv, claude_print_description
+            return claude_print_argv(executable), prompt, claude_print_description()
         if domain == "GOOGLE":
             # Official AGY stream-json mode reads NDJSON from stdin. This avoids Windows command-line limits
             # without file-read tools or permission bypasses, and exposes an explicit final result event.

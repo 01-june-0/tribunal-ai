@@ -1,1 +1,1 @@
-"""Agents module for AI DEV DIRECTOR."""
+"""Agents module for TRIBUNAL AI."""

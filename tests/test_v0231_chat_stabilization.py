@@ -161,7 +161,7 @@ def test_b_no_project_selected_blocks_dev_task(chat_env, monkeypatch):
 
     # Director repository itself can never be selected
     ok, reason = dashboard_server.validate_project_path(str(dashboard_server.DIRECTOR_ROOT))
-    assert ok is False and "DIRECTOR" in reason
+    assert ok is False and "TRIBUNAL AI" in reason
 
 
 # ------------------------------------------------------------------ TEST C: LOW risk valid DEV_TASK runs without approval
@@ -370,7 +370,7 @@ def test_i_dashboard_not_blocked_by_slow_head(chat_env, monkeypatch):
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as r:
             body = r.read().decode("utf-8")
         elapsed = time.time() - t0
-        assert r.status == 200 and "AI DEV DIRECTOR" in body
+        assert r.status == 200 and "TRIBUNAL AI" in body
         assert elapsed < 1.5, f"GET blocked for {elapsed:.2f}s while HEAD chat was running"
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/status", timeout=5) as r2:
             assert "OPENAI" in r2.read().decode("utf-8")

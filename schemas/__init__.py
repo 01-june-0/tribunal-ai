@@ -1,4 +1,4 @@
-"""Schemas module for AI DEV DIRECTOR."""
+"""Schemas module for TRIBUNAL AI."""
 from schemas.order import OrderSchema
 from schemas.builder_result import BuilderResultSchema
 from schemas.review_result import ReviewResultSchema

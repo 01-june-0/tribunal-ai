@@ -35,12 +35,12 @@ UI_TEXT: Dict[str, str] = {
     "change": "변경",
     "select_project": "프로젝트 선택",
     "no_project": "선택된 프로젝트 없음",
-    "director_core": "AI DEV DIRECTOR CORE",
+    "director_core": "TRIBUNAL AI CORE",
     "core_sub": "3개의 AI 코어를 지휘합니다",
     "my_todo": "내가 할 일",
     "nothing_todo": "없음",
     "head_ready": "HEAD에게 작업을 요청하세요.",
-    "director_ready": "AI DEV DIRECTOR 준비됨",
+    "director_ready": "TRIBUNAL AI 준비됨",
     "safe": "안전",
     "human_required": "사용자 확인 필요",
     "human_required_sub": "이 작업을 계속하려면 다음 내용을 확인해주세요.",
@@ -126,8 +126,8 @@ REASON_TEXT: Dict[str, Tuple[str, str]] = {   # code -> (short title, explanatio
     "PROTECTED_PATH_IN_SCOPE": ("보호 경로가 작업 범위에 포함됨", "보호된 경로는 AI가 수정할 수 없으며 승인으로 우회할 수 없습니다."),
     "PROTECTED_PATH_INSIDE_ALLOWED": ("허용 범위 안에 보호 경로 존재", "허용 경로 아래에 보호 경로가 있습니다. 승인으로 우회할 수 없습니다."),
     "GIT_INTERNALS_IN_SCOPE": ("Git 내부 관리 파일이 작업 범위에 포함되었습니다.", "Git 내부 관리 영역(.git)은 프로젝트의 Git 상태를 관리하는 보호 영역이므로 AI가 수정할 수 없습니다."),
-    "CONTROL_PLANE_IN_SCOPE": ("AI DEV DIRECTOR 보호 파일 포함", "AI DEV DIRECTOR의 보호 설정 파일은 AI가 수정할 수 없습니다."),
-    "CONTROL_PLANE_MODIFIED": ("보호 설정 파일 변경 감지", "AI DEV DIRECTOR의 보호 설정 파일 변경이 감지되었습니다."),
+    "CONTROL_PLANE_IN_SCOPE": ("TRIBUNAL AI 보호 파일 포함", "TRIBUNAL AI의 보호 설정 파일은 AI가 수정할 수 없습니다."),
+    "CONTROL_PLANE_MODIFIED": ("보호 설정 파일 변경 감지", "TRIBUNAL AI의 보호 설정 파일 변경이 감지되었습니다."),
     "INVALID_PATH": ("잘못된 경로", "작업 범위에 허용되지 않는 경로 형식이 포함되어 있습니다."),
     "CANONICAL_CONTAINMENT": ("작업 폴더 밖 접근 가능성", "허용된 작업 폴더 밖으로 연결될 가능성이 있어 중단했습니다."),
     "ORDER_PATH_VIOLATION": ("작업 폴더 밖 경로", "허용된 작업 폴더 밖 경로가 포함되어 중단했습니다."),
@@ -150,7 +150,7 @@ REASON_TEXT: Dict[str, Tuple[str, str]] = {   # code -> (short title, explanatio
 
 REASON_RECOMMENDATION: Dict[str, str] = {   # code -> what the user should do about a NON-approvable halt
     "GIT_INTERNALS_IN_SCOPE": "HEAD에게 .git 영역을 제외하고 작업 계획을 다시 만들도록 요청하세요.",
-    "CONTROL_PLANE_IN_SCOPE": "HEAD에게 AI DEV DIRECTOR 보호 파일을 제외하고 작업 계획을 다시 만들도록 요청하세요.",
+    "CONTROL_PLANE_IN_SCOPE": "HEAD에게 TRIBUNAL AI 보호 파일을 제외하고 작업 계획을 다시 만들도록 요청하세요.",
     "CONTROL_PLANE_MODIFIED": "HEAD에게 보호 설정 파일을 제외하고 작업 계획을 다시 만들도록 요청하세요.",
     "PROTECTED_PATH_IN_SCOPE": "HEAD에게 보호된 경로를 제외하고 작업 계획을 다시 만들도록 요청하세요.",
     "PROTECTED_PATH_INSIDE_ALLOWED": "HEAD에게 보호된 경로를 제외하고 작업 계획을 다시 만들도록 요청하세요.",
@@ -161,7 +161,7 @@ REASON_RECOMMENDATION: Dict[str, str] = {   # code -> what the user should do ab
     "SCOPE_VIOLATION": "HEAD에게 허용된 범위 안에서만 작업하도록 다시 요청하세요.",
     "AMBIGUOUS_SCOPE": "HEAD에게 작업 범위를 구체적으로 지정해 계획을 다시 만들도록 요청하세요.",
     "REGRESSION": "HEAD에게 기존 테스트를 깨뜨리지 않도록 다시 시도하도록 요청하세요.",
-    "WORKTREE_EVIDENCE_MISSING": "다시 시도하거나 AI DEV DIRECTOR 로그를 확인해주세요.",
+    "WORKTREE_EVIDENCE_MISSING": "다시 시도하거나 TRIBUNAL AI 로그를 확인해주세요.",
     "REVIEWER_FAIL_CLOSED": "다시 시도하거나 코드 검토 로그를 확인해주세요.",
     "REVIEWER_EXCEPTION": "다시 시도하거나 코드 검토 로그를 확인해주세요.",
     "FINAL_GATE": "다시 시도하거나 검증 로그를 확인해주세요.",
@@ -175,8 +175,8 @@ _DEFAULT_RECOMMENDATION = "HEAD에게 다시 요청하거나 상세 정보를 �
 
 _RETRY_TEMPLATES: Dict[str, str] = {   # code -> Korean draft message pre-filled into the HEAD chat input (never auto-sent)
     "GIT_INTERNALS_IN_SCOPE": "{file}은(는) 수정하지 말고, Git 내부 영역을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
-    "CONTROL_PLANE_IN_SCOPE": "{file}은(는) 수정하지 말고, AI DEV DIRECTOR 보호 파일을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
-    "CONTROL_PLANE_MODIFIED": "{file}은(는) 수정하지 말고, AI DEV DIRECTOR 보호 파일을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
+    "CONTROL_PLANE_IN_SCOPE": "{file}은(는) 수정하지 말고, TRIBUNAL AI 보호 파일을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
+    "CONTROL_PLANE_MODIFIED": "{file}은(는) 수정하지 말고, TRIBUNAL AI 보호 파일을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
     "PROTECTED_PATH_IN_SCOPE": "{file}은(는) 수정하지 말고, 보호된 경로를 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
     "PROTECTED_PATH_INSIDE_ALLOWED": "{file}은(는) 수정하지 말고, 보호된 경로를 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
     "CANONICAL_CONTAINMENT": "작업 폴더 밖으로 연결되는 경로 없이, 작업 폴더 안에서만 접근하도록 기존 요청을 다시 계획해줘.",
@@ -198,8 +198,8 @@ def retry_prompt(code: str, file: str = "") -> str:
     code = str(code or "").upper()
     tmpl = _RETRY_TEMPLATES.get(code)
     if tmpl:
-        return tmpl.format(file=(file or {"GIT_INTERNALS_IN_SCOPE": ".git", "CONTROL_PLANE_IN_SCOPE": "AI DEV DIRECTOR 설정 파일",
-                                           "CONTROL_PLANE_MODIFIED": "AI DEV DIRECTOR 설정 파일"}.get(code, "해당 경로")))
+        return tmpl.format(file=(file or {"GIT_INTERNALS_IN_SCOPE": ".git", "CONTROL_PLANE_IN_SCOPE": "TRIBUNAL AI 설정 파일",
+                                           "CONTROL_PLANE_MODIFIED": "TRIBUNAL AI 설정 파일"}.get(code, "해당 경로")))
     title, _why = reason_ko(code)
     loc = f" ({file})" if file else ""
     return f"{title}{loc} 문제를 해결해서 기존 요청을 다시 계획해줘."

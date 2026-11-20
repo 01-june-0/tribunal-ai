@@ -1,5 +1,5 @@
 """
-Canonical DB path resolver for AI DEV DIRECTOR.
+Canonical DB path resolver for TRIBUNAL AI.
 
 Every component (StateMachine, ChatManager, ProviderManager, dashboard) must obtain the
 SQLite path through get_db_path(). The path is absolute and anchored at the project source

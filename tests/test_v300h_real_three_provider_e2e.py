@@ -50,7 +50,7 @@ def _git(project: Path, *args):
 def _make_empty_repo(project: Path):
     project.mkdir()
     _git(project, "init")
-    _git(project, "config", "user.name", "AI DEV DIRECTOR V3 E2E")
+    _git(project, "config", "user.name", "TRIBUNAL AI V3 E2E")
     _git(project, "config", "user.email", "v3-e2e@localhost")
     _git(project, "commit", "--allow-empty", "-m", "empty greenfield baseline")
     assert not [p for p in project.iterdir() if p.name != ".git"]

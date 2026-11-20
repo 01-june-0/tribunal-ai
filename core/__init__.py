@@ -1,1 +1,1 @@
-"""Core modules for AI DEV DIRECTOR."""
+"""Core modules for TRIBUNAL AI."""

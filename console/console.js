@@ -158,27 +158,27 @@ function setupFolderPicker(){
 function showVeil(title,detail){
  let veil=document.getElementById('shutdown-veil');
  if(!veil){veil=document.createElement('div');veil.id='shutdown-veil';document.body.append(veil);}
- veil.innerHTML='<div><strong></strong><p class="veil-detail"></p><p>다시 켜려면 솔로몬 집무실 상단의 <code>AI DEV 켜기</code> 버튼, 또는 <code>start-companion.ps1</code>을 실행하세요.</p></div>';
+ veil.innerHTML='<div><strong></strong><p class="veil-detail"></p><p>다시 켜려면 솔로몬 집무실 상단의 <code>Tribunal AI 켜기</code> 버튼, 또는 <code>start-companion.ps1</code>을 실행하세요.</p></div>';
  veil.querySelector('strong').textContent=title;veil.querySelector('.veil-detail').textContent=detail||'';
  document.body.classList.add('offline');
 }
 function offlineVeil(misses){
  window.__pollMisses=misses;
  if(misses===0){if(!window.__stoppedByButton){document.getElementById('shutdown-veil')?.remove();document.body.classList.remove('offline');}return;}
- if(misses>=3&&!document.getElementById('shutdown-veil'))showVeil('AI DEV가 꺼져 있습니다','서버(8081)가 응답하지 않습니다. 화면의 움직임은 브라우저 안의 연출일 뿐, 실행 중인 작업은 없습니다.');
+ if(misses>=3&&!document.getElementById('shutdown-veil'))showVeil('Tribunal AI가 꺼져 있습니다','서버('+(location.port||'8081')+')가 응답하지 않습니다. 화면의 움직임은 브라우저 안의 연출일 뿐, 실행 중인 작업은 없습니다.');
 }
 // heartbeat: the stage view does not run the workshop status poll, so check the server itself every 5 s
 setInterval(async()=>{try{const r=await fetch('/ops/roles',{cache:'no-store'});if(!r.ok)throw Error(r.status);offlineVeil(0);}catch(e){offlineVeil((window.__pollMisses||0)+1);}},5000);
 (()=>{
  const b=document.getElementById('btn-shutdown');if(!b)return;
  b.onclick=async()=>{
-  if(!confirm('AI DEV를 멈출까요?\n진행 중인 실행이 있으면 중단됩니다. 기록과 작업본은 남고, 다시 켜면 중단된 미션을 이어갑니다.'))return;
+  if(!confirm('Tribunal AI를 멈출까요?\n진행 중인 실행이 있으면 중단됩니다. 기록과 작업본은 남고, 다시 켜면 중단된 미션을 이어갑니다.'))return;
   b.disabled=true;b.textContent='멈추는 중…';
   try{
    const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
    const r=await fetch('/ops/shutdown',{method:'POST',headers:{'X-Solomon-Bridge':roles.csrf}});const j=await r.json();
    if(!r.ok)throw Error(j.error||'중지 실패');
-   window.__stoppedByButton=true;showVeil('AI DEV가 멈췄습니다',j.message);
+   window.__stoppedByButton=true;showVeil('Tribunal AI가 멈췄습니다',j.message);
   }catch(e){alert('중지 실패 · '+e.message);b.disabled=false;b.textContent='시스템 중지';}
  };
 })();

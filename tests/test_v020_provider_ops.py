@@ -129,7 +129,7 @@ def test_f_dashboard():
         resp = requests.get("http://localhost:8080/")
         assert resp.status_code == 200
         html = resp.text
-        assert "AI DEV DIRECTOR" in html
+        assert "TRIBUNAL AI" in html
         assert "OPENAI" in html
         assert "ANTHROPIC" in html
         assert "GOOGLE" in html

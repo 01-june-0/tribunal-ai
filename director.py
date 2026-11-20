@@ -19,7 +19,7 @@ def load_config() -> dict:
 
 @click.group()
 def cli():
-    """AI DEV DIRECTOR v3.1.8 - Local Autonomous Orchestrator (Subscription CLIs)"""
+    """TRIBUNAL AI v3.1.8 - Local Autonomous Orchestrator (Subscription CLIs)"""
     pass
 
 @cli.command()
@@ -32,7 +32,7 @@ def run(project: str, goal: str, head_provider: Optional[str]):
     if head_provider:
         config.setdefault("head", {})["provider"] = head_provider
 
-    click.echo(f"=== Initiating AI DEV DIRECTOR Run ===")
+    click.echo(f"=== Initiating TRIBUNAL AI Run ===")
     click.echo(f"Project: {project}")
     click.echo(f"Goal:    {goal}\n")
 
@@ -85,7 +85,7 @@ def status(run_id: Optional[str]):
 def resume(run_id: str):
     """Resume an interrupted or paused run."""
     config = load_config()
-    click.echo(f"=== Resuming AI DEV DIRECTOR Run: {run_id} ===")
+    click.echo(f"=== Resuming TRIBUNAL AI Run: {run_id} ===")
     orchestrator = Orchestrator(config=config)
     try:
         summary = orchestrator.resume(run_id)

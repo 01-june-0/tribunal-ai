@@ -1,4 +1,4 @@
-# AI DEV DIRECTOR configuration
+# TRIBUNAL AI configuration
 # Strict NO PAY-PER-USE API policy: every agent runs through an official, signed-in CLI session
 # (Claude Code / OpenAI Codex / Google Antigravity). API keys in the environment are stripped before any CLI call.
 
@@ -16,6 +16,9 @@ builder:
 # Per-machine model for a CLI goes in the untracked config.local.yaml (see core/cli_models.py), e.g.
 #   cli_models:
 #     codex: gpt-6.1-sol
+#   cli_options:              # lighter calls; claude_light is on unless set to false
+#     claude_light: true
+#     codex_reasoning_effort: high
 reviewer:
   provider: codex         # Primary REVIEWER: OpenAI Codex CLI (failover: claude)
   model: codex-cli

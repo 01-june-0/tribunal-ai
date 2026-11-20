@@ -156,10 +156,11 @@ class ClaudeReviewer:
             "```"
         )
 
-        invocation_cmd = 'claude --print'
+        from core.cli_models import claude_print_argv, claude_print_description
+        invocation_cmd = claude_print_description(json_output=False)
         self.logger.info(f"[Claude Reviewer] Invoking via ProcessTreeRunner: {self.executable} in {wt}")
 
-        cmd = [self.executable, "--print"]
+        cmd = claude_print_argv(self.executable, json_output=False)
         res = ProcessTreeRunner.run(
             argv=cmd,
             cwd=str(wt),

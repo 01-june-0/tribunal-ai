@@ -13,7 +13,7 @@ if ps -p "$PID" -o command= 2>/dev/null | grep -q companion_server.py; then
   i=0
   while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 20 ]; do i=$((i + 1)); sleep 0.5; done
   rm -f data/companion.pid
-  echo "AI DEV companion stopped; records and worktrees preserved."
+  echo "Tribunal AI companion stopped; records and worktrees preserved."
 else
   rm -f data/companion.pid
   echo "PID $PID is not companion_server.py (already stopped?); pid file removed."

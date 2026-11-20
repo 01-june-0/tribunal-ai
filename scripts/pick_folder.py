@@ -4,7 +4,7 @@ import json
 import sys
 
 
-TITLE = "AI DEV DIRECTOR - 작업할 폴더 선택"
+TITLE = "TRIBUNAL AI - 작업할 폴더 선택"
 
 
 def pick_macos(initial: str):

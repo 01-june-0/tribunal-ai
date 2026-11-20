@@ -33,7 +33,7 @@ BIND_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
 
 GLOBAL_SESSION_ID = "main_session"
-DIRECTOR_ROOT = SOURCE_ROOT            # the AI DEV DIRECTOR repository itself
+DIRECTOR_ROOT = SOURCE_ROOT            # the TRIBUNAL AI repository itself
 ACTIVE_RUN_WINDOW_SEC = 900            # a non-terminal run older than this is treated as stale
 
 # In-process guard against concurrent DEV_TASK execution (project key -> run_id)
@@ -158,7 +158,7 @@ def _project_key(path: str) -> str:
 
 
 def validate_project_path(path: str):
-    """Returns (ok, reason). Rejects non-git dirs and the AI DEV DIRECTOR repository itself."""
+    """Returns (ok, reason). Rejects non-git dirs and the TRIBUNAL AI repository itself."""
     if not path or not path.strip():
         return False, "empty path"
     p = Path(path.strip())
@@ -172,7 +172,7 @@ def validate_project_path(path: str):
         return False, f"not a git repository: {p}"
     root = DIRECTOR_ROOT.resolve()
     if p == root or root in p.parents:
-        return False, "the AI DEV DIRECTOR repository itself cannot be selected as a chat target"
+        return False, "the TRIBUNAL AI repository itself cannot be selected as a chat target"
     return True, str(p)
 
 
@@ -1715,7 +1715,7 @@ DASHBOARD_JS = r"""
     card.className = 'resultcard ' + (st === 'APPLIED' ? 'r-applied' : (st === 'DISCARDED' ? 'r-discarded' : ((st.indexOf('ROLLED_BACK') >= 0 || st === 'APPLY_BLOCKED' || blocked) ? 'r-blocked' : 'r-ready')));
     var detail = (res.result || {}).detail || '';
     var blockedKo = function (txt) { var e = (I18N.reasons || {}); var code = /Main project changed/.test(txt) ? 'BASE_COMMIT_MISMATCH' : (/not clean/.test(txt) ? 'WORKING_TREE_DIRTY' : (/collides/.test(txt) ? 'UNTRACKED_COLLISION' : (/Control/.test(txt) ? 'CONTROL_PLANE_MODIFIED' : ''))); return code && e[code] ? (e[code].why + ' (상세 코드: ' + code + ')') : txt; };
-    setText('result-sub', st === 'APPLIED' ? '프로젝트가 업데이트되었습니다 \u00b7 테스트 통과' : (st === 'DISCARDED' ? '원본 프로젝트는 변경되지 않았습니다 \u00b7 검증 증거 보존' : (st.indexOf('ROLLED_BACK') >= 0 || st === 'APPLY_BLOCKED' ? blockedKo(detail) : (blocked ? ((res.control_plane || []).length ? 'AI DEV DIRECTOR 보호 파일이 결과에 포함되어 적용할 수 없습니다: ' + res.control_plane.join(', ') : '작업 결과 폴더가 없습니다') : '프로젝트에 적용할 준비가 되었습니다'))));
+    setText('result-sub', st === 'APPLIED' ? '프로젝트가 업데이트되었습니다 \u00b7 테스트 통과' : (st === 'DISCARDED' ? '원본 프로젝트는 변경되지 않았습니다 \u00b7 검증 증거 보존' : (st.indexOf('ROLLED_BACK') >= 0 || st === 'APPLY_BLOCKED' ? blockedKo(detail) : (blocked ? ((res.control_plane || []).length ? 'TRIBUNAL AI 보호 파일이 결과에 포함되어 적용할 수 없습니다: ' + res.control_plane.join(', ') : '작업 결과 폴더가 없습니다') : '프로젝트에 적용할 준비가 되었습니다'))));
     var rs = document.getElementById('result-sub'); if (rs) rs.setAttribute('data-raw', detail);
     var t = res.tests || {};
     setText('result-files', ko(I18N.ui, 'changed_files') + ' ' + (res.changed_count === undefined ? '?' : res.changed_count) + '개  (추가 ' + ((res.counts || {}).A || 0) + ' / 수정 ' + ((res.counts || {}).M || 0) + ' / 삭제 ' + ((res.counts || {}).D || 0) + ')');
@@ -2606,7 +2606,7 @@ def render_html():
         _rcode = I18N.reason_code(_rdetail)
         r_sub_ko = html_lib.escape({"APPLIED": "프로젝트가 업데이트되었습니다 \u00b7 테스트 통과", "DISCARDED": "원본 프로젝트는 변경되지 않았습니다 \u00b7 검증 증거 보존"}.get(r_state,
                    (I18N.reason_ko(_rcode)[1] + f" (상세 코드: {_rcode})") if (r_state in ("APPLY_BLOCKED",) or "ROLLED_BACK" in r_state) and _rcode != "UNKNOWN" else
-                   ("AI DEV DIRECTOR 보호 파일이 결과에 포함되어 적용할 수 없습니다" if res.get("control_plane") else ("프로젝트에 적용할 준비가 되었습니다" if r_state == "READY" and not r_blocked else _rdetail))))
+                   ("TRIBUNAL AI 보호 파일이 결과에 포함되어 적용할 수 없습니다" if res.get("control_plane") else ("프로젝트에 적용할 준비가 되었습니다" if r_state == "READY" and not r_blocked else _rdetail))))
         r_files_ko = (f"{I18N.t('changed_files')} {res.get('changed_count', 0)}개  (추가 {cnt.get('A', 0)} / 수정 {cnt.get('M', 0)} / 삭제 {cnt.get('D', 0)})") if res.get("is_pass") else ""
         r_tests_ko = (f"{I18N.t('tests')} {I18N.t('pass') if rt.get('post_passed') else I18N.t('fail')}  \u00b7  {I18N.t('review')} {I18N.t('pass') if str(rt.get('reviewer') or '').lower() == 'pass' else I18N.t('fail')}  \u00b7  {I18N.t('safety')} {I18N.t('pass') if rt.get('final_gate') == 'PASS' else (rt.get('final_gate') or '?')}") if res.get("is_pass") else ""
         r_state_label_ko = (I18N.t("result_state") + ": " + (I18N.t("apply_blocked") if (r_state == "READY" and r_blocked) else I18N.result_ko(r_state))) if res.get("is_pass") else ""
@@ -2684,13 +2684,13 @@ def render_html():
         html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>AI DEV DIRECTOR - Command Center</title>
+    <title>TRIBUNAL AI - Command Center</title>
     <meta charset="utf-8">
     <style>{DASHBOARD_CSS}</style>
 </head>
 <body>
     <div id="hdr">
-        <h1>AI DEV DIRECTOR<small>{I18N.t("app_subtitle")}</small></h1>
+        <h1>TRIBUNAL AI<small>{I18N.t("app_subtitle")}</small></h1>
         <span class="sep">|</span>
         <span class="lbl" title="SYSTEM MODE: {system_mode}">{I18N.t("system_mode")}: <span class="status-{system_mode}" id="system-mode" data-raw="{system_mode}">{I18N.status_ko(system_mode)}</span><span id="system-mode-hint" data-raw="{mode_hint}">{html_lib.escape(mode_sentence)}</span><span class="rawtag">SYSTEM MODE: {system_mode}</span></span>
         <span class="sep">|</span>
@@ -2706,7 +2706,7 @@ def render_html():
 
     <div id="corestrip">
         <div id="director-core" class="{core_cls.strip()}">
-            <div class="ctitle">AI DEV DIRECTOR CORE</div>
+            <div class="ctitle">TRIBUNAL AI CORE</div>
             <div class="csub">{I18N.t("core_sub")} \u00b7 <span class="status-{system_mode}" id="core-mode" data-raw="{system_mode}">{I18N.status_ko(system_mode)}</span></div>
             <div class="cstage" id="core-stage" data-raw="{core_stage}">{core_stage_ko}</div>
         </div>

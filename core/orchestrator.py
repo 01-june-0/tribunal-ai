@@ -35,7 +35,7 @@ def _clip_error(text, limit: int = 900) -> str:
 
 class Orchestrator:
     """
-    Central Controller for AI DEV DIRECTOR.
+    Central Controller for TRIBUNAL AI.
     Directly orchestrates execution between agents in a strict unidirectional pipeline.
     Agents never monitor inboxes or alter states independently.
     """
