@@ -308,8 +308,10 @@ def mission_calls(mission_id: str, limit: int = 400) -> List[Dict[str, Any]]:
 
 
 def summary(mission_id: Optional[str] = None) -> Dict[str, Any]:
-    kst_now = datetime.utcnow() + timedelta(hours=9)
-    today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=9)  # KST midnight, in UTC
+    # "today" starts at this machine's local midnight (the ledger stores naive UTC)
+    from datetime import date, time as _time, timezone
+    # naive local midnight -> aware: the offset is the one in force AT midnight (right on a clock-change day too)
+    today = datetime.combine(date.today(), _time.min).astimezone(timezone.utc).replace(tzinfo=None)
     out = {"today": aggregate(_rows("started_at >= ?", (today.isoformat(),))), "all": aggregate(_rows())}
     if mission_id:
         out["mission"] = aggregate(_rows("mission_id = ?", (mission_id,)))

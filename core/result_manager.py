@@ -145,6 +145,7 @@ class ResultManager:
             "changed_count": row.get("changed_count") if row.get("changed_count") is not None else len(summ.get("changed_files") or []),
             "counts": counts or {"A": 0, "M": 0, "D": 0}, "control_plane": summ.get("control_plane") or [],
             "changed_files": summ.get("changed_files") or [],
+            "builds_on": self._builds_on_safe(run_id),
             "tests": {"baseline": base.get("test_counts"), "post": ver.get("test_counts"), "post_passed": ver.get("passed"),
                       "regression": ev.get("regression"), "canonical": ev.get("canonical_containment"),
                       "reviewer": ev.get("reviewer_verdict"), "final_gate": "PASS" if (ev and not ev.get("reasons")) else ("FAIL" if ev else "MISSING")},
@@ -556,6 +557,33 @@ class ResultManager:
     @staticmethod
     def _blob_id(data: bytes) -> str:
         return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+    def _builds_on_safe(self, run_id: str) -> List[str]:
+        try:
+            return self.builds_on(run_id)
+        except Exception:
+            return []
+
+    def builds_on(self, run_id: str) -> List[str]:
+        """Earlier runs whose changes are inside this run's worktree and would be applied with it: the runs it was
+        built on (newest first) that were not applied themselves. A discarded one still counts — its files were
+        copied into the later worktree before it was discarded. Reads the JSON artifacts only (no git)."""
+        seen, out, rid = {run_id}, [], run_id
+        while rid:
+            snap = self._load(rid, "source_snapshot.json") or {}
+            base = snap.get("base_worktree") or (self._load(rid, "mission_base.json") or {}).get("base_worktree")
+            rid = Path(base).name if base else None
+            if not rid or rid in seen:
+                break
+            seen.add(rid)
+            try:
+                state = (self.sm.get_result_state(rid) or {}).get("state")
+            except Exception:
+                state = None
+            if state == RESULT_APPLIED or self.result_state(rid).get("state") == RESULT_APPLIED:    # the file is written first
+                break                # everything older is already in the project: applying adds nothing of theirs
+            out.append(rid)
+        return out
 
     def origin_ref(self, run_id: str) -> Optional[str]:
         """The project snapshot the chain of milestones started from (a run built on an earlier worktree carries that

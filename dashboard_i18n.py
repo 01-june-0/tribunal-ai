@@ -33,7 +33,8 @@ UI_TEXT: Dict[str, str] = {
     "close": "닫기",
     "change": "변경",
     "select_project": "프로젝트 선택",
-    "no_project": "선택된 프로젝트 없음",
+    "no_project": "대화용 폴더 미선택",
+    "chat_ready": "입력 가능",
     "director_core": "TRIBUNAL AI CORE",
     "core_sub": "3개의 AI 코어를 지휘합니다",
     "my_todo": "내가 할 일",
@@ -80,7 +81,7 @@ UI_TEXT: Dict[str, str] = {
     "next_step": "다음 단계",
     "state": "상태",
     "role": "역할",
-    "latency": "최근 작업",
+    "latency": "최근 응답 시간",
     "version": "CLI 버전",
     "last_error": "최근 오류",
     "quota": "사용량",
@@ -330,6 +331,15 @@ NEXT_STEP: Dict[str, str] = {
 
 
 _EVENT_RULES: List[Tuple[str, str, str]] = [   # (regex on raw SYSTEM text, Korean compact text, kind)
+    # Mission rows first: they quote the goal or a one-line summary, which may contain "ValueError", "failed" ...
+    (r"\[미션 \d+/\d+\] 실행 시작", "● 미션 단계를 시작했습니다.", "ev-info"),
+    (r"\[미션 \d+/\d+\] 결과 PASS", "✓ 미션 단계가 통과했습니다.", "ev-ok"),
+    (r"\[미션 \d+/\d+\] 결과 ", "⚠ 미션 단계가 통과하지 못했습니다.", "ev-bad"),
+    (r"\[미션 \d+/\d+\] 사용자 확인 요청", "● HEAD가 사용자 확인 요청을 다시 검토합니다.", "ev-info"),
+    (r"\[미션 \d+/\d+\] HEAD 계획", "● HEAD가 다음 단계를 계획했습니다.", "ev-info"),
+    (r"^미션 시작", "● 미션을 시작했습니다.", "ev-info"),
+    (r"결과물을 프로젝트에 적용했습니다", "✓ 결과물을 프로젝트에 적용했습니다.", "ev-ok"),
+    (r"결과물을 자동 적용하지 않았습니다", "⚠ 결과물을 자동 적용하지 않았습니다.", "ev-bad"),
     (r"finished: PASS", "✓ 작업이 완료되었습니다.", "ev-ok"),
     (r"finished: HUMAN_REQUIRED", "⚠ 사용자 확인이 필요해 작업을 멈췄습니다.", "ev-bad"),
     (r"finished: (FAIL|TIMEOUT)", "✗ 작업이 실패했습니다.", "ev-bad"),
@@ -348,7 +358,7 @@ _EVENT_RULES: List[Tuple[str, str, str]] = [   # (regex on raw SYSTEM text, Kore
     (r"RESULT_DISCARDED", "○ 결과물이 폐기되었습니다.", "ev-info"),
     (r"HUMAN_REQUIRED|APPROVAL_REQUIRED", "⚠ 사용자 확인이 필요합니다.", "ev-bad"),
     (r"BUSY", "⚠ 다른 작업이 진행 중입니다.", "ev-bad"),
-    (r"HEAD Error|Error|failed", "✗ 오류가 발생했습니다.", "ev-bad"),
+    (r"HEAD Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])", "✗ 오류가 발생했습니다.", "ev-bad"),
 ]
 
 

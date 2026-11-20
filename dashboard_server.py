@@ -1529,13 +1529,16 @@ DASHBOARD_JS = r"""
   var STATE_INDEX = { PLANNING: 0, ORDER_READY: 0, BUILDING: 1, VERIFYING: 2, REVIEWING: 3, DECIDING: 4 };
   var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1 };
   var EVENT_LABELS = [
+    [/\[미션 \d+\/\d+\] 실행 시작/, 'STEP STARTED', 'ev-info'], [/\[미션 \d+\/\d+\] 결과 PASS/, 'STEP PASS', 'ev-ok'], [/\[미션 \d+\/\d+\] 결과 /, 'STEP NOT PASSED', 'ev-bad'],
+    [/\[미션 \d+\/\d+\] 사용자 확인 요청/, 'HEAD REVIEW', 'ev-info'], [/\[미션 \d+\/\d+\] HEAD 계획/, 'HEAD PLAN', 'ev-info'], [/^미션 시작/, 'MISSION STARTED', 'ev-info'],
+    [/결과물을 프로젝트에 적용했습니다/, 'RESULT APPLIED', 'ev-ok'], [/결과물을 자동 적용하지 않았습니다/, 'NOT AUTO-APPLIED', 'ev-bad'],
     [/RESULT_APPLIED/, 'RESULT APPLIED', 'ev-ok'], [/RESULT_ROLLED_BACK|RESULT_BLOCKED/, 'APPLY BLOCKED', 'ev-bad'], [/RESULT_DISCARDED/, 'RESULT DISCARDED', 'ev-info'],
     [/finished: PASS/, 'RUN PASS', 'ev-ok'], [/finished: HUMAN_REQUIRED/, 'HUMAN REQUIRED', 'ev-bad'],
     [/finished: (FAIL|TIMEOUT)/, 'RUN FAILED', 'ev-bad'], [/Starting background run/, 'RUN STARTED', 'ev-info'],
     [/RECOVERY TRIAL/, 'RECOVERY TRIAL', 'ev-info'], [/SYSTEM STOP/, 'SYSTEM STOP', 'ev-bad'],
     [/PROJECT_SELECTED/, 'PROJECT SELECTED', 'ev-ok'], [/PROJECT_SELECTION_REJECTED|PROJECT_SELECTION_REQUIRED/, 'PROJECT REJECTED', 'ev-bad'],
     [/NEW_CHAT/, 'NEW CHAT', 'ev-ok'], [/HUMAN_REQUIRED|APPROVAL_REQUIRED/, 'HUMAN REQUIRED', 'ev-bad'],
-    [/BUSY/, 'BUSY', 'ev-bad'], [/HEAD Error|Error|failed/, 'ERROR', 'ev-bad']
+    [/BUSY/, 'BUSY', 'ev-bad'], [/HEAD Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])/, 'ERROR', 'ev-bad']
   ];
   var chatBox = document.getElementById('chat-box');
   var form = document.getElementById('chat-form');
@@ -1592,7 +1595,7 @@ DASHBOARD_JS = r"""
     else if (serverBusy) { sendStatus.textContent = 'BUSY: HEAD is working on another request...'; }
     else if (sendStatus.textContent.indexOf('HEAD is working') === 0 || sendStatus.textContent.indexOf('BUSY') === 0) sendStatus.textContent = '';
     if (badge) {
-      var txt = (sending || serverBusy) ? ko(I18N.ui, 'head_working') : (runInfo.state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : ko(I18N.result, 'READY'));
+      var txt = (sending || serverBusy) ? ko(I18N.ui, 'head_working') : (runInfo.state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : ko(I18N.ui, 'chat_ready'));
       badge.setAttribute('data-raw', (sending || serverBusy) ? 'HEAD is working...' : (runInfo.state === 'HUMAN_REQUIRED' ? 'HUMAN_REQUIRED' : 'READY'));
       if (badge.textContent !== txt) badge.textContent = txt;
       badge.className = 'badge ' + ((sending || serverBusy) ? 'b-busy' : (runInfo.state === 'HUMAN_REQUIRED' ? 'b-red' : 'b-green'));
@@ -1635,7 +1638,27 @@ DASHBOARD_JS = r"""
   function actionRunId() { return selectedRunId || runInfo.run_id; }
   var resultBusy = false; var lastResultKey = ''; var lastResultsKey = ''; var selectedResultId = null; var pendingConfirm = null;
   var resultsExpanded = false; var resultModalOpen = false;
-  function setResultModalOpen(v) { resultModalOpen = v; var ov = document.getElementById('result-modal-overlay'); if (ov) { ov.style.display = v ? 'flex' : 'none'; ov.classList.toggle('open', v); } }
+  var resultModalOpener = null;
+  // A result built on earlier, not-yet-applied results carries their files too: applying it applies them all.
+  function chainNote(res, sep) { var n = (res.builds_on || []).length; return n ? (sep + '\u203b 아직 적용하지 않은 이전 결과물 ' + n + '건의 변경도 함께 적용됩니다') : ''; }
+  function setResultModalOpen(v) { var was = resultModalOpen; resultModalOpen = v; var ov = document.getElementById('result-modal-overlay'); if (ov) { ov.style.display = v ? 'flex' : 'none'; ov.classList.toggle('open', v); }
+    var closer = document.getElementById('result-close-btn');
+    if (v && !was) { var act = document.activeElement; resultModalOpener = (act && act.dataset && act.dataset.run) ? { run: act.dataset.run } : act; if (closer) closer.focus(); }
+    if (!v && was) { var op = resultModalOpener; resultModalOpener = null;
+      if (op && op.run) { resultFocusRun = op.run; resultFocusUntil = Date.now() + 8000; var row0 = resultRowFor(op.run); if (row0) row0.focus(); }
+      else if (op && op.focus && document.contains(op)) op.focus(); } }
+  // A result row is rebuilt when the list is drawn again (closing changes the selection, the next status answer redraws
+  // it), which drops the focus to the page. So the row is remembered by run id and focused again after that redraw.
+  var resultFocusRun = null; var resultFocusUntil = 0;
+  function resultRowFor(run) { return Array.prototype.filter.call(document.querySelectorAll('li.res'), function (n) { return n.dataset.run === run; })[0]; }
+  function focusResultRow() {
+    if (!resultFocusRun || resultModalOpen) return;
+    if (Date.now() > resultFocusUntil) { resultFocusRun = null; return; }
+    var act = document.activeElement; var onPage = !act || act === document.body;
+    if (!onPage && !(act.dataset && act.dataset.run === resultFocusRun)) { resultFocusRun = null; return; }   // the user moved on
+    var row = resultRowFor(resultFocusRun); if (row && onPage) row.focus();
+  }
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && resultModalOpen) { var c = document.getElementById('result-close-btn'); if (c) c.click(); else setResultModalOpen(false); } });
   function resultRunId() { return selectedResultId || runInfo.run_id; }
   function makeResultLi(p) {
     var li = document.createElement('li'); li.className = 'pend res' + (p.run_id === selectedResultId ? ' sel' : '');
@@ -1651,6 +1674,8 @@ DASHBOARD_JS = r"""
       renderResults(window.__lastResultsList || []);
       refreshSelectedResult();
     });
+    li.tabIndex = 0; li.setAttribute('role', 'button'); li.dataset.run = p.run_id;                      // reachable and usable from the keyboard
+    li.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); li.click(); } });
     return li;
   }
   // only the latest 3 results show by default (page height never grows); the rest live in a grouped,
@@ -1720,7 +1745,7 @@ DASHBOARD_JS = r"""
     var rs = document.getElementById('result-sub'); if (rs) rs.setAttribute('data-raw', detail);
     var t = res.tests || {};
     setText('result-files', ko(I18N.ui, 'changed_files') + ' ' + (res.changed_count === undefined ? '?' : res.changed_count) + '개  (추가 ' + ((res.counts || {}).A || 0) + ' / 수정 ' + ((res.counts || {}).M || 0) + ' / 삭제 ' + ((res.counts || {}).D || 0) + ')');
-    var rf = document.getElementById('result-files'); if (rf) rf.setAttribute('data-raw', 'Changed files: ' + res.changed_count);
+    var rf = document.getElementById('result-files'); if (rf) { rf.setAttribute('data-raw', 'Changed files: ' + res.changed_count); if ((res.builds_on || []).length) rf.textContent += chainNote(res, ' \u00b7 '); }
     setText('result-tests', ko(I18N.ui, 'tests') + ' ' + (t.post_passed ? ko(I18N.ui, 'pass') : ko(I18N.ui, 'fail')) + '  \u00b7  ' + ko(I18N.ui, 'review') + ' ' + ((t.reviewer || '').toLowerCase() === 'pass' ? ko(I18N.ui, 'pass') : ko(I18N.ui, 'fail')) + '  \u00b7  ' + ko(I18N.ui, 'safety') + ' ' + (t.final_gate === 'PASS' ? ko(I18N.ui, 'pass') : (t.final_gate || '?')));
     if (isCurrent) {
       var rrs = document.getElementById('run-result-state'); if (rrs) rrs.setAttribute('data-raw', 'RESULT: ' + (st === 'READY' && blocked ? 'APPLY BLOCKED' : st));
@@ -1735,7 +1760,7 @@ DASHBOARD_JS = r"""
       setText('confirm-title', pendingConfirm === 'apply' ? ko(I18N.ui, 'apply_confirm_title') : ko(I18N.ui, 'discard_confirm_title'));
       var pname = (res.project_path || '').split(/[\\/]/).filter(Boolean).pop() || '';
       setText('confirm-body', pendingConfirm === 'apply'
-        ? ('프로젝트: ' + pname + '\n작업: ' + (res.run_id || '') + '\n변경 파일: ' + res.changed_count + '개\n\n' + ko(I18N.ui, 'apply_confirm_body'))
+        ? ('프로젝트: ' + pname + '\n작업: ' + (res.run_id || '') + '\n이 작업의 변경 파일: ' + res.changed_count + '개' + chainNote(res, '\n') + '\n\n' + ko(I18N.ui, 'apply_confirm_body'))
         : ko(I18N.ui, 'discard_confirm_body'));
       setText('confirm-ok', pendingConfirm === 'apply' ? ko(I18N.ui, 'apply_confirm_ok') : ko(I18N.ui, 'discard_confirm_ok'));
     }
@@ -1805,6 +1830,7 @@ DASHBOARD_JS = r"""
   function openCurrentResultModal() { selectedResultId = null; setResultModalOpen(true); lastResultKey = ''; renderResult(lastResult); }
   rbind('chat-view-result-btn', function () { openCurrentResultModal(); showResultDetail('changes'); });
   rbind('todo-view-result-btn', function () { openCurrentResultModal(); });
+  var drawResults = renderResults; renderResults = function (list) { drawResults(list); focusResultRow(); };
   rbind('results-more-btn', function () { resultsExpanded = !resultsExpanded; lastResultsKey = ''; renderResults(window.__lastResultsList || []); });
   var resModalOverlayEl = document.getElementById('result-modal-overlay');
   if (resModalOverlayEl) resModalOverlayEl.addEventListener('click', function (ev) { if (ev.target === resModalOverlayEl) { setResultModalOpen(false); selectedResultId = null; lastResultKey = ''; renderResult(lastResultShown()); } });
@@ -1984,6 +2010,9 @@ DASHBOARD_JS = r"""
       var tap = document.getElementById('tap-' + dom); if (tap) tap.classList.toggle('active', !!n.active);
     });
   }
+  function plain(v) { return (v === 'UNKNOWN' || v === undefined || v === null || v === '') ? '알 수 없음' : (v === 'NONE' ? '없음' : v); }   // internal placeholders -> words
+  function fmtLocal(iso) { if (!iso) return ''; var d = new Date(iso + (/Z|[+-]\d\d:\d\d$/.test(iso) ? '' : 'Z')); if (isNaN(d)) return iso;
+    function p(n) { return (n < 10 ? '0' : '') + n; } return p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
   function fmtElapsed(created, updated, state) {
     if (!created) return '';
     var t0 = Date.parse(created + 'Z'); if (isNaN(t0)) t0 = Date.parse(created);
@@ -2077,16 +2106,16 @@ DASHBOARD_JS = r"""
         var roleParts = String(pr.role || '').replace(/\u00b7/g, ',').split(',').map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean);
         setText('prov-' + name + '-role', roleParts.length ? (roleParts.join(' \u00b7 ') + ' (' + roleParts.map(function (r) { return ko(I18N.role, r); }).join(' \u00b7 ') + ')') : '');
         var roleEl = document.getElementById('prov-' + name + '-role'); if (roleEl) roleEl.setAttribute('data-raw', pr.role);
-        setText('prov-' + name + '-version', pr.version);
-        setText('prov-' + name + '-latency', (pr.latency ? pr.latency + 's' : '--')); setText('prov-' + name + '-usage', pr.usage);
-        setText('prov-' + name + '-error', pr.error);
+        setText('prov-' + name + '-version', plain(pr.version));
+        setText('prov-' + name + '-latency', (pr.latency ? (Math.round(pr.latency * 10) / 10) + '초' : '--')); setText('prov-' + name + '-usage', plain(pr.usage));
+        setText('prov-' + name + '-error', plain(pr.error));
       });
       if (j.run) {
         runInfo = j.run;
         setText('run-id', j.run.run_id); setText('hdr-run', (j.run.run_id || 'NONE').slice(0, 18));
         runInfo.stage_sentence = j.stage_sentence;
         setStatusCell('run-state', j.run.state, I18N.state);
-        setText('run-created', j.run.created_at || ''); setText('run-human', j.run.human_required === 'YES' ? '예' : '아니오');
+        setText('run-created', fmtLocal(j.run.created_at)); var rc = document.getElementById('run-created'); if (rc) rc.title = (j.run.created_at || '') + ' UTC'; setText('run-human', j.run.human_required === 'YES' ? '예' : '아니오');
         setText('run-details', j.run.details || '');
         renderPipeline(j.run.state, j.run.last_stage); tickElapsed();
         var hr = document.getElementById('hdr-human'); if (hr) { var ht = j.run.human_required === 'YES' ? ko(I18N.ui, 'human_required') : ko(I18N.ui, 'safe'); hr.setAttribute('data-raw', j.run.human_required === 'YES' ? 'HUMAN REQUIRED' : 'SAFE'); if (hr.textContent !== ht) hr.textContent = ht; hr.className = 'badge ' + (j.run.human_required === 'YES' ? 'b-red' : 'b-green'); }
@@ -2100,7 +2129,7 @@ DASHBOARD_JS = r"""
             ? (apx.required ? ('\u26a0 ' + ko(I18N.ui, 'human_approval_required') + ' ' + ((it.code && (I18N.reasons || {})[it.code]) ? I18N.reasons[it.code].title : (it.title || '')) + (it.file ? ' (' + it.file + ')' : ''))
               : apxNonapprovable ? ('\u26a0 작업 계획 수정 필요 · ' + ((apxBlock.code && (I18N.reasons || {})[apxBlock.code]) ? I18N.reasons[apxBlock.code].why : ((apx.explain || {}).why || (apx.explain || {}).title || j.run.details || j.run.run_id)))
               : ('\u26a0 ' + ko(I18N.ui, 'human_required')))
-            : ko(I18N.ui, 'safe_no_action');
+            : ((j.pending_result_count || 0) > 0 && j.todo ? (ko(I18N.ui, 'safe') + ' \u00b7 ' + j.todo) : ko(I18N.ui, 'safe_no_action'));
           ab.setAttribute('data-raw', j.run.human_required === 'YES' ? ('HUMAN REQUIRED \u2014 ' + (j.run.details || '')) : 'SAFE / NO ACTION REQUIRED');
           setText('alert-text', alertText);
           ab.className = 'alert ' + (j.run.human_required === 'YES' ? 'a-red' : 'a-ok');
@@ -2155,20 +2184,21 @@ DASHBOARD_JS = r"""
   }
   form.addEventListener('submit', function (ev) { ev.preventDefault(); submitChat(); });
   input.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); submitChat(); }   // Enter = send once, Shift+Enter = newline
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); submitChat(); }   // Enter = send once, Shift+Enter = newline
   });
   [].slice.call(document.querySelectorAll('.msg-SYSTEM')).forEach(function (d) { d.addEventListener('click', function () { d.classList.toggle('expanded'); }); });
   var nbtn = document.getElementById('new-chat-btn');
   if (nbtn) nbtn.addEventListener('click', function () {
     if (sending || serverBusy) return;
+    if (chatBox.children.length && !window.confirm('새 대화를 시작할까요?\n지금 대화는 화면에서 사라집니다. 기록은 서버에 남고, 프로젝트 선택은 그대로입니다.')) return;
     nbtn.disabled = true;
     fetch('/chat/new', { method: 'POST', headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' } })
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (j.status === 'ok') { while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild); lastId = 0; sendStatus.textContent = ''; }
-      else { sendStatus.textContent = 'New chat refused: ' + (j.message || j.status); }
+      else { sendStatus.textContent = '새 대화를 시작하지 못했습니다 · ' + (j.message || j.status); }
     })
-    .catch(function (e) { sendStatus.textContent = 'New chat failed: ' + e; })
+    .catch(function (e) { sendStatus.textContent = '새 대화 요청 실패 · ' + e; })
     .then(function () { nbtn.disabled = false; pollMessages(); pollStatus(); input.focus(); });
   });
   var pform = document.getElementById('project-form');
@@ -2297,7 +2327,7 @@ DASHBOARD_CSS = r"""
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     .panel h2 { font-size: 12px; margin: 0 0 6px 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
     .proj-name { font-size: 15px; font-weight: 600; color: var(--text); }
-    .proj-none { color: var(--red); }
+    .proj-none { color: var(--amber); }
     .proj-path { font-size: 11px; color: var(--muted); word-break: break-all; }
     #project-form input { width: 100%; box-sizing: border-box; margin: 6px 0; }
     input[type=text], textarea { padding: 5px 7px; background: #111214; color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-family: inherit; font-size: 13px; }
@@ -2346,7 +2376,8 @@ DASHBOARD_CSS = r"""
     .pendbox { margin-top: 12px; }
     #pending-count { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); }
     .pendbox.has #pending-count { color: var(--amber); }
-    #pending-list { list-style: none; margin: 4px 0 0 0; padding: 0; max-height: 150px; overflow-y: auto; }
+    #pending-list, #results-list { list-style: none; margin: 4px 0 0 0; padding: 0; }
+    #pending-list { max-height: 150px; overflow-y: auto; }
     li.pend { border: 1px solid var(--border); border-left: 3px solid var(--amber); border-radius: 4px; padding: 4px 6px; margin-bottom: 4px; cursor: pointer; font-size: 11px; }
     li.pend.sel { background: rgba(226,179,74,0.10); border-color: var(--amber); }
     li.pend .pname { font-weight: 700; color: var(--text); }
@@ -2447,12 +2478,16 @@ DASHBOARD_CSS = r"""
 
 
 EVENT_LABELS = [
+    (r"\[미션 \d+/\d+\] 실행 시작", "STEP STARTED", "ev-info"), (r"\[미션 \d+/\d+\] 결과 PASS", "STEP PASS", "ev-ok"),
+    (r"\[미션 \d+/\d+\] 결과 ", "STEP NOT PASSED", "ev-bad"), (r"\[미션 \d+/\d+\] 사용자 확인 요청", "HEAD REVIEW", "ev-info"), (r"\[미션 \d+/\d+\] HEAD 계획", "HEAD PLAN", "ev-info"),
+    (r"^미션 시작", "MISSION STARTED", "ev-info"), (r"결과물을 프로젝트에 적용했습니다", "RESULT APPLIED", "ev-ok"),
+    (r"결과물을 자동 적용하지 않았습니다", "NOT AUTO-APPLIED", "ev-bad"),
     (r"finished: PASS", "RUN PASS", "ev-ok"), (r"finished: HUMAN_REQUIRED", "HUMAN REQUIRED", "ev-bad"),
     (r"finished: (FAIL|TIMEOUT)", "RUN FAILED", "ev-bad"), (r"Starting background run", "RUN STARTED", "ev-info"),
     (r"RECOVERY TRIAL", "RECOVERY TRIAL", "ev-info"), (r"SYSTEM STOP", "SYSTEM STOP", "ev-bad"),
     (r"PROJECT_SELECTED", "PROJECT SELECTED", "ev-ok"), (r"PROJECT_SELECTION_REJECTED|PROJECT_SELECTION_REQUIRED", "PROJECT REJECTED", "ev-bad"),
     (r"NEW_CHAT", "NEW CHAT", "ev-ok"), (r"HUMAN_REQUIRED|APPROVAL_REQUIRED", "HUMAN REQUIRED", "ev-bad"),
-    (r"BUSY", "BUSY", "ev-bad"), (r"HEAD Error|Error|failed", "ERROR", "ev-bad"),
+    (r"BUSY", "BUSY", "ev-bad"), (r"HEAD Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])", "ERROR", "ev-bad"),
 ]
 NODE_NAMES = {"OPENAI": "CODEX", "ANTHROPIC": "CLAUDE", "GOOGLE": "ANTIGRAVITY"}
 
@@ -2482,6 +2517,23 @@ def _stale_ids_html(stale_runs) -> str:
     return "".join(f"<li>{html_lib.escape(str(r['run_id']))} \u00b7 {html_lib.escape(str(r['state']))} \u00b7 {html_lib.escape(str(r['updated_at'] or ''))}</li>" for r in stale_runs)
 
 
+def _plain(value) -> str:
+    """Internal placeholders as words: UNKNOWN -> 알 수 없음, NONE -> 없음."""
+    return "알 수 없음" if value in ("UNKNOWN", None, "") else ("없음" if value == "NONE" else str(value))
+
+
+def local_time_label(iso) -> str:
+    """A stored time (naive UTC) as this machine's local date and time, e.g. '11/20 21:53:18'. Unparseable -> as is."""
+    try:
+        from datetime import timezone
+        stamp = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.astimezone().strftime("%m/%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return "" if iso in (None, "") else str(iso)
+
+
 def triad_switch_enabled() -> bool:
     """The NORMAL / TRIAD switch of the workshop page. TRIAD research has an engine and a read-only status view,
     but nothing in the console or the CLI can start a session yet, so the switch is hidden unless config.yaml says
@@ -2509,7 +2561,7 @@ def render_html():
                 label, cls = _event_label(str(msg['content']))
                 ko_text, _ko_cls = I18N.event_ko(str(msg['content']))
                 chat_html += (f"<div class='msg msg-SYSTEM' data-id='{mid}'><span class='ev {cls}'>{label}</span>"
-                              f"<span class='evt' title=\"click to expand\" data-raw=\"{content}\">{html_lib.escape(ko_text)}</span>"
+                              f"<span class='evt' title=\"눌러서 원문 보기\" data-raw=\"{content}\">{html_lib.escape(ko_text)}</span>"
                               f"<span class='evraw'>{content}</span></div>")
             else:
                 chat_html += f"<div class='msg msg-{role}' data-id='{mid}'><strong>{role}</strong><pre>{content}</pre></div>"
@@ -2544,7 +2596,7 @@ def render_html():
         run_label_ko = I18N.state_ko(run_state) + (f" \u00b7 {elapsed}" if elapsed else "")
         stage_map = {"HEAD": "HEAD", "BUILDER": "BUILD", "REVIEWER": "REVIEW", "VERIFY": "VERIFY"}
         core_stage_ko = ("지휘 중 \u00b7 " + I18N.STAGE_TEXT.get(stage_map.get(act.get("stage") or "", ""), act.get("stage") or "")) if act.get("director") else I18N.state_ko("IDLE")
-        chat_badge_ko = {"HEAD is working...": I18N.t("head_working"), "HUMAN_REQUIRED": I18N.t("human_required"), "READY": I18N.result_ko("READY")}.get(chat_badge, chat_badge)
+        chat_badge_ko = {"HEAD is working...": I18N.t("head_working"), "HUMAN_REQUIRED": I18N.t("human_required"), "READY": I18N.t("chat_ready")}.get(chat_badge, chat_badge)
         ap = st.get("approval") or {"required": False}
         ap_item = (ap.get("items") or [{}])[0] if ap.get("items") else {}
         ap_show = bool(ap.get("required") or ap.get("inflight") or ap.get("rejected") or (run["state"] == "HUMAN_REQUIRED" and str(run.get("details") or "").startswith("APPROVAL_REQUIRED")))
@@ -2632,7 +2684,7 @@ def render_html():
         ap_retry_prompt = html_lib.escape(I18N.retry_prompt(_ap_block_code, _ap_block.get("file") or ""))
         alert_text_ko = ("\u26a0 " + I18N.t("human_approval_required") + " " + (I18N.reason_ko(_ap_first.get("code", ""))[0] if _ap_first else "") + ((" (" + _ap_first.get("file") + ")") if _ap_first.get("file") else "")) if (human and ap.get("required")) else \
                         (("\u26a0 \uc791\uc5c5 \uacc4\ud68d \uc218\uc815 \ud544\uc694 \u00b7 " + ap_na_why_ko) if (human and ap_nonapprovable) else
-                         (("\u26a0 " + I18N.t("human_required")) if human else I18N.t("safe_no_action")))
+                         (("\u26a0 " + I18N.t("human_required")) if human else ((I18N.t("safe") + " \u00b7 " + str(st.get("todo"))) if st.get("pending_result_count") and st.get("todo") else I18N.t("safe_no_action"))))
 
         # "\ub0b4\uac00 \ud560 \uc77c" - one glance, one next action, specific to the CURRENT run only
         if res.get("is_pass") and r_state == "READY" and not r_blocked:
@@ -2689,7 +2741,7 @@ def render_html():
         research_raw = html_lib.escape(json.dumps(research, ensure_ascii=False, indent=2))
 
         html = f"""<!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
     <title>TRIBUNAL AI - Command Center</title>
     <meta charset="utf-8">
@@ -2728,15 +2780,15 @@ def render_html():
             ncls += " healthy" if pr["status"] == "HEALTHY" else (" recovering" if pr["status"] == "RECOVERING" else " down")
             glyph = "\u25c9" if pr["status"] == "HEALTHY" else ("\u25cc" if pr["status"] == "RECOVERING" else "\u25cb")
             ind = "ACTIVE" if node.get("active") else ("BACKUP" if node.get("backup") else "")
-            latency = f'{pr["latency"]}s' if pr["latency"] else "--"
+            latency = f'{round(float(pr["latency"]), 1)}초' if pr["latency"] else "--"
             html += f"""                <div class="{ncls}" id="node-{name}">
                     <div class="tap{' active' if node.get('active') else ''}" id="tap-{name}"></div>
                     <div class="ntitle"><span class="nname">{NODE_NAMES[name]}</span><span class="vendor">{I18N.PROVIDER_LABEL[name][1]}</span><span class="ind" id="node-{name}-ind" data-raw="{ind}">{ {"ACTIVE": "작업 중", "BACKUP": "예비"}.get(ind, "") }</span>
                     <details><summary>{I18N.t("details")}</summary><div class="dbox">
-                        <div>{I18N.t("quota")}: <span id="prov-{name}-usage">{html_lib.escape(pr["usage"])}</span></div>
-                        <div>{I18N.t("version")}: <span id="prov-{name}-version">{html_lib.escape(pr["version"])}</span></div>
-                        <div>{I18N.t("last_error")}: <span id="prov-{name}-error">{html_lib.escape(pr["error"])}</span></div>
-                        <div>raw status: {status} \u00b7 role: {html_lib.escape(pr["role"])} \u00b7 {html_lib.escape(I18N.HELP_TEXT.get(status, ""))}</div>
+                        <div>{I18N.t("quota")}: <span id="prov-{name}-usage">{html_lib.escape(_plain(pr["usage"]))}</span></div>
+                        <div>{I18N.t("version")}: <span id="prov-{name}-version">{html_lib.escape(_plain(pr["version"]))}</span></div>
+                        <div>{I18N.t("last_error")}: <span id="prov-{name}-error">{html_lib.escape(_plain(pr["error"]))}</span></div>
+                        <div>{html_lib.escape(I18N.HELP_TEXT.get(status, ""))}</div>
                     </div></details></div>
                     <table>
                         <tr><th>{I18N.t("state")}</th><td class="status-{status}" id="prov-{name}-status" data-raw="{status}">{I18N.status_ko(status)}</td></tr>
@@ -2785,7 +2837,7 @@ def render_html():
             <div id="project-path" class="proj-path mono">{html_lib.escape(project_path)}</div>
             <div style="margin-top:6px;"><button id="project-change" type="button" class="ghost">{I18N.t("change")}</button></div>
             <form id="project-form" method="POST" action="/project" accept-charset="utf-8" style="{'display:none;' if project_path else ''}">
-                <input type="text" id="project-input" name="path" placeholder="git 저장소의 절대 경로" />
+                <input type="text" id="project-input" name="path" placeholder="git 저장소의 절대 경로" aria-label="프로젝트 폴더 경로" />
                 <button type="submit" id="project-btn">{I18N.t("select_project")}</button>
                 <div id="project-result" style="color:var(--amber); font-size:11px; margin-top:4px;"></div>
             </form>
@@ -2836,7 +2888,7 @@ def render_html():
                 </div>
             </div>
             <form id="chat-form" method="POST" action="/chat" accept-charset="utf-8">
-                <textarea id="chat-input" name="message" rows="2" placeholder="{I18N.t("input_placeholder")}"></textarea>
+                <textarea id="chat-input" name="message" rows="2" placeholder="{I18N.t("input_placeholder")}" aria-label="HEAD에게 보낼 메시지"></textarea>
                 <div><button type="submit" id="send-btn"{busy_attr}>{I18N.t("send")}</button><div id="send-status">{busy_text}</div></div>
             </form>
         </div>
@@ -2868,7 +2920,7 @@ def render_html():
                 <span class="k">{I18N.t("run_id")}</span><span class="v mono" id="run-id" title="{html_lib.escape(str(run["run_id"]))}">{html_lib.escape(str(run["run_id"]))}</span>
                 <span class="k">{I18N.t("elapsed")}</span><span class="v" id="run-elapsed">{elapsed}</span>
                 <span class="k" title="{I18N.t("human_required")}">확인 필요</span><span class="v" id="run-human" data-raw="{run["human_required"]}">{"예" if run["human_required"] == "YES" else "아니오"}</span>
-                <span class="k">{I18N.t("started")}</span><span class="v mono" id="run-created">{html_lib.escape(str(run["created_at"]))}</span>
+                <span class="k">{I18N.t("started")}</span><span class="v mono" id="run-created" title="{html_lib.escape(str(run["created_at"]))} UTC">{html_lib.escape(local_time_label(run["created_at"]))}</span>
             </div>
             <div id="approval-card" class="approval {ap_cls}" style="{ap_style}">
                 <div class="ah" id="approval-headline" data-raw="{ap_headline}">{ap_headline_ko}</div>
@@ -2902,14 +2954,14 @@ def render_html():
             <details id="run-details-panel" style="margin-top:8px;">
                 <summary>{I18N.t("details")}</summary>
                 <div id="run-details">{html_lib.escape(run.get("details") or "")}</div>
-                <details id="inspect-panel"><summary>{I18N.t("inspect")} (read-only)</summary><pre id="inspect-body"></pre></details>
-                <div>실행 역할은 상단 AI 카드에서 확인하세요. 역할 변경 버튼의 배정은 다음 대화/작업부터 적용됩니다.</div>
+                <details id="inspect-panel"><summary>{I18N.t("inspect")} (읽기 전용)</summary><pre id="inspect-body"></pre></details>
+                <div>실행 역할은 AI 카드에서 확인하세요. 역할 지정은 스테이지의 역할 메뉴에서 하며, 다음 대화/작업부터 적용됩니다.</div>
             </details>
         </div>
     </div>
 
     <div id="result-modal-overlay" class="modal-overlay" style="display:none;">
-            <div id="result-card" class="resultcard modalbox {r_cls}">
+            <div id="result-card" class="resultcard modalbox {r_cls}" role="dialog" aria-modal="true" aria-label="결과물 확인">
                 <div class="rh" id="result-headline" data-raw="{r_headline}">{r_headline_ko}</div>
                 <div class="rs" id="result-sub" data-raw="{r_sub}">{r_sub_ko}</div>
                 <div id="result-files" data-raw="{r_files}">{r_files_ko}</div>
