@@ -34,8 +34,8 @@ def context() -> Dict[str, Any]:
 
 
 def provider_of(argv0: str) -> Optional[str]:
-    base = os.path.basename(str(argv0 or "")).lower()
-    return PROVIDER_BY_CLI.get(base.split(".")[0])
+    from core.env_utils import cli_name_of
+    return PROVIDER_BY_CLI.get(cli_name_of(argv0) or "")
 
 
 def estimate_tokens(text: Optional[str]) -> int:

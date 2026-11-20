@@ -112,17 +112,22 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
     payload = {"request_id": "cli-" + uuid.uuid4().hex[:16], "project_path": str(Path(target).resolve()), "goal": goal,
                "profile": profile, "auto_apply": "off" if no_apply else None}
     token_path = Path(__file__).resolve().parent / "data" / "solomon-bridge.token"
+    from core.companion_config import companion_port, DEFAULT_PORT
     try:
-        req = urllib.request.Request("http://127.0.0.1:8081/bridge/missions", data=json.dumps(payload).encode("utf-8"),
+        port = companion_port()
+    except (OSError, ValueError, TypeError):          # unreadable companion*.json must not block the in-process fallback
+        port = DEFAULT_PORT
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/bridge/missions", data=json.dumps(payload).encode("utf-8"),
                                      headers={"Content-Type": "application/json", "X-Solomon-Bridge": token_path.read_text(encoding="utf-8").strip()})
         with urllib.request.urlopen(req, timeout=600) as r:
             res = json.loads(r.read().decode("utf-8"))
         click.echo(f"[{res.get('status')}] " + (res.get("mission_id") or res.get("message") or res.get("error") or ""))
         if res.get("mission_id"):
-            click.echo("진행 상황: http://127.0.0.1:8081/  (스테이지에서 실시간으로 보입니다)")
+            click.echo(f"진행 상황: http://127.0.0.1:{port}/  (스테이지에서 실시간으로 보입니다)")
         return
     except Exception as exc:
-        click.echo(f"8081 companion unavailable ({str(exc)[:120]}); running the mission in this process instead.")
+        click.echo(f"{port} companion unavailable ({str(exc)[:120]}); running the mission in this process instead.")
     ctx = click.get_current_context()
     ctx.invoke(mission, project=str(Path(target).resolve()), goal=goal, mission_id=None, max_steps=None, replan=None, profile=profile)
 

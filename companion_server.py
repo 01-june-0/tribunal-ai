@@ -46,8 +46,8 @@ def solomon_target_ok(path: str) -> tuple:
         target = Path(path).resolve()
     except (OSError, ValueError):
         return False, '경로를 해석할 수 없습니다'
-    roots = [Path(r).resolve() for r in (cfg.get('allowed_roots') or [])]
-    denied = [Path(x).resolve() for x in (cfg.get('denied') or [])] + [ROOT.resolve()]
+    roots = [Path(r).expanduser().resolve() for r in (cfg.get('allowed_roots') or [])]
+    denied = [Path(x).expanduser().resolve() for x in (cfg.get('denied') or [])] + [ROOT.resolve()]
     if not any(target == r or r in target.parents for r in roots):
         return False, '솔로몬에 허용된 폴더 밖입니다'
     if any(target == x or x in target.parents for x in denied):
@@ -75,7 +75,7 @@ def project_registry() -> list:
         add(key, 'config')
     for root in (cfg.get('solomon') or {}).get('allowed_roots') or []:
         try:
-            for child in sorted(Path(root).iterdir()):
+            for child in sorted(Path(root).expanduser().iterdir()):
                 if child.is_dir() and (child / '.git').exists():
                     add(child, 'root')
         except OSError:
@@ -272,9 +272,10 @@ class CompanionHandler(d.DashboardHandler):
 
 
 def run():
-    config = json.loads((ROOT / 'companion.json').read_text(encoding='utf-8'))
+    from core.companion_config import load_companion_config, companion_port
+    config = load_companion_config(ROOT)
     d._ensure_schema()
-    server = d.DashboardServer(('127.0.0.1', config.get('port', 8081)), CompanionHandler)
+    server = d.DashboardServer(('127.0.0.1', companion_port(ROOT)), CompanionHandler)
     token_path = ROOT / 'data' / 'solomon-bridge.token'
     if not token_path.exists():
         token_path.write_text(secrets.token_urlsafe(48), encoding='utf-8')

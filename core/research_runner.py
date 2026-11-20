@@ -60,7 +60,8 @@ class TriadResearchRunner:
         if domain == "OPENAI":
             # Codex official help: omitting PROMPT (or using '-') reads it from stdin.  This is required on
             # Windows where synthesis/cross-critique evidence can exceed CreateProcess' command-line limit.
-            return [executable, "exec", "--sandbox", "read-only", "-"], prompt, "codex exec --sandbox read-only - <stdin>"
+            from core.cli_models import codex_exec_argv, codex_exec_description
+            return codex_exec_argv(executable), prompt, codex_exec_description()
         if domain == "ANTHROPIC":
             return [executable, "--print", "--output-format", "json"], prompt, "claude --print --output-format json"
         if domain == "GOOGLE":

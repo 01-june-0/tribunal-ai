@@ -9,6 +9,9 @@ fi
 PID="$(cat data/companion.pid)"
 if ps -p "$PID" -o command= 2>/dev/null | grep -q companion_server.py; then
   kill "$PID"
+  # Wait until the process is gone, so an immediate start-companion.sh finds the port free.
+  i=0
+  while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 20 ]; do i=$((i + 1)); sleep 0.5; done
   rm -f data/companion.pid
   echo "AI DEV companion stopped; records and worktrees preserved."
 else

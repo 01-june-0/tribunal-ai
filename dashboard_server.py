@@ -95,7 +95,9 @@ class DashboardAlreadyRunning(RuntimeError):
 class DashboardServer(ThreadingHTTPServer):
     """Single-instance server: no SO_REUSEADDR (Windows would otherwise allow a duplicate LISTEN),
     SO_EXCLUSIVEADDRUSE where available, and a clear error when the port is taken."""
-    allow_reuse_address = False
+    # POSIX: SO_REUSEADDR never permits a second live listener, it only lets a restart bind while the previous
+    # socket is still in TIME_WAIT (without it, stop + start on macOS fails with "Address already in use").
+    allow_reuse_address = os.name != "nt"
     daemon_threads = True
 
     def server_bind(self):

@@ -21,6 +21,38 @@ def get_sanitized_env() -> Dict[str, str]:
         env.pop(k, None)
     return env
 
+KNOWN_CLI_NAMES = ("claude", "codex", "agy")
+
+
+def cli_name_of(argv0) -> Optional[str]:
+    """'claude' / 'codex' / 'agy' for an executable path, else None. The file name decides; when it is not a CLI
+    name, the two folders above it are checked, because the macOS/Linux native Claude installer keeps the binary at
+    ~/.local/share/claude/versions/<version> and callers resolve the ~/.local/bin/claude symlink to that file."""
+    text = str(argv0 or "").replace("\\", "/")
+    parts = [p for p in text.split("/") if p]
+    if not parts:
+        return None
+    base = parts[-1].lower().split(".")[0]
+    if base in KNOWN_CLI_NAMES:
+        return base
+    if len(parts) >= 3 and parts[-2].lower() == "versions" and parts[-3].lower() in KNOWN_CLI_NAMES:
+        return parts[-3].lower()
+    return None
+
+
+def _canonical_cli_path(path: Path, name: str) -> str:
+    """Resolved path of a CLI, unless resolving loses the CLI's name. The macOS/Linux native Claude installer
+    links ~/.local/bin/claude -> ~/.local/share/claude/versions/<version>, and the usage ledger and the unit-test
+    real-CLI guard both identify a CLI by its file name; a path ending in '2.1.293' is no longer 'claude'."""
+    try:
+        resolved = path.resolve()
+    except (PermissionError, OSError):
+        return str(path)
+    if resolved.name.lower().split(".")[0] == name.lower():
+        return str(resolved)
+    return str(path.absolute())
+
+
 def resolve_cli(name: str) -> Optional[str]:
     """
     Discovers the official CLI executable from OS PATH or standard install locations.
@@ -46,10 +78,7 @@ def resolve_cli(name: str) -> Optional[str]:
     except (PermissionError, OSError):
         p = None
     if p:
-        try:
-            return str(Path(p).resolve())
-        except (PermissionError, OSError):
-            return str(p)
+        return _canonical_cli_path(Path(p), name)
 
     local_app_data = Path(os.environ.get("LOCALAPPDATA", ""))
     app_data = Path(os.environ.get("APPDATA", ""))
@@ -90,10 +119,7 @@ def resolve_cli(name: str) -> Optional[str]:
             bin_dir = str(cand.parent)
             if bin_dir not in os.environ.get("PATH", ""):
                 os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
-            try:
-                return str(cand.resolve())
-            except (PermissionError, OSError):
-                return str(cand)
+            return _canonical_cli_path(cand, name)
         except (PermissionError, OSError):
             continue
 

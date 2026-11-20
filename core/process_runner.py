@@ -180,7 +180,8 @@ class ProcessTreeRunner:
         # from consuming real quota or hanging for the full CLI timeout.
         if os.environ.get("DIRECTOR_TESTING") == "1" and os.environ.get("DIRECTOR_ALLOW_REAL_CLI") != "1":
             base = os.path.basename(str(argv[0])).lower() if argv else ""
-            if base in REAL_CLI_BASENAMES:
+            from core.env_utils import cli_name_of
+            if base in REAL_CLI_BASENAMES or cli_name_of(argv[0]):
                 cls.blocked_real_cli_calls.append(list(argv))
                 raise RealCliCallDuringUnitTest(
                     f"REAL_CLI_CALL_DURING_UNIT_TEST: refusing to launch {base} while DIRECTOR_TESTING=1 "

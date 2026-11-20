@@ -13,6 +13,9 @@ builder:
   model: antigravity-cli
   executable: null        # Discovered automatically via resolve_cli('agy')
 
+# Per-machine model for a CLI goes in the untracked config.local.yaml (see core/cli_models.py), e.g.
+#   cli_models:
+#     codex: gpt-6.1-sol
 reviewer:
   provider: codex         # Primary REVIEWER: OpenAI Codex CLI (failover: claude)
   model: codex-cli
@@ -75,7 +78,11 @@ autonomy:
 # Optional external commissioner (a separate "CEO" service that posts goal-level missions to /ops/solomon).
 # Only git projects under allowed_roots may be targeted; the Director's own folder is never a target.
 solomon:
+  # "~" is expanded; a root that does not exist on this machine simply never matches.
   allowed_roots:
     - "D:/work"
+    - "~/Developer"
   denied:
     - "D:/work/ai-dev-director"
+    - "~/Developer/ai-dev-director"
+    - "~/Developer/tribunal-ai"

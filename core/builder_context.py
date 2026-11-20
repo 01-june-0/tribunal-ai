@@ -5,12 +5,35 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 
+# '://' never starts a match: its first slash is followed by a slash and its second one is preceded by one.
+# A path may be followed by a Korean particle ("spec.md를 참고") or end a sentence ("spec.md.").
+_POSIX_DOC = re.compile(r'(?<![A-Za-z0-9/.~_\\-])(?=(/(?![/\s])[^\r\n"<>|`=*?\x27()]*?\.(?:docx|md|txt))'
+                        r'(?=[\s"\x27`)\],;:\uac00-\ud7a3]|\.(?:\s|$)|$))', re.I)
+
+
+def _posix_document_paths(text):
+    """Absolute macOS/Linux document paths (/Users/me/spec.md). Unlike a drive letter, a leading slash is also how
+    prose writes routes ("/api/users ... see README.md") and an order often names a file that is still to be written
+    ("/Users/me/proj/docs/plan.md 에 작성"), so a candidate counts only when it is an existing file."""
+    if Path('/').anchor != '/':
+        return []
+    found = []
+    for match in _POSIX_DOC.finditer(text):
+        try:
+            if Path(match.group(1)).is_file():
+                found.append(match.group(1))
+        except OSError:
+            continue
+    return found
+
+
 def referenced_documents(order):
     text = '\n'.join([order.goal, order.context or '', *order.acceptance_criteria])
     paths = list(getattr(order, 'reference_paths', []))
     # A drive letter that starts a token (not the 'p' of 'http://', not a URL scheme '://') begins a document path.
     # A path never contains = * ? ' ( ): a sentence such as "E:\proj = a game ... see notes.md" is prose, not one path.
     paths += re.findall(r'(?<![A-Za-z0-9])[A-Za-z]:[/\\](?![/\\])[^\r\n"<>|`=*?\x27()]*?\.(?:docx|md|txt)(?=[\s"\x27`)\],;:]|$)', text, re.I)
+    paths += _posix_document_paths(text)
     documents = {}
     for value in dict.fromkeys(paths):
         path = Path(value)

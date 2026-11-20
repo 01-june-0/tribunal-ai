@@ -24,6 +24,15 @@ from schemas.builder_result import BuilderResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 
+def _clip_error(text, limit: int = 900) -> str:
+    """A CLI failure prints its banner and the echoed prompt first and the actual error last, so keep both ends."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return text
+    head = limit // 3
+    return text[:head] + "\n...\n" + text[-(limit - head):]
+
+
 class Orchestrator:
     """
     Central Controller for AI DEV DIRECTOR.
@@ -985,7 +994,7 @@ class Orchestrator:
             last_err = err
             cat = self.pm.classify_error(err)
             self.sm.log_audit(run_id, "ORCHESTRATOR", "REVIEWER_RETRY",
-                              json.dumps({"attempt": attempt + 1, "provider": domain, "category": cat.value, "error": err[:500]}, ensure_ascii=False))
+                              json.dumps({"attempt": attempt + 1, "provider": domain, "category": cat.value, "error": _clip_error(err)}, ensure_ascii=False))
             logger.warning(f"[HEAD proxy] review attempt {attempt + 1} on {domain} failed ({cat.value}): {err[:200]}")
             if cat in self.PROVIDER_DOWN:
                 try:
@@ -1019,7 +1028,7 @@ class Orchestrator:
                 last_err = f"PROVIDER_UNAVAILABLE: {domain} recovering without an available trial"
             cat = self.pm.classify_error(last_err)
             self.sm.log_audit(run_id, "ORCHESTRATOR", "DECISION_RETRY",
-                              json.dumps({"attempt": attempt + 1, "provider": domain, "category": cat.value, "error": last_err[:500]}, ensure_ascii=False))
+                              json.dumps({"attempt": attempt + 1, "provider": domain, "category": cat.value, "error": _clip_error(last_err)}, ensure_ascii=False))
             if cat in self.PROVIDER_DOWN:
                 try:
                     self.pm.parse_cli_error(domain, last_err)
