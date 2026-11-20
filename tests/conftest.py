@@ -4,6 +4,7 @@ import sys
 import tempfile
 import sqlite3
 import pytest
+from pathlib import Path
 
 from core.db_path import DEFAULT_DB_PATH
 
@@ -146,3 +147,34 @@ def provider_state(isolate_provider_db):
             pm.set_status(dom.upper(), ProviderStatus(st) if isinstance(st, str) else st, "provider_state fixture")
         return pm
     return _set
+
+
+def _names_in_production_db() -> bytes:
+    """Raw bytes of the operator's real database (and its WAL): a run id recorded there is stored as plain text."""
+    data = b""
+    for path in (DEFAULT_DB_PATH, Path(str(DEFAULT_DB_PATH) + "-wal")):
+        try:
+            data += Path(path).read_bytes()
+        except OSError:
+            pass
+    return data
+
+
+@pytest.fixture(scope="session", autouse=True)
+def remove_run_folders_left_by_tests():
+    """The Orchestrator writes evidence to <repo>/runs/<run id> and many tests read it back from there, so the suite
+    used to leave ~600 folders behind on every run. Folders that appeared during the session are removed afterwards,
+    except any whose id is recorded in the real database (a mission the operator ran while the tests were going)."""
+    import shutil
+    runs = Path(__file__).resolve().parents[1] / "runs"
+    before = {d.name for d in runs.iterdir()} if runs.is_dir() else set()
+    yield
+    if not runs.is_dir():
+        return
+    recorded = _names_in_production_db()
+    for folder in runs.iterdir():
+        if folder.name in before or not folder.is_dir() or folder.is_symlink():
+            continue
+        if folder.name.encode("utf-8") in recorded:
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
