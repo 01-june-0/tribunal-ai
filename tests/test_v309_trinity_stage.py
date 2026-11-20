@@ -38,7 +38,7 @@ def test_stage_files_are_served_with_the_strict_csp(http_server):
 
 
 def test_only_the_allowlisted_console_files_are_served(http_server):
-    for path in ("/stage.js.bak", "/../config.yaml", "/console/stage.js", "/companion.json", "/data/solomon-bridge.token"):
+    for path in ("/stage.js.bak", "/../config.yaml", "/console/stage.js", "/companion.json", "/data/bridge.token"):
         assert request(http_server, "GET", path)[0] == 404, path
 
 
@@ -55,9 +55,9 @@ def test_stage_page_needs_no_inline_code_or_external_host():
 def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     js = (CONSOLE / "stage.js").read_text(encoding="utf-8")
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
-    assert called == {"/ops/activity", "/status", "/ops/replay", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide"}
-    assert js.count("method:'POST'") == 3                             # writes: chat to HEAD, a role change, a delivery decision
-    assert "'X-Solomon-Bridge':roleToken" in js                        # the role change carries the local token
+    assert called == {"/ops/activity", "/status", "/ops/replay", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/ai", "/ops/ai/refresh", "/providers/refresh"}
+    assert js.count("method:'POST'") == 6                             # writes: chat to HEAD, a role change, a delivery decision, AI settings, "check now", AI status recheck
+    assert "'X-Tribunal-Token':roleToken" in js                        # the role change carries the local token
 
 
 def test_mission_calls_are_time_ordered_and_skip_running_rows():
@@ -104,10 +104,10 @@ def test_folder_picker_needs_the_local_token_and_returns_the_chosen_path(http_se
     import companion_server
     monkeypatch.setattr(companion_server, "pick_folder", lambda initial="": {"path": "E:/work/프로젝트"})
     assert request(http_server, "POST", "/ops/pick-folder")[0] == 403                    # no token: no dialog
-    code, body = request(http_server, "POST", "/ops/pick-folder", headers={"X-Solomon-Bridge": "test-token"})
+    code, body = request(http_server, "POST", "/ops/pick-folder", headers={"X-Tribunal-Token": "test-token"})
     assert code == 200 and json.loads(body)["path"] == "E:/work/프로젝트"
     monkeypatch.setattr(companion_server, "pick_folder", lambda initial="": {"error": "busy"})
-    assert request(http_server, "POST", "/ops/pick-folder", headers={"X-Solomon-Bridge": "test-token"})[0] == 409
+    assert request(http_server, "POST", "/ops/pick-folder", headers={"X-Tribunal-Token": "test-token"})[0] == 409
 
 
 def test_only_one_folder_dialog_at_a_time_and_cancel_is_an_empty_path(monkeypatch):

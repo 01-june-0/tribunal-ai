@@ -27,7 +27,6 @@ UI_TEXT: Dict[str, str] = {
     "open_project": "프로젝트 폴더 열기",
     "apply_verify": "프로젝트에 적용하고 검증",
     "discard": "결과 폐기",
-    "refresh_providers": "AI 상태 새로고침",
     "approve_resume": "승인하고 계속",
     "reject": "거절",
     "cancel": "취소",

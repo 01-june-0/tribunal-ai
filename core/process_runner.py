@@ -130,16 +130,23 @@ class ProcessTreeRunner:
         """Every AI CLI call is written to the work ledger (core.usage) around the real execution; ledger problems
         never affect the call itself."""
         row_id = None
+        on_stdout_line = None
         try:
             from core import usage
-            if usage.provider_of(argv[0] if argv else "") and not cls._guarded(argv):
-                row_id = usage.call_started(argv, stdin_data)
+            provider = usage.provider_of(argv[0] if argv else "")
+            if provider and (stdin_data or "").strip() and not cls._guarded(argv):
+                # core.call_activity lets the console show what the CLI does during the call: Claude is given a
+                # session id so its transcript can be found, Antigravity's stream is summarised line by line.
+                from core import call_activity
+                argv, trace_id = call_activity.prepare(provider, argv)
+                row_id = usage.call_started(argv, stdin_data, cwd=cwd, trace_id=trace_id)
+                on_stdout_line = call_activity.stream_recorder(provider, row_id, cwd)
         except Exception:
             row_id = None
         try:
             result = cls._run_process(argv, cwd=cwd, env=env, timeout=timeout, no_output_timeout=no_output_timeout,
                                       heartbeat_interval=heartbeat_interval, on_heartbeat=on_heartbeat,
-                                      stdin_data=stdin_data)
+                                      stdin_data=stdin_data, on_stdout_line=on_stdout_line)
         except BaseException as exc:
             try:
                 from core import usage
@@ -169,7 +176,8 @@ class ProcessTreeRunner:
         no_output_timeout: Optional[float] = None,
         heartbeat_interval: float = 30.0,
         on_heartbeat: Optional[Callable[[int, float], None]] = None,
-        stdin_data: Optional[str] = None
+        stdin_data: Optional[str] = None,
+        on_stdout_line: Optional[Callable[[str], None]] = None
     ) -> ProcessResult:
         """
         Executes a CLI command via Popen (shell=False).
@@ -221,16 +229,21 @@ class ProcessTreeRunner:
             except Exception as e:
                 logger.warning(f"[ProcessTreeRunner] Failed to write to stdin: {e}")
 
-        def _reader(pipe, chunk_list):
+        def _reader(pipe, chunk_list, on_line=None):
             try:
                 for line in iter(pipe.readline, ""):
                     chunk_list.append(line)
                     last_output_time[0] = time.time()
+                    if on_line:
+                        try:
+                            on_line(line)
+                        except Exception:
+                            on_line = None          # an observer must never disturb the call
                 pipe.close()
             except Exception:
                 pass
 
-        out_thread = threading.Thread(target=_reader, args=(process.stdout, stdout_chunks), daemon=True)
+        out_thread = threading.Thread(target=_reader, args=(process.stdout, stdout_chunks, on_stdout_line), daemon=True)
         err_thread = threading.Thread(target=_reader, args=(process.stderr, stderr_chunks), daemon=True)
         out_thread.start()
         err_thread.start()

@@ -1088,6 +1088,15 @@ class Orchestrator:
         rev_family = getattr(self.reviewer, "agent_family", rev_prov).lower()
         is_both_claude = (head_prov in ("claude", "anthropic") and rev_prov in ("claude", "anthropic"))
         is_same_family = (head_family == rev_family and head_family not in ("mock", "unknown", "openai"))
+        if self.config.get("manual_roles"):
+            # Roles set in the console may repeat an AI. The review is independent only when REVIEWER is a different
+            # AI from both HEAD and BUILDER (core.role_settings.independence says the same thing to the console).
+            rev_dom = self._get_agent_domain(self.reviewer)
+            shared = [name for name, agent in (("HEAD", self.head), ("BUILDER", self.builder))
+                      if rev_dom not in ("MOCK", "UNKNOWN") and self._get_agent_domain(agent) == rev_dom]
+            if shared:
+                is_same_family = True
+                head_family = f"{rev_dom.lower()}; REVIEWER is the same AI as {' and '.join(shared)}"
         if (is_both_claude or is_same_family) and self._proxy():
             logger.warning(f"Reduced independence: HEAD ({head_prov}) and REVIEWER ({rev_prov}) share a provider after failover; "
                            "PASS kept on the user's delegated policy (tests + review green), recorded in the rationale.")

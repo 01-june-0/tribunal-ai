@@ -1,7 +1,7 @@
 """
 v3.2 DELIVERY: a mission's finished worktree is applied to the project file by file (new / changed-by-the-AIs /
 conflict-with-the-user), chains of milestones resolve to the project snapshot they started from, and the finished
-mission applies itself under the auto_apply policy. Plus the goal-level bridge Solomon uses and execution profiles.
+mission applies itself under the auto_apply policy. Plus the goal-level bridge and execution profiles.
 """
 import json
 import shutil
@@ -137,25 +137,25 @@ def test_mission_records_profile_source_and_auto_apply_policy(tmp_path):
     from schemas.order import OrderSchema
     runner = MissionRunner(lambda: None, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "p"), "g", OrderSchema(goal="g", allowed_paths=["src/**"]), config={"autonomy": {"auto_apply": "on_done"}},
-                      profile="quick", source="solomon", request_id="req-12345678")
-    assert m["max_steps"] == 2 and m["profile"] == "quick" and m["source"] == "solomon" and m["auto_apply"] == "on_done"
+                      profile="quick", source="bridge", request_id="req-12345678")
+    assert m["max_steps"] == 2 and m["profile"] == "quick" and m["source"] == "bridge" and m["auto_apply"] == "on_done"
     assert deliverable_run_id(m) is None
     m["base_worktree"] = "X/.director_worktrees/RUN-Z"
     m["steps"][0].update(run_id="RUN-Z", result={"final_state": "PASS", "worktree_path": "X/.director_worktrees/RUN-Z"})
     assert deliverable_run_id(m) == "RUN-Z"
 
 
-# ------------------------------------------------------------------ bridge v2 (Solomon -> goal-level missions)
+# ------------------------------------------------------------------ bridge v2 (goal-level missions)
 
 def test_bridge_missions_need_the_token_and_respect_the_allowlist(http_server, monkeypatch):
     import companion_server
-    monkeypatch.setattr(companion_server.d, "load_config", lambda: {"solomon": {"allowed_roots": ["E:/work"], "denied": ["E:/work/SOLOMON"]}, "projects": {}})
+    monkeypatch.setattr(companion_server.d, "load_config", lambda: {"bridge": {"allowed_roots": ["E:/work"], "denied": ["E:/work/CONSOLE"]}, "projects": {}})
     assert request(http_server, "GET", "/bridge/projects")[0] == 403
-    body = json.dumps({"request_id": "solomon-req-0001", "project_path": "C:/elsewhere/proj", "goal": "make a thing"})
-    code, data = request(http_server, "POST", "/bridge/missions", body=body, headers={"X-Solomon-Bridge": "test-token", "Content-Type": "application/json"})
+    body = json.dumps({"request_id": "bridge-req-0001", "project_path": "C:/elsewhere/proj", "goal": "make a thing"})
+    code, data = request(http_server, "POST", "/bridge/missions", body=body, headers={"X-Tribunal-Token": "test-token", "Content-Type": "application/json"})
     assert code == 400 and "허용된 폴더 밖" in json.loads(data)["error"]
-    body = json.dumps({"request_id": "solomon-req-0002", "project_path": "E:/work/SOLOMON", "goal": "modify yourself"})
-    code, data = request(http_server, "POST", "/bridge/missions", body=body, headers={"X-Solomon-Bridge": "test-token", "Content-Type": "application/json"})
+    body = json.dumps({"request_id": "bridge-req-0002", "project_path": "E:/work/CONSOLE", "goal": "modify yourself"})
+    code, data = request(http_server, "POST", "/bridge/missions", body=body, headers={"X-Tribunal-Token": "test-token", "Content-Type": "application/json"})
     assert code == 400 and "지시할 수 없" in json.loads(data)["error"]
 
 
@@ -166,23 +166,23 @@ def test_bridge_mission_start_decide_and_duplicate_request(http_server, monkeypa
     target = tmp_path / "game"; target.mkdir()
     calls = []
     monkeypatch.setattr(companion_server.d, "start_goal_mission", lambda path, goal, **kw: calls.append((path, goal, kw)) or {"status": "started", "mission_id": "MSN-X"})
-    hdr = {"X-Solomon-Bridge": "test-token", "Content-Type": "application/json"}
-    body = json.dumps({"request_id": "solomon-req-1234", "project_path": str(target), "goal": "[빠르게] 데일리 미션 추가", "profile": "quick"})
+    hdr = {"X-Tribunal-Token": "test-token", "Content-Type": "application/json"}
+    body = json.dumps({"request_id": "bridge-req-1234", "project_path": str(target), "goal": "[빠르게] 데일리 미션 추가", "profile": "quick"})
     code, data = request(http_server, "POST", "/bridge/missions", body=body, headers=hdr)
     assert code == 202 and json.loads(data)["mission_id"] == "MSN-X"
-    assert calls[0][2]["source"] == "solomon" and calls[0][2]["request_id"] == "solomon-req-1234" and calls[0][2]["profile"] == "quick"
+    assert calls[0][2]["source"] == "bridge" and calls[0][2]["request_id"] == "bridge-req-1234" and calls[0][2]["profile"] == "quick"
     # a retry with the same request_id finds the mission instead of starting another
     store = MissionStore()
-    m = {"mission_id": "MSN-X", "project_path": str(target), "goal": "g", "status": "RUNNING", "steps": [], "request_id": "solomon-req-1234",
+    m = {"mission_id": "MSN-X", "project_path": str(target), "goal": "g", "status": "RUNNING", "steps": [], "request_id": "bridge-req-1234",
          "updated_at": "2026-10-24T00:00:00", "created_at": "2026-10-24T00:00:00", "max_steps": 2}
     store.save(m)
     code, data = request(http_server, "POST", "/bridge/missions", body=body, headers=hdr)
     assert code == 200 and json.loads(data)["status"] == "duplicate" and len(calls) == 1
     code, data = request(http_server, "GET", "/bridge/missions/MSN-X", headers=hdr)
-    assert code == 200 and json.loads(data)["source"] in ("chat", "solomon") and json.loads(data)["mission_id"] == "MSN-X"
+    assert code == 200 and json.loads(data)["source"] in ("chat", "bridge") and json.loads(data)["mission_id"] == "MSN-X"
     decided = []
     monkeypatch.setattr(companion_server.d, "decide_mission", lambda mid, action, **kw: decided.append((mid, action, kw)) or {"status": "applied", "files": ["a.py"]})
     code, data = request(http_server, "POST", "/bridge/missions/MSN-X/decide", body=json.dumps({"action": "apply", "on_conflict": "skip"}), headers=hdr)
-    assert code == 200 and decided[0][0] == "MSN-X" and decided[0][2]["by"] == "SOLOMON" and decided[0][2]["on_conflict"] == "skip"
+    assert code == 200 and decided[0][0] == "MSN-X" and decided[0][2]["by"] == "BRIDGE" and decided[0][2]["on_conflict"] == "skip"
     code, data = request(http_server, "GET", "/bridge/digest", headers=hdr)
     assert code == 200 and "awaiting_decision" in json.loads(data)

@@ -101,7 +101,7 @@ def resume(run_id: str):
 @click.option("--no-apply", is_flag=True, help="Keep the result in the worktree instead of applying it to the project")
 def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool):
     """The compact way: `director do "캡션 검사기 만들어줘"` inside a project folder. Starts the mission through the
-    running 8081 companion (so it shows on the stage) or, when no companion is up, runs it right here."""
+    running companion console (so it shows on the stage) or, when no companion is up, runs it right here."""
     import os
     import urllib.request
     import uuid
@@ -111,16 +111,20 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
     profile = profile or tag or "standard"
     payload = {"request_id": "cli-" + uuid.uuid4().hex[:16], "project_path": str(Path(target).resolve()), "goal": goal,
                "profile": profile, "auto_apply": "off" if no_apply else None}
-    token_path = Path(__file__).resolve().parent / "data" / "solomon-bridge.token"
-    from core.companion_config import companion_port, DEFAULT_PORT
+    from core.companion_config import bridge_token_path
+    token_path = bridge_token_path(Path(__file__).resolve().parent)
+    from core.companion_config import active_port, verify, local_open, DEFAULT_PORT
     try:
-        port = companion_port()
+        port = active_port()
     except (OSError, ValueError, TypeError):          # unreadable companion*.json must not block the in-process fallback
         port = DEFAULT_PORT
     try:
+        token = token_path.read_text(encoding="utf-8").strip()
+        if not verify(port, token):                    # another program on that port must never receive the token
+            raise RuntimeError("no Tribunal AI console of this folder is listening there")
         req = urllib.request.Request(f"http://127.0.0.1:{port}/bridge/missions", data=json.dumps(payload).encode("utf-8"),
-                                     headers={"Content-Type": "application/json", "X-Solomon-Bridge": token_path.read_text(encoding="utf-8").strip()})
-        with urllib.request.urlopen(req, timeout=600) as r:
+                                     headers={"Content-Type": "application/json", "X-Tribunal-Token": token})
+        with local_open(req, 600) as r:              # never through a proxy: the request carries the token
             res = json.loads(r.read().decode("utf-8"))
         click.echo(f"[{res.get('status')}] " + (res.get("mission_id") or res.get("message") or res.get("error") or ""))
         if res.get("mission_id"):

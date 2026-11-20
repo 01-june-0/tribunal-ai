@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from core.solomon_bridge import SolomonBridge
+from core.order_bridge import OrderBridge
 from schemas.order import OrderSchema
 
 
@@ -23,7 +23,7 @@ def bridge(tmp_path):
         _new_orchestrator=lambda: orch, _project_key=lambda p: p,
         _RUN_LOCK=threading.Lock(), _ACTIVE_PROJECTS={}, _project_busy=lambda *a: False,
         _record_human_required=lambda *a: 'RUN-APPROVAL', invalidate_status_cache=lambda: None)
-    b = SolomonBridge(d, [project])
+    b = OrderBridge(d, [project])
     p = {'request_id': 'request-12345', 'project_path': str(project),
          'order': OrderSchema(goal='Add feature', allowed_paths=['src/helper.py'], acceptance_criteria=['Tests pass']).model_dump()}
     return b, p, calls
@@ -36,7 +36,7 @@ def test_durable_idempotency_and_orchestrator_only(bridge):
     assert b.submit(p)['status'] == 'duplicate'
     assert len(calls) == 1
     assert calls[0]['order'].allowed_paths == ['src/helper.py']
-    assert SolomonBridge(b.d, b.allowed).submit(p)['run_id'] == result['run_id']
+    assert OrderBridge(b.d, b.allowed).submit(p)['run_id'] == result['run_id']
 
 
 def test_same_id_changed_payload_rejected(bridge):
@@ -81,5 +81,5 @@ def test_busy_is_durable_and_not_replayed(bridge):
     with pytest.raises(ValueError, match='진행'): b.submit(p)
     assert b.submit(p)['status'] == 'duplicate'
     with b.connect() as db:
-        assert db.execute('SELECT error FROM solomon_orders').fetchone()[0]
+        assert db.execute('SELECT error FROM bridge_orders').fetchone()[0]
     assert not calls

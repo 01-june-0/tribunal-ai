@@ -13,9 +13,16 @@ DOMAINS = {'openai': 'OPENAI', 'claude': 'ANTHROPIC', 'antigravity': 'GOOGLE'}
 def validate(roles):
     if not isinstance(roles, dict) or set(roles) != {'head', 'builder', 'reviewer'}:
         raise ValueError('HEAD, BUILDER, REVIEWER 세 역할을 모두 지정해야 합니다.')
-    if any(v not in DOMAINS for v in roles.values()) or len(set(roles.values())) != 3:
-        raise ValueError('세 역할에는 서로 다른 AI를 지정해야 합니다.')
-    return dict(roles)
+    if any(v not in DOMAINS for v in roles.values()):
+        raise ValueError('역할에는 claude, openai, antigravity 중 하나를 지정해야 합니다.')
+    return dict(roles)                              # the same AI may hold two or all three roles
+
+
+def independence(roles):
+    """'full' when REVIEWER is a different AI from both HEAD and BUILDER, else 'reduced': an AI reviewing its own
+    plan or its own code is not an independent review. (With autonomy on, such a PASS is kept and noted in the
+    rationale; with it off the run stops for a human — Orchestrator applies the same rule to console-set roles.)"""
+    return 'reduced' if roles.get('reviewer') in (roles.get('head'), roles.get('builder')) else 'full'
 
 def apply(config):
     if PATH.exists():

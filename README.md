@@ -6,6 +6,11 @@
 > - macOS에서 실제 미션으로 검증 (콘솔 포트는 `companion.local.json`, 실행은 `sh start-companion.sh`)
 > - 이 컴퓨터 전용 설정은 git에 올리지 않는 `config.local.yaml`에 둠 (Codex 모델, 추론 강도, Claude 경량 호출)
 > - Claude 호출은 기본으로 MCP·스킬을 끄고 읽기 도구만 사용 (호출당 입력 약 51,000 → 8,000 토큰)
+> - Codex 호출은 기본으로 개인 플러그인·메모리·훅·연결 앱을 끔 (검수 1회 약 52,000 → 7,000 토큰)
+> - 콘솔 포트(기본 8081)가 다른 프로그램에 잡혀 있으면 다음 빈 포트를 자동으로 사용하고, 이미 떠 있으면 그 주소만 알려 줌
+> - 진행 중인 호출의 예상 남은 시간(과거 같은 종류 호출의 중앙값, 추정)과 조용한 시간 표시
+> - `python scripts/demo_console.py` — 지어낸 미션·호출로 채운 데모 콘솔(8190). 실제 기록 없이 화면을 찍거나 둘러볼 수 있음
+> - 콘솔에서 호출을 누르면 그 AI가 호출 중에 쓴 도구와 한 말이 보임 ("호출 안 들여다보기")
 
 **세 개의 AI 코딩 CLI를 한 회사처럼 돌려, 목표 한 줄을 검증된 코드로 바꾸는 로컬 개발 감독관.**
 A local orchestrator that runs three subscription AI CLIs (Claude Code, OpenAI Codex, Google Antigravity) as
@@ -109,7 +114,7 @@ python director.py clean-worktrees -p D:/work/my_project --dry-run
 프로젝트별 검증 명령을 프로젝트 안이 아니라 여기에 두는 이유는 빌더가 그것을 약화시킬 수 없게 하기 위해서입니다.
 
 `companion.json` 은 콘솔 포트와(선택) 허용 프로젝트 목록입니다. 콘솔은 항상 `127.0.0.1` 에만 바인딩되며,
-상태를 바꾸는 요청은 로컬 출처 검사와 브리지 토큰(`data/solomon-bridge.token`, 첫 실행 때 생성)을 요구합니다.
+상태를 바꾸는 요청은 로컬 출처 검사와 브리지 토큰(`data/bridge.token`, 첫 실행 때 생성)을 요구합니다.
 
 ## 구조 (Layout)
 

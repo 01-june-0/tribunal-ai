@@ -139,3 +139,37 @@ def test_g5_html_separates_normal_and_triad_without_new_execution_post():
     assert "setDashboardView" in html and "renderResearch" in html
     assert 'action="/research"' not in html
     assert "innerHTML" not in html
+
+
+def test_triad_switch_is_hidden_until_config_asks_for_it(monkeypatch):
+    """Nothing in the console can start a TRIAD session yet, so the workshop does not offer the view."""
+    import dashboard_server as ds
+    from core.chat_manager import ChatManager
+    from core.state_machine import StateMachine
+    StateMachine(); ChatManager()                                                          # the tables the page reads
+    base = ds.load_config()
+    monkeypatch.setattr(ds, "load_config", lambda: {**base, "triad": None})
+    html = ds.render_html()
+    assert '<span id="mode-switch" hidden>' in html and 'id="triad-mode-btn"' in html      # still there for the scripts, not shown
+    assert "if (modeSwitch && modeSwitch.hidden) initialMode = 'NORMAL'" in html           # a remembered TRIAD view is not reopened
+    assert 'id="refresh-btn"' not in html                                                  # moved to the stage's AI settings panel
+    monkeypatch.setattr(ds, "load_config", lambda: {**base, "triad": {"console_switch": True}})
+    assert '<span id="mode-switch">' in ds.render_html()
+    for odd in ({"console_switch": "true"}, {"console_switch": 1}, "yes"):
+        monkeypatch.setattr(ds, "load_config", lambda odd=odd: {**base, "triad": odd})
+        assert ds.triad_switch_enabled() is False
+
+
+def test_hidden_switch_is_really_hidden_and_the_old_refresh_button_is_gone():
+    import dashboard_server as ds
+    import dashboard_i18n
+    from pathlib import Path
+    from core.chat_manager import ChatManager
+    from core.state_machine import StateMachine
+    StateMachine(); ChatManager()
+    html = ds.render_html()
+    assert "#hdr #mode-switch[hidden] { display:none; }" in html              # the id rule sets display:flex, so the attribute alone would not hide it
+    console_css = (Path(ds.__file__).parent / "console" / "console.css").read_text(encoding="utf-8")
+    assert "#mode-switch" not in console_css                                   # nothing in the workshop overlay shows it again
+    assert "refresh-btn" not in html                                           # markup, script and style of the old button
+    assert "refresh_providers" not in Path(dashboard_i18n.__file__).read_text(encoding="utf-8")

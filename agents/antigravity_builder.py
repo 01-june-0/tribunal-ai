@@ -617,6 +617,8 @@ except Exception as e:
                 "--mode", "accept-edits",
                 "--sandbox"
             ]
+            from core.cli_models import agy_extra_args
+            cmd += agy_extra_args()                  # model / effort chosen in the console's AI settings
             active_prompt = prompt_text
             attempts = []
             final_event = None

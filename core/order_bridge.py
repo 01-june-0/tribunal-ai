@@ -8,16 +8,28 @@ from datetime import datetime
 from pathlib import Path
 
 
-class SolomonBridge:
+class OrderBridge:
     def __init__(self, dashboard, allowed_projects):
         self.d = dashboard
         self.allowed = {str(Path(p).resolve()).casefold() for p in allowed_projects}
         self.lock = threading.Lock()
         with self.connect() as db:
-            db.execute('''CREATE TABLE IF NOT EXISTS solomon_orders (
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'solomon_orders' in tables and 'bridge_orders' not in tables:      # a database from before the rename
+                try:
+                    db.execute('ALTER TABLE solomon_orders RENAME TO bridge_orders')
+                except sqlite3.OperationalError:                                  # another process renamed it first
+                    pass
+            db.execute('''CREATE TABLE IF NOT EXISTS bridge_orders (
                 request_id TEXT PRIMARY KEY, payload_hash TEXT NOT NULL,
                 payload TEXT NOT NULL, run_id TEXT, received_at TEXT NOT NULL,
                 error TEXT)''')
+            if 'solomon_orders' in tables and 'bridge_orders' in tables:          # both exist: keep the old rows, drop the old table
+                try:
+                    db.execute('INSERT OR IGNORE INTO bridge_orders SELECT * FROM solomon_orders')
+                    db.execute('DROP TABLE solomon_orders')
+                except sqlite3.OperationalError:
+                    pass
 
     def connect(self):
         db = sqlite3.connect(str(self.d.resolve_db_path()), timeout=15)
@@ -28,13 +40,13 @@ class SolomonBridge:
         with self.connect() as db:
             rows = db.execute('''SELECT s.request_id,s.run_id,s.received_at,s.error,
                 r.goal,r.current_state,r.project_path,r.updated_at
-                FROM solomon_orders s LEFT JOIN runs r ON r.run_id=s.run_id
+                FROM bridge_orders s LEFT JOIN runs r ON r.run_id=s.run_id
                 ORDER BY s.received_at DESC LIMIT 50''').fetchall()
         return [dict(r) for r in rows]
 
     def status(self, request_id):
         with self.connect() as db:
-            row = db.execute('SELECT * FROM solomon_orders WHERE request_id=?', (request_id,)).fetchone()
+            row = db.execute('SELECT * FROM bridge_orders WHERE request_id=?', (request_id,)).fetchone()
         if not row:
             raise ValueError('알 수 없는 요청입니다')
         row = dict(row)
@@ -57,7 +69,7 @@ class SolomonBridge:
         if not ok:
             raise ValueError(project)
         if str(Path(project).resolve()).casefold() not in self.allowed:
-            raise ValueError('솔로몬에 실행 허용된 프로젝트가 아닙니다')
+            raise ValueError('실행이 허용된 프로젝트가 아닙니다')
         order = OrderSchema(**payload.get('order', {}))
         if not order.goal.strip() or not order.acceptance_criteria:
             raise ValueError('작업 목표와 인수 기준이 필요합니다')
@@ -68,13 +80,13 @@ class SolomonBridge:
         with self.lock:
             with self.connect() as db:
                 db.execute('BEGIN IMMEDIATE')
-                existing = db.execute('SELECT payload_hash,run_id FROM solomon_orders WHERE request_id=?', (ident,)).fetchone()
+                existing = db.execute('SELECT payload_hash,run_id FROM bridge_orders WHERE request_id=?', (ident,)).fetchone()
                 if existing:
                     if existing['payload_hash'] != digest:
                         raise ValueError('동일 request_id에 다른 작업을 보낼 수 없습니다')
                     return {'request_id': ident, 'run_id': existing['run_id'], 'status': 'duplicate'}
                 # Persist before dispatch. A crash here is visible and is NOT silently replayed.
-                db.execute('INSERT INTO solomon_orders VALUES(?,?,?,?,?,NULL)',
+                db.execute('INSERT INTO bridge_orders VALUES(?,?,?,?,?,NULL)',
                            (ident, digest, canonical, None, datetime.utcnow().isoformat()))
             orch = self.d._new_orchestrator()
             key = self.d._project_key(project)
@@ -90,25 +102,25 @@ class SolomonBridge:
                         run_id = orch.reserve_run_id(project, order.goal)
                         self.d._ACTIVE_PROJECTS[key] = run_id
                     with self.connect() as db:
-                        db.execute('UPDATE solomon_orders SET run_id=? WHERE request_id=?', (run_id, ident))
-                orch.sm.log_audit(run_id, 'ORCHESTRATOR', 'SOLOMON_INTAKE', ident)
+                        db.execute('UPDATE bridge_orders SET run_id=? WHERE request_id=?', (run_id, ident))
+                orch.sm.log_audit(run_id, 'ORCHESTRATOR', 'BRIDGE_INTAKE', ident)
                 if not reasons:
                     def work():
                         try:
                             orch.run(project, order.goal, run_id=run_id, order=order)
                         except Exception as exc:
                             with self.connect() as db:
-                                db.execute('UPDATE solomon_orders SET error=? WHERE request_id=?', (str(exc)[:1000], ident))
+                                db.execute('UPDATE bridge_orders SET error=? WHERE request_id=?', (str(exc)[:1000], ident))
                             # Only orchestrator owns transitions; leave actual state and failure visible.
                         finally:
                             with self.d._RUN_LOCK:
                                 self.d._ACTIVE_PROJECTS.pop(key, None)
                             self.d.invalidate_status_cache()
-                    threading.Thread(target=work, name='solomon-' + ident, daemon=True).start()
+                    threading.Thread(target=work, name='bridge-' + ident, daemon=True).start()
                 self.d.invalidate_status_cache()
                 return {'request_id': ident, 'run_id': run_id,
                         'status': 'awaiting_approval' if reasons else 'submitted', 'auto_applied': False}
             except Exception as exc:
                 with self.connect() as db:
-                    db.execute('UPDATE solomon_orders SET error=? WHERE request_id=?', (str(exc)[:1000], ident))
+                    db.execute('UPDATE bridge_orders SET error=? WHERE request_id=?', (str(exc)[:1000], ident))
                 raise

@@ -592,7 +592,8 @@ class ProviderManager:
             "reason": "All primary providers are healthy."
         }
 
-        if mode == FailoverMode.STOP:
+        if mode == FailoverMode.STOP and not strict:
+            # (strict = roles chosen by the operator, possibly one AI for everything: only those CLIs must be usable)
             assigned["can_proceed"] = False
             down_str = ", ".join(down)
             assigned["reason"] = f"Multiple providers down ({down_str}). Minimum 2 healthy providers required. Halting autonomously."

@@ -355,6 +355,7 @@ def refresh_providers() -> dict:
     """Manual provider refresh: cheap probes with force recheck, status follows the actual result."""
     pm = ProviderManager()
     statuses = pm.check_health(force=True)
+    invalidate_status_cache()                    # a /status built while the probes ran must not outlive them
     return {k: v.value for k, v in statuses.items()}
 
 
@@ -785,7 +786,7 @@ def build_replay_payload(mission_id: str = "") -> dict:
 
 
 def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
-    """One mission as the console, the bridge and Solomon see it (status, steps, deliverable, apply state)."""
+    """One mission as the console and the bridge see it (status, steps, deliverable, apply state)."""
     from core.mission import _pid_alive, deliverable_run_id
     sm = sm or StateMachine()
 
@@ -815,7 +816,7 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
 def start_goal_mission(project_path: str, goal: str, profile: Optional[str] = None, source: str = "api",
                        request_id: Optional[str] = None, create_project: bool = False, auto_apply: Optional[str] = None) -> dict:
     """Goal in, mission out: HEAD turns the goal into an ORDER, the proxy gate narrows it, and the mission runs in
-    the background. Used by the Solomon bridge and the CLI. Returns {status: started|busy|question|escalated|
+    the background. Used by the bridge and the CLI. Returns {status: started|busy|question|escalated|
     rejected, ...}; nothing here bypasses the entry gate or the Scope Guard."""
     from core.bootstrap import prepare_project
     sid = active_session_id()
@@ -838,7 +839,7 @@ def start_goal_mission(project_path: str, goal: str, profile: Optional[str] = No
         orch = Orchestrator(config=load_config())
     except Exception as e:
         return {"status": "rejected", "error": str(e)[:300]}
-    label = {"solomon": "솔로몬 CEO 지시", "cli": "CLI 지시", "api": "외부 지시"}.get(source, source)
+    label = {"bridge": "외부 지시", "solomon": "외부 지시", "cli": "CLI 지시", "api": "외부 지시"}.get(source, source)
     cm.add_message(sid, "USER", f"[{label} · {profile}] {goal}")
     try:
         previous = latest_deliverable(project_path) if autopilot.enabled(orch.config) else None
@@ -2185,12 +2186,6 @@ DASHBOARD_JS = r"""
     .catch(function (e) { setText('project-result', 'Failed: ' + e); })
     .then(function () { pbtn.disabled = false; pollStatus(); pollMessages(); });
   });
-  var rbtn = document.getElementById('refresh-btn');
-  if (rbtn) rbtn.addEventListener('click', function () {
-    rbtn.disabled = true;
-    fetch('/providers/refresh', { method: 'POST', headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' } })
-      .catch(function () {}).then(function () { rbtn.disabled = false; pollStatus(); });
-  });
   var inspect = document.getElementById('alert-inspect');
   if (inspect) inspect.addEventListener('click', inspectRun);
   var normalModeBtn = document.getElementById('normal-mode-btn');
@@ -2199,6 +2194,8 @@ DASHBOARD_JS = r"""
   if (triadModeBtn) triadModeBtn.addEventListener('click', function () { setDashboardView('TRIAD'); });
   var initialMode = 'NORMAL';
   try { initialMode = window.localStorage.getItem('director-dashboard-mode') || 'NORMAL'; } catch (e) {}
+  var modeSwitch = document.getElementById('mode-switch');
+  if (modeSwitch && modeSwitch.hidden) initialMode = 'NORMAL';        // the TRIAD view is not offered: never open on it
   setDashboardView(initialMode === 'TRIAD' ? 'TRIAD' : 'NORMAL');
   chatBox.scrollTop = chatBox.scrollHeight;               // initial load only
   pollStatus();
@@ -2233,9 +2230,9 @@ DASHBOARD_CSS = r"""
     #hdr .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; margin-right: 4px; }
     #hdr button { margin-left: auto; flex-shrink: 0; }
     #hdr #mode-switch { display:flex; gap:4px; margin-left:auto; }
+    #hdr #mode-switch[hidden] { display:none; }
     #hdr #mode-switch button { margin-left:0; }
     #mode-switch button.on { color:var(--blue); border-color:var(--blue); background:rgba(90,169,255,0.10); }
-    #refresh-btn { margin-left:0 !important; }
     #todo-line { display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
     #core-mode { white-space: nowrap; }
     #right h2 { flex-wrap: wrap; row-gap: 2px; }
@@ -2485,6 +2482,16 @@ def _stale_ids_html(stale_runs) -> str:
     return "".join(f"<li>{html_lib.escape(str(r['run_id']))} \u00b7 {html_lib.escape(str(r['state']))} \u00b7 {html_lib.escape(str(r['updated_at'] or ''))}</li>" for r in stale_runs)
 
 
+def triad_switch_enabled() -> bool:
+    """The NORMAL / TRIAD switch of the workshop page. TRIAD research has an engine and a read-only status view,
+    but nothing in the console or the CLI can start a session yet, so the switch is hidden unless config.yaml says
+    `triad: {console_switch: true}` (for whoever is finishing that feature)."""
+    try:
+        return (load_config().get("triad") or {}).get("console_switch") is True
+    except Exception:
+        return False
+
+
 def render_html():
     """Initial server-side render (compact 100vh command center). Afterwards the page only polls JSON and appends chat."""
     try:
@@ -2700,8 +2707,7 @@ def render_html():
         <span class="sep">|</span>
         <span id="hdr-human" class="badge {'b-red' if human else 'b-green'}" data-raw="{'HUMAN REQUIRED' if human else 'SAFE'}">{I18N.t("human_required") if human else I18N.t("safe")}</span>
         <span class="lbl" style="margin-left:8px;">{I18N.t("my_todo")}</span><span id="todo-line" style="color:var(--amber);">{html_lib.escape(st.get("todo") or "")}</span>
-        <span id="mode-switch"><button id="normal-mode-btn" type="button" class="ghost on">NORMAL</button><button id="triad-mode-btn" type="button" class="ghost">TRIAD 연구</button></span>
-        <button id="refresh-btn" type="button" class="ghost">{I18N.t("refresh_providers")}</button>
+        <span id="mode-switch"{'' if triad_switch_enabled() else ' hidden'}><button id="normal-mode-btn" type="button" class="ghost on">NORMAL</button><button id="triad-mode-btn" type="button" class="ghost">TRIAD 연구</button></span>
     </div>
 
     <div id="corestrip">
@@ -2996,6 +3002,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif parsed.path == '/ops/activity':
             try:
                 self._send_json(build_activity_payload())
+            except Exception as e:
+                self._send_json({"error": str(e)[:300]}, 500)
+        elif parsed.path == '/ops/call':
+            # Commands, paths and the model's own words: answer only a request addressed to this machine.
+            if not is_request_origin_allowed(self.headers, self.server.server_address[1])[0]:
+                return self._send_json({"error": "local requests only"}, 403)
+            q = urllib.parse.parse_qs(parsed.query)
+            try:
+                from core import call_activity
+                self._send_json(call_activity.activity(int(q.get('id', ['0'])[0][:12])))
+            except ValueError:
+                self._send_json({"error": "id must be a number"}, 400)
             except Exception as e:
                 self._send_json({"error": str(e)[:300]}, 500)
         elif parsed.path == '/ops/digest':

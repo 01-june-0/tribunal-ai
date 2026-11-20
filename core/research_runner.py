@@ -12,6 +12,11 @@ from core.provider_manager import ErrorCategory
 from core.triad_provider import ALL_TRIAD_DOMAINS
 
 
+def _agy_args():
+    from core.cli_models import agy_extra_args
+    return agy_extra_args()
+
+
 class ResearchProviderCallError(RuntimeError):
     """retryable=True marks a failure this module itself classified as a bounded-retry candidate (transport/
     runtime level only - see TriadResearchRunner._is_retryable). meta carries whatever call metadata (executable,
@@ -70,9 +75,9 @@ class TriadResearchRunner:
             # without file-read tools or permission bypasses, and exposes an explicit final result event.
             message = {"event": "user", "message": {"role": "user", "content": [{"type": "text", "text": prompt}]}}
             return (
-                [executable, "--input-format", "stream-json", "--output-format", "stream-json", "--sandbox"],
+                [executable, "--input-format", "stream-json", "--output-format", "stream-json", "--sandbox", *_agy_args()],
                 json.dumps(message, ensure_ascii=False) + "\n",
-                "agy --input-format stream-json --output-format stream-json --sandbox <stdin>",
+                " ".join(["agy --input-format stream-json --output-format stream-json --sandbox", *_agy_args(), "<stdin>"]),
             )
         raise ValueError(f"unsupported TRIAD domain: {domain}")
 

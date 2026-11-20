@@ -29,13 +29,13 @@ def request(server, method='POST', path='/ops/shutdown', headers=None):
 def test_shutdown_requires_token(http_server):
     server, thread = http_server
     assert request(server)[0] == 403
-    assert request(server, headers={'X-Solomon-Bridge': 'test-token', 'Origin': 'https://evil.example'})[0] == 403
+    assert request(server, headers={'X-Tribunal-Token': 'test-token', 'Origin': 'https://evil.example'})[0] == 403
     assert server.stopping is False and thread.is_alive()
 
 
 def test_shutdown_stops_the_server(http_server):
     server, thread = http_server
-    code, body = request(server, headers={'X-Solomon-Bridge': 'test-token'})
+    code, body = request(server, headers={'X-Tribunal-Token': 'test-token'})
     assert code == 200 and json.loads(body)['stopping'] is True
     thread.join(timeout=5)
     assert not thread.is_alive() and server.stopping is True

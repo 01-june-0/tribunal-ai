@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRIBUNAL AI · TRINITY</title><link rel="stylesheet" href="/stage.css"><script src="/trinity.js" defer></script><script src="/stage.js" defer></script><script src="/console.js" defer></script></head>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRIBUNAL AI · TRINITY</title><link rel="stylesheet" href="/stage.css"><script src="/i18n.js" defer></script><script src="/trinity.js" defer></script><script src="/stage.js" defer></script><script src="/console.js" defer></script></head>
 <body class="trinity" data-view="stage" data-phase="IDLE">
 <canvas id="trinity-canvas" aria-hidden="true"></canvas>
 <div id="intro" aria-hidden="true"><span>THREE MINDS</span><strong>ONE CORE</strong></div>
@@ -24,6 +24,8 @@
     <button type="button" id="tab-workshop" aria-pressed="false">작업실<em id="pending-badge" hidden></em></button>
     <button type="button" id="btn-replay" title="지난 미션을 실제 기록으로 다시 보기 (R)">다시보기</button>
     <button type="button" id="btn-broadcast" title="방송 모드 (B)">방송 모드</button>
+    <button type="button" id="btn-ai" title="AI별 모델·추론 강도와 요금제·한도">AI 설정</button>
+    <button type="button" id="btn-lang" title="Switch to English">EN</button>
     <button type="button" id="btn-halt" title="실행 중인 미션을 멈춥니다 · 대시보드는 켜진 채로">작업 정지</button>
     <button type="button" id="btn-shutdown" title="Tribunal AI 시스템 중지 · 기록과 작업본은 남습니다">시스템 중지</button>
   </nav>
@@ -35,6 +37,8 @@
     <h2 id="now-headline">연결 중…</h2>
     <p id="now-sub">작업 기록을 읽고 있습니다.</p>
     <div class="now-timer"><b id="now-elapsed">00:00</b><span id="now-stage">대기</span></div>
+    <div id="now-eta" hidden><div class="eta-bar" aria-hidden="true"><i></i></div><small></small></div>
+    <button type="button" id="now-doing" title="이 호출 안에서 일어나는 일 모두 보기" hidden><span class="kicker">호출 안</span><b></b><small></small></button>
 
     <section id="mission-card" class="card">
       <div class="card-head"><span class="kicker">미션</span><span id="mission-badge" class="badge">—</span></div>
@@ -52,11 +56,12 @@
   <section id="stage-center" aria-label="세 AI 작업 무대">
     <div id="stinger" aria-hidden="true"></div>
     <div id="role-menu" role="menu" hidden></div>
-    <div class="slot-label" data-slot="0"><span class="slot-role">HEAD · 지휘</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span></div>
-    <div class="slot-label" data-slot="1"><span class="slot-role">BUILDER · 구현</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span></div>
-    <div class="slot-label" data-slot="2"><span class="slot-role">REVIEWER · 검수</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span></div>
+    <div class="slot-label" data-slot="0"><span class="slot-role">HEAD · 지휘</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
+    <div class="slot-label" data-slot="1"><span class="slot-role">BUILDER · 구현</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
+    <div class="slot-label" data-slot="2"><span class="slot-role">REVIEWER · 검수</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
 
     <div id="stage-foot">
+      <p id="independence" role="status" hidden>검수 독립성 낮음 · REVIEWER가 HEAD 또는 BUILDER와 같은 AI입니다</p>
       <p id="caption"></p>
       <div id="phase-box"><span class="kicker">TRINITY CORE</span><strong id="phase-word">대기</strong><small id="phase-sub">세 AI가 지시를 기다립니다</small></div>
       <ol id="pipeline" aria-label="작업 흐름">
@@ -82,7 +87,7 @@
       <span class="kicker">최근 AI 호출</span>
       <ol id="call-feed"></ol>
     </section>
-    <small class="footnote">~ 는 글자 수로 추정한 값, 없으면 CLI가 보고한 실제 토큰입니다.</small>
+    <small class="footnote">~ 는 글자 수로 추정한 값, 없으면 CLI가 보고한 실제 토큰입니다. 호출을 누르면 그 안에서 한 일이 보입니다.</small>
   </aside>
 </main>
 
@@ -95,7 +100,24 @@
   </form>
 </footer>
 
+<button type="button" id="limit-alert" title="AI 설정 열기" hidden></button>
 <div id="attention" hidden><span id="attention-text"></span><button type="button" id="attention-go">작업실에서 확인</button></div>
 <div id="workshop" hidden><iframe id="workspace" title="Tribunal AI 작업실"></iframe></div>
+<section id="call-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="cp-title" hidden>
+  <header><div><span class="kicker">호출 안 들여다보기</span><h3 id="cp-title">—</h3><p id="cp-meta"></p></div><button type="button" id="cp-close" aria-label="닫기">닫기</button></header>
+  <div id="cp-filters" role="group" aria-label="보기"><button type="button" data-f="all" class="on">전체</button><button type="button" data-f="tool">도구만</button><button type="button" data-f="error">오류만</button></div>
+  <ol id="cp-events"></ol>
+  <p id="cp-note"></p>
+</section>
+<section id="ai-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="ai-title" hidden>
+  <header><div><span class="kicker">AI 설정</span><h3 id="ai-title">모델 · 추론 강도 · 한도</h3><p id="ai-sub">바꾼 설정은 다음 호출부터 적용됩니다.</p></div><button type="button" id="ai-close" aria-label="닫기">닫기</button></header>
+  <div id="ai-tools">
+    <label>사용량 조회 주기 <select id="ai-interval" aria-label="사용량 조회 주기"></select></label>
+    <span id="ai-checked"></span>
+    <button type="button" id="ai-health" title="세 CLI가 쓸 수 있는 상태인지 다시 확인합니다. 모델을 부르지 않습니다.">AI 상태 새로고침</button>
+    <button type="button" id="ai-refresh" title="세 CLI에 지금 다시 묻습니다">지금 조회</button>
+  </div>
+  <div id="ai-cards"></div>
+</section>
 <div id="shell-error" role="alert" hidden></div>
 </body></html>

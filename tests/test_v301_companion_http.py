@@ -30,18 +30,18 @@ def test_missing_token_denied(http_server):
 
 @pytest.mark.parametrize('headers', [{'Origin': 'https://evil.example'}, {'Origin': 'null'}, {'Host': 'evil.example'}])
 def test_foreign_origin_or_host_denied(http_server, headers):
-    headers.update({'X-Solomon-Bridge': 'test-token', 'Content-Type': 'application/json'})
+    headers.update({'X-Tribunal-Token': 'test-token', 'Content-Type': 'application/json'})
     assert request(http_server, headers=headers)[0] == 403
 
 
 def test_authenticated_json_accepted(http_server):
-    code, body = request(http_server, headers={'X-Solomon-Bridge': 'test-token', 'Content-Type': 'application/json'})
+    code, body = request(http_server, headers={'X-Tribunal-Token': 'test-token', 'Content-Type': 'application/json'})
     assert code == 202 and json.loads(body)['status'] == 'submitted'
 
 
 def test_wrong_content_type_and_oversize_rejected(http_server):
-    assert request(http_server, headers={'X-Solomon-Bridge': 'test-token'})[0] == 400
-    assert request(http_server, body=' ' * 32001, headers={'X-Solomon-Bridge': 'test-token', 'Content-Type': 'application/json'})[0] == 400
+    assert request(http_server, headers={'X-Tribunal-Token': 'test-token'})[0] == 400
+    assert request(http_server, body=' ' * 32001, headers={'X-Tribunal-Token': 'test-token', 'Content-Type': 'application/json'})[0] == 400
 
 
 def test_read_bridge_requires_token(http_server):

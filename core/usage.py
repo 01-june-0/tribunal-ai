@@ -83,12 +83,20 @@ def _conn() -> sqlite3.Connection:
         duration_sec REAL, prompt_chars INTEGER, output_chars INTEGER,
         tokens_in INTEGER, tokens_out INTEGER, tokens_total INTEGER, tokens_exact INTEGER DEFAULT 0,
         exit_code INTEGER, source TEXT DEFAULT 'live')""")
+    have = {r[1] for r in conn.execute("PRAGMA table_info(ai_usage)")}
+    for column in ("cwd", "trace_id"):               # added for core.call_activity; older databases gain them here
+        if column not in have:
+            try:
+                conn.execute(f"ALTER TABLE ai_usage ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:         # another process added it between the check and here
+                pass
     conn.execute("CREATE INDEX IF NOT EXISTS ai_usage_started ON ai_usage(started_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS ai_usage_mission ON ai_usage(mission_id)")
     return conn
 
 
-def call_started(argv: List[str], prompt: Optional[str]) -> Optional[int]:
+def call_started(argv: List[str], prompt: Optional[str], cwd: Optional[str] = None,
+                 trace_id: Optional[str] = None) -> Optional[int]:
     provider = provider_of(argv[0] if argv else "")
     # Real work always sends a prompt on stdin; prompt-less calls are health/version probes, not AI work.
     if not provider or not (prompt or "").strip():
@@ -96,10 +104,10 @@ def call_started(argv: List[str], prompt: Optional[str]) -> Optional[int]:
     ctx = context()
     with _conn() as conn:
         cur = conn.execute(
-            "INSERT INTO ai_usage (started_at, status, provider, role, stage, run_id, mission_id, pid, prompt_chars) "
-            "VALUES (?, 'RUNNING', ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO ai_usage (started_at, status, provider, role, stage, run_id, mission_id, pid, prompt_chars, "
+            "cwd, trace_id) VALUES (?, 'RUNNING', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (datetime.utcnow().isoformat(), provider, ctx.get("role"), ctx.get("stage"), ctx.get("run_id"),
-             ctx.get("mission_id"), os.getpid(), len(prompt or "")))
+             ctx.get("mission_id"), os.getpid(), len(prompt or ""), str(cwd) if cwd else None, trace_id))
         return cur.lastrowid
 
 
@@ -214,6 +222,32 @@ def aggregate(rows) -> Dict[str, Any]:
     return {"by_role": by_role, "by_provider": by_provider, "total": total}
 
 
+# ---- how long a call like this one usually takes (an estimate, and labelled as one wherever it is shown)
+ESTIMATE_MIN_SAMPLES = 3          # fewer finished calls than this: no estimate at all
+ESTIMATE_WINDOW = 20              # only the most recent calls count, so a changed setup stops mattering quickly
+
+
+def expected_duration(provider: Optional[str], role: Optional[str], stage: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Median duration of recent successful calls with the same role and stage — by the same AI when there are
+    enough of those, otherwise by any AI. None when there are too few to say anything."""
+    import statistics
+    if not role or not stage:
+        return None
+    with _conn() as conn:
+        for basis, extra, params in (("same_ai", " AND provider=?", (role, stage, provider, ESTIMATE_WINDOW)),
+                                     ("any_ai", "", (role, stage, ESTIMATE_WINDOW))):
+            rows = conn.execute("SELECT duration_sec FROM ai_usage WHERE status='OK' AND duration_sec IS NOT NULL "
+                                "AND role=? AND stage=?" + extra + " ORDER BY id DESC LIMIT ?", params).fetchall()
+            if len(rows) >= ESTIMATE_MIN_SAMPLES:
+                return {"seconds": round(statistics.median(r[0] for r in rows), 1), "samples": len(rows), "basis": basis}
+    return None
+
+
+def is_overdue(elapsed_sec: float, expected_sec: float) -> bool:
+    """Clearly past the usual time: twice the median, and at least half a minute over it."""
+    return elapsed_sec > max(expected_sec * 2, expected_sec + 30)
+
+
 def _pid_alive(pid) -> bool:
     try:
         import psutil
@@ -234,20 +268,32 @@ def running_now() -> List[Dict[str, Any]]:
                 conn.execute("UPDATE ai_usage SET ended_at=?, status='INTERRUPTED', duration_sec=? WHERE id=? AND status='RUNNING'",
                              (datetime.utcnow().isoformat(), (datetime.utcnow() - started).total_seconds(), r["id"]))
             continue
-        out.append({"provider": r["provider"], "provider_name": PROVIDER_NAME.get(r["provider"], r["provider"]),
+        elapsed = int((datetime.utcnow() - started).total_seconds())
+        try:
+            estimate = expected_duration(r["provider"], r["role"], r["stage"])
+        except Exception:
+            estimate = None
+        out.append({"id": r["id"], "provider": r["provider"], "provider_name": PROVIDER_NAME.get(r["provider"], r["provider"]),
                     "role": r["role"], "stage": r["stage"], "run_id": r["run_id"], "mission_id": r["mission_id"],
-                    "started_at": r["started_at"], "elapsed_sec": int((datetime.utcnow() - started).total_seconds())})
+                    "started_at": r["started_at"], "elapsed_sec": elapsed, "estimate": estimate,
+                    "overdue": bool(estimate and is_overdue(elapsed, estimate["seconds"]))})
     return out
 
 
 def recent_calls(limit: int = 20) -> List[Dict[str, Any]]:
     with _conn() as conn:
         rows = conn.execute("SELECT * FROM ai_usage WHERE status!='RUNNING' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    return [{"at": r["ended_at"] or r["started_at"], "provider": r["provider"],
+    return [{"id": r["id"], "at": r["ended_at"] or r["started_at"], "provider": r["provider"],
              "provider_name": PROVIDER_NAME.get(r["provider"], r["provider"]), "role": r["role"], "stage": r["stage"],
              "status": r["status"], "seconds": r["duration_sec"], "tokens": r["tokens_total"],
              "exact": bool(r["tokens_exact"]), "run_id": r["run_id"], "mission_id": r["mission_id"],
              "source": r["source"]} for r in rows]
+
+
+def call_row(row_id: int) -> Optional[sqlite3.Row]:
+    """One ledger row by id (core.call_activity reads cwd / trace_id from it)."""
+    with _conn() as conn:
+        return conn.execute("SELECT * FROM ai_usage WHERE id=?", (int(row_id),)).fetchone()
 
 
 def mission_calls(mission_id: str, limit: int = 400) -> List[Dict[str, Any]]:

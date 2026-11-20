@@ -168,9 +168,36 @@ def remove_run_folders_left_by_tests():
     import shutil
     runs = Path(__file__).resolve().parents[1] / "runs"
     before = {d.name for d in runs.iterdir()} if runs.is_dir() else set()
+    # Two test sessions at once (a reviewer running a few tests while the full suite goes) share this folder; a
+    # session that finishes first must not delete folders the other one is still reading. Each session leaves a
+    # marker with its pid, and cleanup is skipped while another session's process is alive.
+    marker = runs / f".test-session-{os.getpid()}"
+    try:
+        runs.mkdir(exist_ok=True)
+        marker.write_text("", encoding="utf-8")
+    except OSError:
+        marker = None
     yield
     if not runs.is_dir():
         return
+    if marker:
+        marker.unlink(missing_ok=True)
+    for other in runs.glob(".test-session-*"):
+        try:
+            pid = int(other.name.rsplit("-", 1)[1])
+            if os.name == "nt":                     # os.kill(pid, 0) would terminate the process on Windows
+                import psutil
+                alive = psutil.pid_exists(pid)
+            else:
+                os.kill(pid, 0)
+                alive = True
+        except (ValueError, ProcessLookupError):
+            alive = False
+        except Exception:
+            return                                  # cannot tell: be safe and leave everything in place
+        if alive:
+            return                                  # another session is running
+        other.unlink(missing_ok=True)               # left by a session that was killed
     recorded = _names_in_production_db()
     for folder in runs.iterdir():
         if folder.name in before or not folder.is_dir() or folder.is_symlink():

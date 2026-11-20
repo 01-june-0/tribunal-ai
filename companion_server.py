@@ -1,6 +1,7 @@
-"""Upgraded local console on 8081. Frozen 8080 is deliberately untouched."""
+"""Upgraded local console (8081 by default; see core.companion_config for how the port is chosen). Frozen 8080 is deliberately untouched."""
 import json
 import logging
+import os
 import re
 import secrets
 import subprocess
@@ -9,12 +10,12 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import dashboard_server as d
-from core.solomon_bridge import SolomonBridge
+from core.order_bridge import OrderBridge
 
 ROOT = Path(__file__).resolve().parent
 # The console is a fixed allowlist of local files: nothing outside console/ is ever served.
 STATIC_FILES = {'/': 'index.html', '/console.js': 'console.js', '/console.css': 'console.css',
-                '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js'}
+                '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js'}
 
 
 _PICK_LOCK = threading.Lock()
@@ -38,10 +39,16 @@ def pick_folder(initial: str = "", timeout: int = 300) -> dict:
         _PICK_LOCK.release()
 
 
-def solomon_target_ok(path: str) -> tuple:
-    """Solomon may commission work on any git project under config solomon.allowed_roots, except the denied ones
-    (the Director itself, Solomon itself, the shared vault). Returns (ok, resolved_or_reason)."""
-    cfg = (d.load_config().get('solomon') or {})
+def bridge_config(config=None) -> dict:
+    """config.yaml `bridge:` (the section was called `solomon:` before; an old file is still read)."""
+    config = config if config is not None else d.load_config()
+    return (config.get('bridge') or config.get('solomon') or {})
+
+
+def bridge_target_ok(path: str) -> tuple:
+    """A request through the bridge (`director do`, another local program) may commission work on any git project
+    under config bridge.allowed_roots, except the denied ones (this program itself). Returns (ok, resolved_or_reason)."""
+    cfg = bridge_config()
     try:
         target = Path(path).resolve()
     except (OSError, ValueError):
@@ -49,21 +56,21 @@ def solomon_target_ok(path: str) -> tuple:
     roots = [Path(r).expanduser().resolve() for r in (cfg.get('allowed_roots') or [])]
     denied = [Path(x).expanduser().resolve() for x in (cfg.get('denied') or [])] + [ROOT.resolve()]
     if not any(target == r or r in target.parents for r in roots):
-        return False, '솔로몬에 허용된 폴더 밖입니다'
+        return False, '허용된 폴더 밖입니다 (config.yaml bridge.allowed_roots)'
     if any(target == x or x in target.parents for x in denied):
-        return False, '이 폴더는 솔로몬이 지시할 수 없습니다'
+        return False, '이 폴더에는 지시할 수 없습니다'
     return True, str(target)
 
 
 def project_registry() -> list:
-    """Projects Solomon can target: config `projects:` entries, every project a mission ever ran on, and git folders
+    """Projects a bridge request can target: config `projects:` entries, every project a mission ever ran on, and git folders
     one level under the allowed roots. Each entry carries the latest mission and whether a deliverable awaits."""
     from core.mission import MissionStore
     cfg = d.load_config()
     seen = {}
 
     def add(path, origin):
-        ok, resolved = solomon_target_ok(path)
+        ok, resolved = bridge_target_ok(path)
         if not ok or not Path(resolved).is_dir():
             return
         key = resolved.casefold()
@@ -73,7 +80,7 @@ def project_registry() -> list:
             entry['origins'].append(origin)
     for key in (cfg.get('projects') or {}):
         add(key, 'config')
-    for root in (cfg.get('solomon') or {}).get('allowed_roots') or []:
+    for root in bridge_config(cfg).get('allowed_roots') or []:
         try:
             for child in sorted(Path(root).expanduser().iterdir()):
                 if child.is_dir() and (child / '.git').exists():
@@ -83,7 +90,7 @@ def project_registry() -> list:
     missions = sorted(MissionStore().all(), key=lambda m: m.get('updated_at', ''))
     for m in missions:
         add(m.get('project_path', ''), 'mission')
-        ok, resolved = solomon_target_ok(m.get('project_path', ''))
+        ok, resolved = bridge_target_ok(m.get('project_path', ''))
         if ok and resolved.casefold() in seen:
             e = seen[resolved.casefold()]
             e['missions'] += 1
@@ -103,9 +110,21 @@ class CompanionHandler(d.DashboardHandler):
             unread = 0
         if 0 < unread <= 65536:
             self.rfile.read(unread)
+        if path == '/ops/hello':                # "is this the Tribunal AI console of this folder?" (core.companion_config)
+            from core.companion_config import hello_payload
+            nonce = parse_qs(urlsplit(self.path).query).get('nonce', [''])[0]
+            # install_root: the demo console (scripts/demo_console.py) must not pass for this folder's real console
+            return self._send_json(hello_payload(getattr(self.server, 'install_root', ROOT), self.server.bridge_token, nonce))
         if path == '/ops/roles':
-            from core.role_settings import current
-            return self._send_json({'roles': current(d.load_config()), 'csrf': self.server.bridge_token})
+            from core.role_settings import current, independence
+            roles = current(d.load_config())
+            return self._send_json({'roles': roles, 'independence': independence(roles), 'csrf': self.server.bridge_token})
+        if path == '/ops/ai':                   # AI settings panel: chosen model/effort, what can be chosen, plan and limits
+            from core import cli_limits, cli_settings
+            settings = cli_settings.load()
+            limits = cli_limits.snapshot(settings['antigravity']['model'], settings['usage_poll_minutes'] * 60)
+            return self._send_json({'settings': settings, 'options': cli_settings.options(), 'limits': limits,
+                                    'alerts': cli_limits.alerts(limits, {c: settings[c]['warn_percent'] for c in cli_settings.CLIS})})
         if path in STATIC_FILES:
             name = STATIC_FILES[path]
             body = (ROOT / 'console' / name).read_bytes()
@@ -123,7 +142,7 @@ class CompanionHandler(d.DashboardHandler):
             return self._send_json({'csrf': self.server.bridge_token,
                 'orders': self.server.bridge.list(), 'allowed_projects': sorted(self.server.bridge.allowed),
                 'diagnostics': json.loads(report.read_text(encoding='utf-8')) if report.exists() else None,
-                'status': d.cached_status_payload(), 'solomon_url': 'http://127.0.0.1:8710'})
+                'status': d.cached_status_payload()})
         elif path.startswith('/bridge/'):
             if not self.authorized():
                 return self._send_json({'error': 'bridge authentication required'}, 403)
@@ -153,9 +172,32 @@ class CompanionHandler(d.DashboardHandler):
         return super().do_GET()
 
     def authorized(self):
-        return secrets.compare_digest(self.headers.get('X-Solomon-Bridge', ''), self.server.bridge_token)
+        return secrets.compare_digest(self.headers.get('X-Tribunal-Token', ''), self.server.bridge_token)
 
     def do_POST(self):
+        if self.path == '/ops/ai/refresh':          # "check now": ask the three CLIs again on the next read
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            try:
+                self.rfile.read(min(int(self.headers.get('Content-Length') or 0), 4096))
+            except (ValueError, OSError):
+                pass
+            from core import cli_limits
+            return self._send_json({'refreshing': cli_limits.refresh_now()})
+        if self.path == '/ops/ai':
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            try:
+                from core import cli_settings
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 4096 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                    raise ValueError('Invalid settings request')
+                settings = cli_settings.save(json.loads(self.rfile.read(size)))
+                return self._send_json({'settings': settings})
+            except (ValueError, TypeError) as exc:
+                return self._send_json({'error': str(exc)[:300]}, 400)
+            except Exception as exc:
+                return self._send_json({'error': str(exc)[:300]}, 500)
         if self.path == '/ops/roles':
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'local authenticated request required'}, 403)
@@ -191,7 +233,7 @@ class CompanionHandler(d.DashboardHandler):
             except (ValueError, TypeError) as exc:
                 return self._send_json({'error': str(exc)}, 400)
         if self.path == '/ops/shutdown':
-            # "시스템 중지" (2026-11-02): stop the companion from the console or from Solomon. Records, worktrees and
+            # "시스템 중지" (2026-11-02): stop the companion from the console or through the bridge. Records, worktrees and
             # mission state stay on disk; resume_on_start picks interrupted missions up again when it is restarted.
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'local authenticated request required'}, 403)
@@ -233,19 +275,19 @@ class CompanionHandler(d.DashboardHandler):
                     known = [m for m in MissionStore().all() if m.get('request_id') == ident]
                     if known:                                  # retries never start a second mission
                         return self._send_json({'status': 'duplicate', 'mission_id': known[0]['mission_id'], 'mission': d.mission_view(known[0])})
-                    ok, target = solomon_target_ok(str(payload.get('project_path', '')))
+                    ok, target = bridge_target_ok(str(payload.get('project_path', '')))
                     if not ok:
                         raise ValueError(target)
                     goal = str(payload.get('goal', '')).strip()
                     if not 5 <= len(goal) <= 6000:
                         raise ValueError('작업 목표는 5~6000자여야 합니다')
-                    result = d.start_goal_mission(target, goal, profile=payload.get('profile'), source='solomon', request_id=ident,
+                    result = d.start_goal_mission(target, goal, profile=payload.get('profile'), source='cli' if ident.startswith('cli-') else 'bridge', request_id=ident,
                                                   create_project=bool(payload.get('create_project')), auto_apply=payload.get('auto_apply'))
                     code = {'started': 202, 'busy': 409, 'question': 200, 'escalated': 200}.get(result.get('status'), 400)
                     return self._send_json(result, code)
                 ident = self.path.split('/')[3][:80]
                 result = d.decide_mission(ident, str(payload.get('action', '')), reason=str(payload.get('reason', ''))[:500],
-                                          max_steps=payload.get('max_steps'), on_conflict=str(payload.get('on_conflict', 'block')), by='SOLOMON')
+                                          max_steps=payload.get('max_steps'), on_conflict=str(payload.get('on_conflict', 'block')), by='BRIDGE')
                 return self._send_json(result, 200 if result.get('status') != 'error' else 400)
             except (ValueError, TypeError, KeyError) as exc:
                 return self._send_json({'error': str(exc)}, 400)
@@ -272,23 +314,43 @@ class CompanionHandler(d.DashboardHandler):
 
 
 def run():
-    from core.companion_config import load_companion_config, companion_port
+    from core.companion_config import load_companion_config, choose_port, write_runtime, clear_runtime
     config = load_companion_config(ROOT)
+    if os.environ.get('TRIBUNAL_DB_PATH'):
+        print('Tribunal AI: TRIBUNAL_DB_PATH is set — records are read from and written to ' + os.environ['TRIBUNAL_DB_PATH'], flush=True)
+    action, port, note = choose_port(ROOT)
+    if action == 'running':                     # a second start is not an error: say where the console is
+        print('Tribunal AI already running http://127.0.0.1:' + str(port), flush=True)
+        return
+    if action == 'blocked':
+        raise SystemExit('Tribunal AI cannot start: ' + note)
+    if note:
+        print('Tribunal AI: ' + note, flush=True)
     d._ensure_schema()
-    server = d.DashboardServer(('127.0.0.1', companion_port(ROOT)), CompanionHandler)
-    token_path = ROOT / 'data' / 'solomon-bridge.token'
+    try:
+        server = d.DashboardServer(('127.0.0.1', port), CompanionHandler)
+    except OSError as exc:                      # lost a race for the port after the check above
+        again = choose_port(ROOT)
+        if again[0] == 'running':
+            print('Tribunal AI already running http://127.0.0.1:' + str(again[1]), flush=True)
+            return
+        raise SystemExit(f'Tribunal AI cannot start: port {port} was taken while starting ({exc}). Start again.')
+    from core.companion_config import bridge_token_path
+    token_path = bridge_token_path(ROOT)
     if not token_path.exists():
         token_path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
     server.bridge_token = token_path.read_text(encoding='utf-8').strip()
-    server.bridge = SolomonBridge(d, config.get('allowed_projects', []))
+    server.bridge = OrderBridge(d, config.get('allowed_projects', []))
     if (d.load_config().get('autonomy') or {}).get('resume_on_start'):
         import threading
         threading.Thread(target=d.resume_interrupted_missions, name='director-mission-resume', daemon=True).start()
     server.stopping = False
-    print('Tribunal AI × SOLOMON http://127.0.0.1:' + str(server.server_address[1]), flush=True)
+    write_runtime(ROOT, server.server_address[1])
+    print('Tribunal AI console http://127.0.0.1:' + str(server.server_address[1]), flush=True)
     try:
         server.serve_forever()
     finally:
+        clear_runtime(ROOT)
         server.server_close()
         print('Tribunal AI companion stopped (system stop)', flush=True)
 
