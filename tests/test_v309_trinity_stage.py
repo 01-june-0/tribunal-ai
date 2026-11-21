@@ -1,6 +1,6 @@
 """
 v3.0.9 TRINITY STAGE: the 8081 console opens on a live visual stage (WebGL particles driven by the work ledger).
-Server side this adds a fixed static allowlist, a read-only mission replay endpoint (/ops/replay) fed by the ledger,
+Server side this adds a fixed static allowlist, (the mission replay it once had was removed),
 and keeps the strict CSP: the page may not rely on inline scripts or styles, or on any external host.
 """
 import re
@@ -44,7 +44,7 @@ def test_only_the_allowlisted_console_files_are_served(http_server):
 
 def test_stage_page_needs_no_inline_code_or_external_host():
     html = (CONSOLE / "index.html").read_text(encoding="utf-8")
-    assert "Tribunal AI 작업실" in html                                   # the workshop iframe is still there
+    assert "Tribunal AI 자세히 보기" in html                                   # the workshop iframe is still there
     assert not re.search(r"<script(?![^>]*\bsrc=)", html)            # CSP default-src 'self': no inline script
     assert "style=" not in html and "<style" not in html              # ... and no inline style
     for name in ("index.html", "stage.js", "trinity.js", "stage.css"):
@@ -55,52 +55,13 @@ def test_stage_page_needs_no_inline_code_or_external_host():
 def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     js = (CONSOLE / "stage.js").read_text(encoding="utf-8")
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
-    assert called == {"/ops/activity", "/status", "/ops/replay", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
+    assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
                       "/result", "/run/inspect"}                       # read-only: what changed, and the ORDER of a run awaiting approval
     assert js.count("method:'POST'") == 9                             # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST'" in js
     assert "fetch(kind==='apply'?'/result/apply':'/result/discard',{method:'POST'" in js
     assert set(re.findall(r"accountPost\('(/[a-z/_]+)", js)) == {"/ops/ai/account", "/ops/ai/account/reveal"}     # both go through the one token-carrying helper
     assert "'X-Tribunal-Token':roleToken" in js                        # the role change carries the local token
-
-
-def test_mission_calls_are_time_ordered_and_skip_running_rows():
-    record("ARCHITECT", "claude.exe", "MSN-R", "RUN-1", "PLANNING", 5)
-    record("MAKER", "agy.exe", "MSN-R", "RUN-1", "BUILDING", 60)
-    record("INSPECTOR", "codex.exe", "MSN-OTHER", "RUN-9", "REVIEWING", 30)
-    usage.set_context(role="INSPECTOR", stage="REVIEWING", run_id="RUN-1", mission_id="MSN-R")
-    usage.call_started(["codex.exe"], "still running")
-    calls = usage.mission_calls("MSN-R")
-    assert [(c["role"], c["provider"], c["stage"]) for c in calls] == [("ARCHITECT", "ANTHROPIC", "PLANNING"),
-                                                                       ("MAKER", "GOOGLE", "BUILDING")]
-    assert calls[1]["seconds"] == 60 and calls[1]["run_id"] == "RUN-1"
-
-
-def test_replay_endpoint_returns_the_latest_finished_mission_with_calls(env, server, tmp_path):
-    from core.mission import MissionRunner, MissionStore
-    from schemas.order import OrderSchema
-    store = MissionStore()
-    runner = MissionRunner(lambda: None, store)
-
-    def mission(goal, status, calls):
-        m = runner.create(str(tmp_path / "proj"), goal, OrderSchema(goal="first", allowed_paths=["src/**"]), config={})
-        m["steps"][0]["run_id"] = "RUN-" + goal
-        m["steps"][0]["result"] = {"final_state": "PASS", "tests": {"passed": 3, "failed": 0, "total": 3}}
-        m["status"] = status
-        store.save(m)
-        for role, cli in calls:
-            record(role, cli, m["mission_id"], "RUN-" + goal, "BUILDING")
-        return m["mission_id"]
-
-    done = mission("finished", "DONE", [("ARCHITECT", "claude.exe"), ("MAKER", "agy.exe")])
-    live = mission("running", "RUNNING", [("ARCHITECT", "claude.exe")])
-    code, payload = _get_json(server, "/ops/replay")
-    assert code == 200 and payload["mission_id"] == done               # a running mission is never "replayed"
-    assert [c["role"] for c in payload["calls"]] == ["ARCHITECT", "MAKER"]
-    assert payload["steps"][0]["state"] == "PASS" and payload["steps"][0]["tests"]["total"] == 3
-    code, payload = _get_json(server, "/ops/replay?mission_id=" + live)
-    assert payload["mission_id"] == live and len(payload["calls"]) == 1  # ... unless asked for by id
-    assert _get_json(server, "/ops/replay?mission_id=MSN-NOPE")[1] == {"mission_id": None, "calls": [], "steps": []}
 
 
 def test_folder_picker_needs_the_local_token_and_returns_the_chosen_path(http_server, monkeypatch):

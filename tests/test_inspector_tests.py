@@ -245,8 +245,3 @@ def test_every_fixed_reason_has_a_korean_text_on_the_stage():
     assert len(reasons) >= 16
     for reason in reasons:
         assert ("'" + reason + "':") in stage or ('"' + reason + '":') in stage, reason
-
-
-def test_the_replay_carries_it_too():
-    source = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
-    assert source.count('"inspector_tests": _inspector_tests(') == 2

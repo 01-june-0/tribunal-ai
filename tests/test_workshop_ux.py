@@ -188,7 +188,7 @@ def test_overlay_puts_the_working_area_first_and_leaves_roles_to_the_stage():
     css = (ROOT / "console" / "console.css").read_text(encoding="utf-8")
     for gone in ("ANTIGRAVITY / DEVELOPMENT WORKSPACE", "role-cycle", "method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':csrf}", "TRIAD 연구 배정", "9/30", "대화로 이동"):
         assert gone not in js, gone
-    assert "역할은 스테이지의 역할 메뉴에서 지정합니다" in js
+    assert "역할은 한눈에 탭의 역할 메뉴에서 지정합니다" in js
     assert "main.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'))" in js    # order in the page itself,
     assert "#ai-activity{order" not in css and ".role-notice{order" not in css and "#corestrip{order" not in css    # so keyboard and screen-reader order match what is seen
     assert "main.before(alertBar)" in js                                    # alerts (approve / reject) stay above the working area
@@ -242,5 +242,5 @@ def test_phone_width_keeps_the_stop_buttons_on_screen():
     css = (ROOT / "console" / "stage.css").read_text(encoding="utf-8")
     phone = css[css.index("@media(max-width:760px){\n  #stage{"):]
     phone = phone[:phone.index("\n}")]
-    assert "#btn-replay,#btn-broadcast,#btn-lang{order:1}" in phone and ".brand{display:none}" in phone   # stop buttons first
+    assert "#btn-broadcast,#btn-lang{order:1}" in phone and ".brand{display:none}" in phone   # stop buttons first
     assert "overflow-x:auto" in phone and "display:none}   /*" not in phone   # nothing is taken away from a touch screen

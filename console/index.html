@@ -17,19 +17,13 @@
   </div>
   <div class="top-meta">
     <button type="button" id="top-project" class="meta-chip" title="작업할 폴더 바꾸기">프로젝트 · —</button>
-    <div id="replay-bar" hidden>
-      <span id="replay-text">지난 작업 다시보기</span>
-      <div class="replay-track"><i id="replay-fill"></i></div>
-      <button type="button" id="replay-stop">끝내기</button>
-    </div>
     <span id="top-live" class="live-chip" data-mode="idle"><i aria-hidden="true"></i><b>STANDBY</b></span>
     <span id="top-clock" class="meta-clock">--:--:--</span>
   </div>
   <nav class="top-actions" aria-label="화면 전환">
-    <button type="button" id="tab-stage" class="on" aria-pressed="true">스테이지</button>
-    <button type="button" id="tab-workshop" aria-pressed="false">작업실<em id="pending-badge" hidden></em></button>
-    <button type="button" id="btn-replay" title="지난 작업을 실제 기록으로 다시 보기 (R)">다시보기</button>
-    <button type="button" id="btn-broadcast" title="방송 모드 (B)">방송 모드</button>
+    <button type="button" id="tab-stage" class="on" aria-pressed="true" title="세 AI의 지금 상태와 작업을 한 화면에서 봅니다">한눈에</button>
+    <button type="button" id="tab-workshop" aria-pressed="false" title="프로젝트 선택, 전체 대화, 실행 기록과 복구">자세히<em id="pending-badge" hidden></em></button>
+    <button type="button" id="btn-broadcast" title="입력창과 버튼을 숨기고 전체 화면으로 봅니다 (B)">전체 화면</button>
     <button type="button" id="btn-ai" title="AI별 모델·추론 강도와 요금제·한도">AI 설정</button>
     <button type="button" id="btn-lang" title="Switch to English">EN</button>
     <button type="button" id="btn-halt" title="실행 중인 작업을 멈춥니다 · 대시보드는 켜진 채로">작업 정지</button>
@@ -107,8 +101,8 @@
 </footer>
 
 <button type="button" id="limit-alert" title="AI 설정 열기" hidden></button>
-<div id="attention" hidden><span id="attention-text"></span><button type="button" id="attention-go">작업실에서 확인</button></div>
-<div id="workshop" hidden><iframe id="workspace" title="Tribunal AI 작업실"></iframe></div>
+<div id="attention" hidden><span id="attention-text"></span><button type="button" id="attention-go">자세히 탭에서 확인</button></div>
+<div id="workshop" hidden><iframe id="workspace" title="Tribunal AI 자세히 보기"></iframe></div>
 <section id="call-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="cp-title" hidden>
   <header><div><span class="kicker">호출 안 들여다보기</span><h3 id="cp-title">—</h3><p id="cp-meta"></p></div><button type="button" id="cp-close" aria-label="닫기">닫기</button></header>
   <div id="cp-filters" role="group" aria-label="보기"><button type="button" data-f="all" class="on">전체</button><button type="button" data-f="tool">도구만</button><button type="button" data-f="error">오류만</button></div>

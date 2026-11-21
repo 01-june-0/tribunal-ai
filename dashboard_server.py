@@ -790,30 +790,6 @@ def build_activity_payload(limit_missions: int = 5) -> dict:
             "events": events, "names": {"provider": usage.PROVIDER_NAME, "role": usage.ROLE_NAME}}
 
 
-def build_replay_payload(mission_id: str = "") -> dict:
-    """Recorded AI calls of one finished mission (default: the latest one with recorded calls) so the console can
-    replay how the three AIs worked. Real ledger data only; read-only."""
-    from core import usage
-    missions = sorted(MissionStore().all(), key=lambda m: m.get("updated_at", ""), reverse=True)
-    for m in missions:
-        if mission_id and m["mission_id"] != mission_id:
-            continue
-        if not mission_id and m.get("status") == "RUNNING":
-            continue
-        calls = usage.mission_calls(m["mission_id"])
-        if not calls and not mission_id:
-            continue
-        steps = [{"index": s["index"], "run_id": s.get("run_id"),
-                  "state": (s.get("result") or {}).get("final_state"),
-                  "goal": (s.get("order") or {}).get("goal", "")[:160],
-                  "tests": (s.get("result") or {}).get("tests"),
-                  "inspector_tests": _inspector_tests(s.get("run_id"))} for s in m.get("steps", [])]
-        return {"mission_id": m["mission_id"], "goal": m.get("goal", "")[:400], "status": m.get("status"),
-                "project": Path(m.get("project_path", "")).name, "max_steps": m.get("max_steps"),
-                "steps": steps, "calls": calls}
-    return {"mission_id": None, "calls": [], "steps": []}
-
-
 def _inspector_tests(run_id) -> Optional[dict]:
     """The outcome of the inspector's own tests in one run, for the console (core/inspector_tests.py)."""
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", run_id) or ".." in run_id:
@@ -3007,7 +2983,7 @@ def render_html():
                 <summary>{I18N.t("details")}</summary>
                 <div id="run-details">{html_lib.escape(run.get("details") or "")}</div>
                 <details id="inspect-panel"><summary>{I18N.t("inspect")} (읽기 전용)</summary><pre id="inspect-body"></pre></details>
-                <div>실행 역할은 AI 카드에서 확인하세요. 역할 지정은 스테이지의 역할 메뉴에서 하며, 다음 대화/작업부터 적용됩니다.</div>
+                <div>실행 역할은 AI 카드에서 확인하세요. 역할 지정은 한눈에 탭의 역할 메뉴에서 하며, 다음 대화/작업부터 적용됩니다.</div>
             </details>
         </div>
     </div>
@@ -3123,12 +3099,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif parsed.path == '/ops/digest':
             try:
                 self._send_json(build_digest_payload())
-            except Exception as e:
-                self._send_json({"error": str(e)[:300]}, 500)
-        elif parsed.path == '/ops/replay':
-            q = urllib.parse.parse_qs(parsed.query)
-            try:
-                self._send_json(build_replay_payload(q.get('mission_id', [''])[0][:80]))
             except Exception as e:
                 self._send_json({"error": str(e)[:300]}, 500)
         elif parsed.path == '/research':

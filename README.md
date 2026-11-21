@@ -43,8 +43,8 @@ pay-per-use API call.
   마찰(빌더 JSON 깨짐, 토큰 한도, 경로 범위, 리뷰 지적, 한도 초과)은 재시도·공급자 교체·재계획으로 스스로 풉니다.
 - **TRIAD 연구 모드** — 세 AI가 독립 연구 → 상호 비판 → 종합 가설 → NORMAL 파이프라인으로 실험 구현 → 세 갈래
   해석 → 연구 메모리. 설계와 구현은 `docs/V3_TRIAD_RESEARCH_PLAN.md`.
-- **TRINITY 콘솔(8081)** — 세 AI의 역할·호출·토큰·현재 단계를 보여주는 무대형 대시보드, 채팅, 미션 다시보기,
-  역할 교환, **작업 정지 / 시스템 중지** 버튼. `/classic`은 표 중심의 작업실 화면입니다.
+- **TRINITY 콘솔(8081)** — 세 AI의 역할·호출·토큰·현재 단계를 보여주는 무대형 대시보드(한눈에 탭), 채팅,
+  역할 교환, **작업 정지 / 시스템 중지** 버튼. `/classic`은 표 중심의 자세히 탭 화면입니다.
 
 ## 지키는 것 (Hard rules, enforced in code)
 
@@ -83,7 +83,7 @@ python -m pytest -q            # 604개 테스트, CLI 없이 스텁으로 돕�
 콘솔 켜기 (윈도우):
 
 ```powershell
-.\start-companion.ps1          # http://127.0.0.1:8081  (TRINITY 무대)  ·  /classic (작업실)
+.\start-companion.ps1          # http://127.0.0.1:8081  (한눈에)  ·  /classic (자세히)
 .\stop-companion.ps1
 ```
 
@@ -121,12 +121,12 @@ python director.py clean-worktrees -p D:/work/my_project --dry-run
 ```
 director.py            CLI 진입점 (run / mission / do / status / resume / clean-worktrees)
 companion_server.py    8081 콘솔 서버 (정적 파일 허용 목록 + /ops/* API)
-dashboard_server.py    작업실(/classic)·채팅·미션 정지·상태 요약
+dashboard_server.py    자세히 탭(/classic)·채팅·작업 정지·상태 요약
 agents/                ARCHITECT / MAKER / INSPECTOR 어댑터 (claude, codex, antigravity, google 역할, mock)
 core/                  orchestrator, mission, autopilot(정책), safety(Scope Guard), verifier, git_manager,
                        process_runner, provider_manager(장애 조치), research_*(TRIAD), usage(토큰 집계)
 schemas/               ORDER / MakerResult / ReviewResult / Decision / Provenance (pydantic)
-console/               TRINITY 무대와 작업실 프런트엔드 (의존성 없는 정적 파일)
+console/               한눈에·자세히 두 탭의 프런트엔드 (의존성 없는 정적 파일)
 scripts/               폴더 선택 도우미, CLI 진단, 실패 run 재시도, 역할 smoke
 tests/                 604 tests (스텁 CLI로 격리, 로컬 설정 파일에 의존하지 않음; 실제 CLI 통합은 -m integration_cli 로 opt-in)
 docs/                  설계·마일스톤 기록

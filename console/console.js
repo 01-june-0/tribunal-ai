@@ -53,7 +53,7 @@ frame.addEventListener('load',setup);if(frame.contentDocument?.readyState==='com
 function setupRoles(){
  // Roles are chosen on the stage (role menu), where one AI may hold several. The workshop only says so: its old
  // cycle buttons worked from a copy of the roles read once and could overwrite what was set there.
- const notice=el('p',T('역할은 스테이지의 역할 메뉴에서 지정합니다. 변경은 다음 대화/작업부터 적용되고, 진행 중인 실행은 그대로 유지됩니다.'),'role-notice');
+ const notice=el('p',T('역할은 한눈에 탭의 역할 메뉴에서 지정합니다. 변경은 다음 대화/작업부터 적용되고, 진행 중인 실행은 그대로 유지됩니다.'),'role-notice');
  notice.id='role-notice';doc.getElementById('corestrip').after(notice);
 }
 

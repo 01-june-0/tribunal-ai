@@ -22,3 +22,43 @@
 @media(min-width:801px) and (max-width:1023px){.director-v2 #nodes{grid-template-columns:repeat(3,minmax(0,1fr))}.director-v2 .node .ntitle details .dbox{min-width:0;width:min(320px,80vw)}}
 /* Approve / reject once: the approval panel on the right keeps them; the copies in the chat, the to-do box and the alert bar are hidden. */
 .director-v2 #chat-action-card,.director-v2 #todo-approve-btn,.director-v2 #todo-reject-btn,.director-v2 #alert-approve-btn,.director-v2 #alert-reject-btn{display:none!important}
+/* ---- layout pass: one scroll at a time, even section spacing ----
+   On a window that is wide and tall enough the page itself does not scroll: summary, alert, the three working panels and
+   the AI cards share the height, and only the panels scroll. Smaller windows keep the single page scroll. */
+.director-v2 #hdr{padding:14px 0 8px;min-height:0}
+.mission-control{padding:0 0 12px}
+.mission-state,.mission-next{padding:14px 20px}
+.director-v2 .mission-meta{padding:10px 4px 0;display:flex;flex-wrap:wrap;gap:4px 20px}
+.director-v2 .mission-evidence{margin:8px 4px 0}
+.director-v2 #alert-bar{margin:0 0 12px}
+.director-v2 #corestrip{padding:16px 0 0}
+.director-v2 .role-notice{margin:8px 2px 0}
+.director-v2 #left,.director-v2 #right,.director-v2 #chat-box{scrollbar-width:thin;scrollbar-color:var(--border) transparent;scrollbar-gutter:stable}
+.director-v2 #left,.director-v2 #right{padding:16px}
+.director-v2 #chat-box{padding:16px 20px}
+.director-v2 #right h2{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.director-v2 #right h2 .badge{margin-left:auto!important}
+/* five step chips in a 250px column: the mark and the Korean word fit, the English role name does not */
+.director-v2 .pipeline .stage{font-size:0;padding:6px 0}
+.director-v2 .pipeline .stage .mark,.director-v2 .pipeline .stage small{font-size:12px;display:block;line-height:1.5}
+@media(min-width:1024px) and (min-height:640px){
+  .director-v2{height:100vh!important;min-height:0;padding-bottom:16px}
+  .director-v2 #hdr,.director-v2 .mission-control,.director-v2 #alert-bar,.director-v2 #corestrip,.director-v2 .role-notice{flex:none}
+  /* The page only gives up its own scroll while everything fits: the panels keep a 300px floor (enough for the chat's
+     head, a few lines and the send box), and when the summary or an alert grows past that, the page scrolls again. */
+  .director-v2{overflow:hidden auto!important}
+  .director-v2 #main{flex:1 0 300px;min-height:300px;height:auto}
+  .director-v2 #triad-research-center{flex:1 0 300px;min-height:300px}
+  .director-v2 #chat-box{min-height:96px}
+  .director-v2 .mission-evidence pre{max-height:120px;overflow:auto}
+  /* the AI cards are the last row: their details open upwards, inside the window */
+  .director-v2 .node .ntitle details .dbox{top:auto;bottom:calc(100% + 4px);max-height:50vh;overflow:auto}
+}
+@media(min-width:1024px) and (min-height:640px) and (max-height:1019px){
+  /* not tall enough for full AI cards under the panels: one compact row (the details stay one click away) */
+  .director-v2 .node{padding:10px 16px;min-height:0}
+  .director-v2 .node table{display:none}
+  .director-v2 .node .ntitle{margin:0}
+  .director-v2 #director-core{display:none}                   /* its one line (system state) is at the top of the page already */
+  .director-v2 #corestrip{grid-template-columns:1fr;padding:12px 0 0}
+}

@@ -299,17 +299,6 @@ def call_row(row_id: int) -> Optional[sqlite3.Row]:
         return conn.execute("SELECT * FROM ai_usage WHERE id=?", (int(row_id),)).fetchone()
 
 
-def mission_calls(mission_id: str, limit: int = 400) -> List[Dict[str, Any]]:
-    """Every finished AI call of one mission in time order (the console replays a mission from these)."""
-    with _conn() as conn:
-        rows = conn.execute("SELECT * FROM ai_usage WHERE mission_id=? AND status!='RUNNING' ORDER BY started_at LIMIT ?",
-                            (mission_id, limit)).fetchall()
-    return [{"started_at": r["started_at"], "seconds": r["duration_sec"] or 0, "provider": r["provider"],
-             "provider_name": PROVIDER_NAME.get(r["provider"], r["provider"]), "role": r["role"], "stage": r["stage"],
-             "status": r["status"], "tokens": r["tokens_total"], "exact": bool(r["tokens_exact"]),
-             "run_id": r["run_id"]} for r in rows]
-
-
 def summary(mission_id: Optional[str] = None) -> Dict[str, Any]:
     # "today" starts at this machine's local midnight (the ledger stores naive UTC)
     from datetime import date, time as _time, timezone

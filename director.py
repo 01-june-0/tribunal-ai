@@ -129,7 +129,7 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
             res = json.loads(r.read().decode("utf-8"))
         click.echo(f"[{res.get('status')}] " + (res.get("mission_id") or res.get("message") or res.get("error") or ""))
         if res.get("mission_id"):
-            click.echo(f"진행 상황: http://127.0.0.1:{port}/  (스테이지에서 실시간으로 보입니다)")
+            click.echo(f"진행 상황: http://127.0.0.1:{port}/  (한눈에 탭에서 실시간으로 보입니다)")
         return
     except Exception as exc:
         click.echo(f"{port} companion unavailable ({str(exc)[:120]}); running the mission in this process instead.")

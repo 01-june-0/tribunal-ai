@@ -56,8 +56,9 @@ def test_role_labels_work_from_the_keyboard():
 def test_escape_closes_one_layer_and_panels_do_not_stack():
     esc = JS[JS.index("if(e.key==='Escape'){"):]
     esc = esc[:esc.index("return;}") + 8]
-    order = [esc.index(x) for x in ("closeRoleMenu(true)", "setChatLog(false)", "setAIPanel(false)", "closeResult()", "closeCall()", "stopReplay()")]
-    assert order == sorted(order) and esc.count("else if") == 5
+    order = [esc.index(x) for x in ("closeRoleMenu(true)", "setChatLog(false)", "setAIPanel(false)", "closeResult()", "closeCall()")]
+    assert order == sorted(order) and esc.count("else if") == 4
+    assert "replay" not in JS.lower() and "attract" not in JS      # the replay of a past task was removed
     assert "function openCall(id){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();" in JS
     assert "if(open){if(openId!=null)closeCall();if(result)closeResult();" in JS
     assert "if(!$('ai-panel').hidden)setAIPanel(false,true);if(openId!=null)closeCall();\n  resultOpener=document.activeElement;" in JS
@@ -78,8 +79,7 @@ def test_short_windows_scroll_the_side_panels_instead_of_cutting_buttons_off():
 
 
 def test_polls_do_not_pile_up():
-    for flag in ("const pollActivity=guarded(", "const pollStatus=guarded(", "const pollRoles=guarded(", "const pollChat=guarded(",
-                 "if(replayLoading)return;replayLoading=true;"):
+    for flag in ("const pollActivity=guarded(", "const pollStatus=guarded(", "const pollRoles=guarded(", "const pollChat=guarded("):
         assert flag in JS, flag
     assert "activity=a;" in JS                                              # a failed answer never replaces the last good one
 
@@ -106,7 +106,7 @@ def test_the_card_asks_for_the_approval_itself():
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject'" in JS and "request_id:rid" in JS      # the same calls as the workshop
     assert "ms.steps.some(s=>s.run===ap.run_id)" in JS                    # only for a run of the mission that is shown
     assert "if(box.dataset.sig===sig)return;box.dataset.sig=sig;" in JS
-    assert "$('attention-go').textContent=here?T('확인하기'):T('작업실에서 확인')" in JS
+    assert "$('attention-go').textContent=here?T('확인하기'):T('자세히 탭에서 확인')" in JS
     assert "confirm(T('이 단계를 거절할까요? 거절하면 이 단계는 실행되지 않습니다.'))" in JS
 
 
@@ -157,10 +157,9 @@ def test_which_block_the_card_shows_for_each_server_state(tmp_path):
         (None, {"required": False}, {"status": "RUNNING", "live": True, "steps": [step("BUILDING")]}),
     ]
     script = "let status=null;\n" + src + "\nconst out=[];for(const [ap,ms] of " + json.dumps([[a, m] for _, a, m in cases]) + \
-        "){status={approval:ap};out.push(attentionKind({mode:'live',mission:ms}));}\n" \
-        "status={approval:{required:true,state:'HUMAN_REQUIRED',run_id:'RUN-B'}};out.push(attentionKind({mode:'replay',mission:{status:'BLOCKED',live:false,steps:[{run:'RUN-B',state:'HUMAN_REQUIRED'}]}}));" \
+        "){status={approval:ap};out.push(attentionKind({mission:ms}));}\n" \
         "console.log(JSON.stringify(out));"
-    assert json.loads(_node(tmp_path, script)) == [k for k, _, _ in cases] + [None]      # and nothing is asked during a replay
+    assert json.loads(_node(tmp_path, script)) == [k for k, _, _ in cases]
 
 
 def test_a_diff_keeps_lines_that_only_look_like_a_header(tmp_path):

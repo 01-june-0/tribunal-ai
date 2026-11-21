@@ -1,7 +1,6 @@
 'use strict';
-/* TRINITY stage HUD. Reads the same read-only endpoints as the workshop (/ops/activity, /status, /chat/messages,
-   /ops/replay) and turns them into one model that both the DOM panels and the WebGL scene are painted from.
-   Live and replay build the same model, so a replay shows exactly what the live view would have shown. */
+/* TRINITY stage HUD. Reads the same read-only endpoints as the workshop (/ops/activity, /status, /chat/messages)
+   and turns them into one model that both the DOM panels and the WebGL scene are painted from. */
 (function(){
 const T=(window.I18N&&window.I18N.t)||((s,...a)=>s.replace(/\{(\d+)\}/g,(m,i)=>i<a.length?String(a[i]):m)),LANG=window.I18N?window.I18N.lang:'ko';
 const $=id=>document.getElementById(id);
@@ -53,7 +52,7 @@ function inspectorTests(t){
 }
 const PULSE={ok:[.35,1,.7],bad:[1,.32,.4],warn:[1,.78,.4],done:[1,.93,.75]};
 
-let activity=null,status=null,win=null,winAuto=true,replay=null,lastModel=null,center=null,timerBase=null;
+let activity=null,status=null,win=null,winAuto=true,lastModel=null,center=null,timerBase=null;
 const seenSteps=new Map(),seenFeed={event:new Set(),call:new Set()};let firstPaint=true;
 
 function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;}
@@ -91,7 +90,6 @@ function closeRoleMenu(refocus){const menu=$('role-menu'),was=!menu.hidden;menu.
   if(was&&refocus&&roleOpener&&roleOpener.isConnected)roleOpener.focus();roleOpener=null;}
 function openRoleMenu(label){
   const menu=$('role-menu'),slot=Number(label.dataset.slot),role=ROLES[slot];
-  if(replay)return;
   if(!roleSettings){notice(T('역할 정보를 아직 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.'));return;}
   if(!menu.hidden&&menu.dataset.slot===String(slot)){closeRoleMenu(true);return;}
   closeRoleMenu();roleOpener=label;label.setAttribute('aria-expanded','true');
@@ -137,7 +135,7 @@ function liveModel(){
   if(!usage[win])win=usage.today?'today':'all';
   const today=(usage.today&&usage.today.by_provider)||{},stats={};
   for(const p of Object.keys(AI))stats[p]=today[p]?T('오늘 {0}회 · {1} 토큰',today[p].calls,(today[p].exact_tokens<today[p].tokens?'~':'')+tok(today[p].tokens)):T('오늘 호출 없음');
-  return {mode:'live',working,assign:assignment(),...phaseOf(working,verifying,!!(focus&&focus.live)),
+  return {working,assign:assignment(),...phaseOf(working,verifying,!!(focus&&focus.live)),
     mission:focus&&{goal:focus.goal,project:focus.project,status:focus.status,live:focus.live,max:Math.max(focus.max_steps||0,focus.steps.length),
       steps:focus.steps.map(s=>({index:s.index,state:s.state,tests:s.tests,itests:s.inspector_tests,run:s.run_id,note:s.note,review:s.review,repairs:s.repairs})),passed:focus.passed_steps,blocked:focus.blocked_reason,summary:focus.summary,deliverableRun:focus.deliverable_run_id,updated:utc(focus.updated_at),id:focus.mission_id,
       deliverable:focus.deliverable,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
@@ -161,18 +159,18 @@ function paintNow(m){
   document.documentElement.style.setProperty('--actor',actorColor(m));
   setSentence($('now-headline'),m);setSentence($('caption'),m);
   const ms=m.mission,step=ms&&ms.steps.length?ms.steps[ms.steps.length-1].index:0;
-  $('now-sub').textContent=m.phase==='IDLE'?(ms?(m.mode==='replay'?T('다시보기 끝 · ')+(MISSION_BADGE[ms.status]||[ms.status])[0]:T('마지막 작업 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
-    :(ms&&(ms.live||m.mode==='replay')?T('{0}단계 진행 중 · 최대 {1}단계',step,ms.max)+' · '+ms.project:PHASE[m.phase].sub);
+  $('now-sub').textContent=m.phase==='IDLE'?(ms?(T('마지막 작업 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
+    :(ms&&ms.live?T('{0}단계 진행 중 · 최대 {1}단계',step,ms.max)+' · '+ms.project:PHASE[m.phase].sub);
   $('now-stage').textContent=m.w?ROLE_KO[m.w.role]||m.w.role:PHASE[m.phase].word;
-  timerBase=m.w?{at:m.w.at,fixed:m.mode==='replay'?m.w.elapsed:null,estimate:m.mode==='live'?m.w.estimate:null}:null;tickTimer();
+  timerBase=m.w?{at:m.w.at,fixed:null,estimate:m.w.estimate}:null;tickTimer();
   $('phase-word').textContent=PHASE[m.phase].word;$('phase-sub').textContent=PHASE[m.phase].sub;
   const at=PIPE.indexOf(m.phase);
   for(const li of $('pipeline').children){const i=PIPE.indexOf(li.dataset.stage);li.classList.toggle('on',i===at);li.classList.toggle('done',at>i&&at>=0);
     const role=li.dataset.stage==='BUILDING'?'MAKER':li.dataset.stage==='REVIEWING'?'INSPECTOR':li.dataset.stage==='VERIFYING'?null:'ARCHITECT';
     li.style.setProperty('--c',i===at?actorColor(m):role?AI[m.assign[role]].css:'#b9ffe2');}
-  const chip=$('top-live');chip.dataset.mode=m.mode==='replay'?'replay':(m.working.length||(ms&&ms.live))?'live':'idle';
-  chip.lastElementChild.textContent=m.mode==='replay'?'REPLAY':chip.dataset.mode==='live'?'LIVE':'STANDBY';
-  $('top-project').textContent=T('프로젝트 · ')+((ms&&(ms.live||m.mode==='replay')&&ms.project)||m.project);
+  const chip=$('top-live');chip.dataset.mode=(m.working.length||(ms&&ms.live))?'live':'idle';
+  chip.lastElementChild.textContent=chip.dataset.mode==='live'?'LIVE':'STANDBY';
+  $('top-project').textContent=T('프로젝트 · ')+((ms&&ms.live&&ms.project)||m.project);
 }
 function tickTimer(){
   for(const label of document.querySelectorAll('.slot-label'))if(label._work&&label._work.fixed==null)label.querySelector('.slot-status').textContent=label._work.text+' · '+clock((Date.now()-label._work.at)/1000);
@@ -198,12 +196,11 @@ function paintMission(m){
     chip.className=s?(STEP_CLASS[s.state]||'run'):'todo';chip.title=s?T('{0}단계 · {1}',i+1,STATE_KO[s.state]||T('진행 중')):T('아직 쓰지 않은 단계');
     const mark=STEP_MARK[chip.className]+(i+1);if(chip.textContent!==mark)chip.textContent=mark;chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);}
   const last=[...ms.steps].reverse().find(s=>s.tests);
-  const meta=$('mission-meta'),text=stepLine(ms.steps.length,ms.passed,ms.max,ms.status,m.mode==='replay'||ms.live)+(last?' · '+testLine(last.tests):'');
+  const meta=$('mission-meta'),text=stepLine(ms.steps.length,ms.passed,ms.max,ms.status,ms.live)+(last?' · '+testLine(last.tests):'');
   const it=inspectorTests((ms.steps[ms.steps.length-1]||{}).itests),sig=text+'|'+(it?it.cls+it.label+it.tip.join('|'):'');      // the newest step only: an older step's outcome would read as the current one
   if(meta.dataset.sig!==sig){meta.dataset.sig=sig;const open=!!meta.querySelector('details[open]');meta.replaceChildren(text);
     if(it){const box=el('details','','itest '+it.cls);box.open=open&&it.tip.length>0;box.append(el('summary',it.label));for(const line of it.tip)box.append(el('p',line));meta.append(box);}}
   paintAttention(m);paintDelivery(m);paintLoose(m);
-  if(m.mode!=='live')return;
   for(const s of ms.steps){const key=ms.id+':'+s.index,prev=seenSteps.get(key);seenSteps.set(key,s.state);
     if(!firstPaint&&prev!==s.state&&STEP_CLASS[s.state])Trinity.pulse(PULSE[STEP_CLASS[s.state]]);}
   const mk=ms.id+':status',prev=seenSteps.get(mk);seenSteps.set(mk,ms.status);
@@ -280,7 +277,6 @@ function orderDetails(runId){
 const AT_WORK=new Set(['PLANNING','ORDER_READY','BUILDING','VERIFYING','REVIEWING','DECIDING']);
 function attentionKind(m){
   const ms=m.mission,ap=status&&status.approval;
-  if(m.mode!=='live')return null;
   // The waiting run is this card's business when it is a step of the mission shown, or when it belongs to no mission
   // at all: a task stopped at its very start has no mission yet, and no other card would ever ask about it.
   const inCard=!!(ap&&ms&&ms.steps.some(s=>s.run===ap.run_id));
@@ -362,7 +358,7 @@ function closeResult(){if(!result)return;result=null;$('result-panel').hidden=tr
 function paintResult(){
   if(!result)return;
   const loose=!!result.ms.loose,d=result.data;
-  const now=loose?result.ms:lastModel&&lastModel.mode==='live'&&lastModel.mission&&lastModel.mission.id===result.ms.id?lastModel.mission:null,live=now||result.ms;
+  const now=loose?result.ms:lastModel&&lastModel.mission&&lastModel.mission.id===result.ms.id?lastModel.mission:null,live=now||result.ms;
   if(loose&&d&&d.goal)live.goal=d.goal;
   const recorded={READY:'pending',APPLIED:'applied',DISCARDED:'discarded',APPLY_BLOCKED:'blocked'}[((d&&d.result)||{}).state]||'pending';
   const state=result.done||(loose?recorded:(live.applied&&live.applied.status)||live.applyState||'pending');
@@ -441,7 +437,7 @@ async function decideResult(runId,kind,extra){
 function paintLoose(m){
   let box=$('loose-results');
   if(!box){box=el('div','','delivery');box.id='loose-results';$('mission-card').append(box);}
-  const list=m.mode==='live'?looseResults():[],sig=JSON.stringify([list.map(r=>[r.run_id,r.changed_count,r.project_name,r.result_state]),deliveryBusy]);
+  const list=looseResults(),sig=JSON.stringify([list.map(r=>[r.run_id,r.changed_count,r.project_name,r.result_state]),deliveryBusy]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;
   const held=box.contains(document.activeElement)?document.activeElement.dataset.run:null;
   box.replaceChildren();box.hidden=!list.length;if(!list.length)return;
@@ -455,7 +451,7 @@ function paintLoose(m){
 function paintDelivery(m){
   let box=$('mission-delivery');
   if(!box){box=el('div','','delivery');box.id='mission-delivery';$('mission-card').append(box);}
-  const ms=m.mission,shown=!!(ms&&m.mode==='live'&&ms.deliverable&&ms.status!=='RUNNING');
+  const ms=m.mission,shown=!!(ms&&ms.deliverable&&ms.status!=='RUNNING');
   const state=shown?((ms.applied&&ms.applied.status)||ms.applyState||'pending'):'',[label,cls]=APPLY_KO[state]||[state,''];
   const sig=JSON.stringify(shown?[ms.id,state,ms.applied&&ms.applied.files,ms.applied&&ms.applied.blocks,ms.source,deliveryBusy]:[]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;      // rebuilt only when something changed: a click or the focus is never lost to a poll
@@ -479,7 +475,7 @@ function paintDelivery(m){
   }
 }
 function paintWork(m){
-  for(const b of $('win-tabs').children){b.classList.toggle('on',b.dataset.win===win&&m.mode==='live');b.setAttribute('aria-pressed',String(b.dataset.win===win&&m.mode==='live'));b.disabled=m.mode!=='live'||!m.windows[b.dataset.win];}
+  for(const b of $('win-tabs').children){b.classList.toggle('on',b.dataset.win===win);b.setAttribute('aria-pressed',String(b.dataset.win===win));b.disabled=!m.windows[b.dataset.win];}
   const u=m.usage,total=u.total||{},approx=(total.exact_tokens||0)<(total.tokens||0);
   countTo($('total-tokens'),total.tokens||0,v=>(approx?'~':'')+tok(v));
   $('total-sub').textContent=T('호출 {0}회 · CLI {1}',total.calls||0,span(total.seconds))+(total.failed?T(' · 실패 {0}',total.failed):'');
@@ -516,7 +512,7 @@ function paintFeeds(m){
   paintFeed($('event-feed'),m.events,seenFeed.event,(li,e)=>{li.style.setProperty('--dot',e.color||stateColor(m,e.state));li.append(el('b',e.label),el('span',e.sub||''),el('time',e.when||ago(e.at)));});
   paintFeed($('call-feed'),m.calls,seenFeed.call,(li,c)=>{li.style.setProperty('--dot',c.status&&c.status!=='OK'?'#ff6b7a':(AI[c.provider]||{}).css||'#8fa0bd');
     li.append(el('b',(AI[c.provider]||{name:c.provider}).name),el('span',(c.role||'?')+' · '+span(c.seconds)+(c.tokens?' · '+(c.exact?'':'~')+tok(c.tokens)+T(' 토큰'):'')+(c.status&&c.status!=='OK'?' · '+c.status:'')),el('time',c.when||ago(c.at)));
-    if(c.id&&m.mode==='live'){li.classList.add('openable');li.dataset.key='call-'+c.id;li.tabIndex=0;li.setAttribute('role','button');li.title=T('이 호출 안에서 한 일 보기');
+    if(c.id){li.classList.add('openable');li.dataset.key='call-'+c.id;li.tabIndex=0;li.setAttribute('role','button');li.title=T('이 호출 안에서 한 일 보기');
       li.onclick=()=>openCall(c.id);li.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCall(c.id);}};}});
 }
 
@@ -530,7 +526,7 @@ let liveCall=null,openId=null,openData=null,callFilter='all',callBusy=false,call
 function eventText(e){return e.kind==='tool'?[e.name,e.detail]:e.kind==='say'?[T('말'),e.detail]:e.kind==='think'?[T('생각'),'']:[T('응답 끝'),e.detail];}
 function paintDoing(){
   const b=$('now-doing'),d=liveCall,ev=d&&d.found?d.events.filter(e=>e.kind!=='done'):[];
-  if(!d||replay){b.hidden=true;return;}
+  if(!d){b.hidden=true;return;}
   b.hidden=false;const last=ev[ev.length-1],[name,detail]=last?eventText(last):['',''];
   b.children[1].textContent=last?name+(detail?' · '+detail:''):(d.found?T('아직 도구를 쓰지 않았습니다'):T('활동 기록을 기다리는 중'));
   const quiet=d.quiet_sec||0;
@@ -559,7 +555,7 @@ function closeCall(){openId=null;openData=null;$('call-panel').hidden=true;
 async function pollCall(){
   if(callBusy)return;callBusy=true;                      // one round at a time: a slow answer never overwrites a newer one
   try{
-    const w=!replay&&activity&&(activity.working_now||[])[0];
+    const w=activity&&(activity.working_now||[])[0];
     if(w&&w.id){try{const d=await getJSON('/ops/call?id='+w.id);liveCall=d;}catch(e){/* keep the last one */}}else liveCall=null;
     paintDoing();
     // A finished call is read once more while its record is still missing: the CLI may flush it a moment late.
@@ -574,11 +570,11 @@ function paintScene(m){
     const label=document.querySelector('.slot-label[data-slot="'+i+'"]'),acting=w&&w.provider!==m.assign[role];
     label.style.setProperty('--c',(AI[p]||{}).css||'#fff');label.classList.toggle('busy',!!w);
     label.querySelector('.slot-name').textContent=((AI[p]||{name:p}).name)+(acting?T(' (대행)'):'');
-    label._work=w?{text:SHORT[w.stage]||(role==='MAKER'?SHORT.BUILDING:role==='INSPECTOR'?SHORT.REVIEWING:T('작업 중')),at:w.at,fixed:m.mode==='replay'?w.elapsed:null}:null;
+    label._work=w?{text:SHORT[w.stage]||(role==='MAKER'?SHORT.BUILDING:role==='INSPECTOR'?SHORT.REVIEWING:T('작업 중')),at:w.at,fixed:null}:null;
     label.querySelector('.slot-status').textContent=label._work?label._work.text+' · '+clock(label._work.fixed!=null?label._work.fixed:(Date.now()-label._work.at)/1000):T('대기');
     label.querySelector('.slot-stat').textContent=m.stats[p]||'';
-    const cfg=label.querySelector('.slot-cfg'),hot=m.mode==='live'&&!!alertOf(CLI_OF[p]);cfg.textContent=m.mode==='live'?cfgLine(p)+(hot?' · '+T('한도 임박'):''):'';cfg.classList.toggle('alert',hot);});
-  $('independence').hidden=!(m.mode==='live'&&roleSettings&&(roleSettings.inspector===roleSettings.architect||roleSettings.inspector===roleSettings.maker));
+    const cfg=label.querySelector('.slot-cfg'),hot=!!alertOf(CLI_OF[p]);cfg.textContent=cfgLine(p)+(hot?' · '+T('한도 임박'):'');cfg.classList.toggle('alert',hot);});
+  $('independence').hidden=!(roleSettings&&(roleSettings.inspector===roleSettings.architect||roleSettings.inspector===roleSettings.maker));
   if(m.phase==='BUILDING')edge[0]=1;if(m.phase==='REVIEWING')edge[1]=1;if(m.phase==='DECIDING')edge[2]=1;
   if(m.phase==='VERIFYING')act[1]=.5;
   Trinity.set({act,edge,colors,core:PHASE[m.phase].core,verify:m.phase==='VERIFYING'?1:0});
@@ -592,15 +588,8 @@ function stinger(m){
   s.style.setProperty('--c',actorColor(m));s.classList.remove('show');void s.offsetWidth;s.classList.add('show');
 }
 function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintFeeds(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');if(result)paintResult();}
-const params=new URLSearchParams(location.search),attract=params.get('attract')==='1';let idleSince=null;
-function repaint(){
-  if(attract&&activity){
-    if(replay&&isLiveNow())stopReplay();
-    else if(!replay&&!isLiveNow()){idleSince=idleSince||Date.now();if(Date.now()-idleSince>12000){idleSince=null;startReplay();}}
-    else if(isLiveNow())idleSince=null;
-  }
-  if(!replay)paint(liveModel());
-}
+const params=new URLSearchParams(location.search);
+function repaint(){paint(liveModel());}
 
 // ------------------------------------------------------------------ scene-pinned labels
 // ---- intro: the roll call sits on the scene's own three points and its lights fly to the scene's own core
@@ -766,7 +755,7 @@ function paintAITools(){
 }
 function paintLimitAlert(){
   const box=$('limit-alert'),list=(ai&&ai.alerts)||[];
-  box.hidden=!list.length||!!replay||!$('ai-panel').hidden;if(box.hidden)return;   // the open panel shows the same warning on its cards
+  box.hidden=!list.length||!$('ai-panel').hidden;if(box.hidden)return;   // the open panel shows the same warning on its cards
   box.textContent=T('한도 경고 · ')+list.map(a=>{const p=CLI[a.cli],left=a.resets_at?(utc(a.resets_at)-Date.now())/1000:null;
     return T('{0} {1} {2}% (임계치 {3}%)',(AI[p]||{name:a.cli}).name+(a.group?' '+a.group:''),a.window==='weekly'?T('주간'):T('5시간'),Math.round(a.used_percent),a.threshold)
       +(left>0?' · '+T('{0} 뒤 초기화',left>=86400?T('{0}일 {1}시간',Math.floor(left/86400),Math.floor(left%86400/3600)):span(left)):'');}).join('  /  ');
@@ -800,62 +789,8 @@ const pollStatus=guarded(async()=>{try{status=await getJSON('/status');
   repaint();          // the card first: the pill points at it when the card itself asks for the decision
   const here=lastModel&&attentionKind(lastModel)==='approve';
   $('attention').hidden=!need||document.body.dataset.view==='workshop';$('attention-text').textContent=T('확인이 필요한 작업이 {0}건 있습니다.',need);
-  $('attention-go').textContent=here?T('확인하기'):T('작업실에서 확인');$('attention-go').dataset.here=here?'1':'';
+  $('attention-go').textContent=here?T('확인하기'):T('자세히 탭에서 확인');$('attention-go').dataset.here=here?'1':'';
   if(result)paintResult();}catch(e){/* the activity poll reports connection trouble */}});
-
-// ------------------------------------------------------------------ replay (real ledger of a finished mission)
-let replayLoading=false;
-async function startReplay(){
-  if(replay){if(attract)return;return stopReplay();}
-  if(replayLoading)return;replayLoading=true;
-  let data,failed=false;try{data=await getJSON('/ops/replay');}catch(e){data={calls:[]};failed=true;}finally{replayLoading=false;}
-  if(replay)return;
-  const calls=(data.calls||[]).filter(c=>ROLES.includes(c.role)&&AI[c.provider]).map(c=>({...c,t0:utc(c.started_at)/1000,dur:Math.max(1,c.seconds||1)}));
-  if(!calls.length){notice(failed?T('다시보기 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'):T('다시 볼 작업 기록이 아직 없습니다.'));return;}
-  let v=0,prevEnd=calls[0].t0,real=0;const gaps=[];
-  calls.forEach((c,i)=>{const gap=Math.max(0,c.t0-prevEnd),vg=Math.min(gap,40);
-    if(vg>6&&i&&calls[i-1].role==='MAKER')gaps.push([v,v+vg]);                       // Tribunal itself ran the tests between build and review
-    v+=vg;c.v0=v;c.v1=v+c.dur;v=c.v1;real+=gap+c.dur;prevEnd=Math.max(prevEnd,c.t0+c.dur);});
-  const stepOf=new Map((data.steps||[]).map(s=>[s.run_id,s])),lastCall=new Map();
-  calls.forEach(c=>{if(stepOf.has(c.run_id))lastCall.set(c.run_id,c);});
-  replay={data,calls,gaps,total:v,real,speed:v/72,started:performance.now(),stepOf,lastCall,done:new Set(),events:[],finished:false};
-  $('replay-bar').hidden=false;document.body.classList.add('replaying');
-  $('replay-text').textContent=T('{0} 작업 · 실제 기록 {1} → {2}배속',data.project,span(real),Math.round(replay.speed));
-  $('btn-replay').classList.add('on');$('btn-replay').setAttribute('aria-pressed','true');closeRoleMenu();seenFeed.event.clear();seenFeed.call.clear();
-  replay.timer=setInterval(replayTick,120);replayTick();
-}
-function stopReplay(){
-  if(!replay)return;clearInterval(replay.timer);replay=null;$('replay-bar').hidden=true;document.body.classList.remove('replaying');$('btn-replay').classList.remove('on');$('btn-replay').setAttribute('aria-pressed','false');
-  seenFeed.event.clear();seenFeed.call.clear();firstPaint=true;repaint();
-}
-function replayTick(){
-  const r=replay;if(!r)return;
-  const vt=Math.min(r.total,(performance.now()-r.started)/1000*r.speed);
-  $('replay-fill').style.width=(vt/r.total*100)+'%';
-  const working=r.calls.filter(c=>c.v0<=vt&&vt<c.v1).map(c=>({provider:c.provider,role:c.role,stage:c.stage,elapsed:vt-c.v0,at:0}));
-  const done=r.calls.filter(c=>c.v1<=vt),usage={by_role:{},by_provider:{},total:{calls:0,seconds:0,tokens:0,exact_tokens:0,failed:0}};
-  for(const c of done){
-    for(const [group,key] of [[usage.by_role,c.role],[usage.by_provider,c.provider]]){const b=group[key]||(group[key]={calls:0,seconds:0,tokens:0,exact_tokens:0,failed:0,providers:{}});
-      b.calls++;b.seconds+=c.dur;b.tokens+=c.tokens||0;b.exact_tokens+=c.exact?(c.tokens||0):0;b.failed+=c.status!=='OK'?1:0;b.providers[c.provider]=(b.providers[c.provider]||0)+1;}
-    const t=usage.total;t.calls++;t.seconds+=c.dur;t.tokens+=c.tokens||0;t.exact_tokens+=c.exact?(c.tokens||0):0;t.failed+=c.status!=='OK'?1:0;
-    if(!r.done.has(c)){r.done.add(c);
-      const s=r.stepOf.get(c.run_id);
-      if(s&&r.lastCall.get(c.run_id)===c){r.events.unshift({key:'step'+s.index,state:s.state,label:T('{0}단계 {1}',s.index,STATE_KO[s.state]||s.state||T('종료')),sub:s.tests?testLine(s.tests):'',when:T('기록')});
-        if(STEP_CLASS[s.state])Trinity.pulse(PULSE[STEP_CLASS[s.state]]);}}
-  }
-  for(const c of r.calls)if(c.v0<=vt&&!c.announced){c.announced=true;r.events.unshift({key:'c'+c.v0,color:AI[c.provider].css,label:T('{0} 시작',(ROLE_KO[c.role]||c.role).split(' · ')[1]),sub:AI[c.provider].name,when:T('기록')});}
-  const steps=(r.data.steps||[]).filter(s=>{const first=r.calls.find(c=>c.run_id===s.run_id);return first&&first.v0<=vt;})
-    .map(s=>{const last=r.lastCall.get(s.run_id);return {index:s.index,state:last&&last.v1<=vt?s.state:null,tests:last&&last.v1<=vt?s.tests:null,itests:last&&last.v1<=vt?s.inspector_tests:null};});
-  const verifying=!working.length&&r.gaps.some(g=>g[0]<=vt&&vt<g[1]),stats={};
-  for(const p of Object.keys(AI)){const b=usage.by_provider[p];stats[p]=b?T('{0}회 · {1} 토큰',b.calls,tok(b.tokens)):'';}
-  const finished=vt>=r.total;
-  paint({mode:'replay',working,assign:assignment(),...phaseOf(working,verifying,!finished),
-    mission:{goal:r.data.goal,project:r.data.project,status:finished?r.data.status:'RUNNING',live:!finished,max:Math.max(r.data.max_steps||0,(r.data.steps||[]).length),steps,
-      passed:steps.filter(s=>s.state==='PASS').length,updated:Date.now(),id:'replay'},
-    usage,windows:{},calls:done.slice(-6).reverse().map(c=>({key:'d'+c.v0,role:c.role,provider:c.provider,seconds:c.dur,tokens:c.tokens,exact:c.exact,status:c.status,when:T('기록')})),
-    events:r.events.slice(0,7),stats,project:r.data.project});
-  if(finished&&!r.finished){r.finished=true;if(r.data.status==='DONE')Trinity.pulse(PULSE.done);clearInterval(r.timer);setTimeout(()=>{if(replay===r)stopReplay();},6000);}
-}
 
 // ------------------------------------------------------------------ chat with ARCHITECT
 let lastMsg=0,sending=false,chatFails=0;
@@ -901,22 +836,21 @@ function setView(view){
   if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openId!=null)closeCall();if(result)closeResult();if(!$('ai-panel').hidden)setAIPanel(false,true);}
 }
 function setBroadcast(on){
-  document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('방송 모드 끝내기'):T('방송 모드');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on)closeRoleMenu();
+  document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('전체 화면 끝내기'):T('전체 화면');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on)closeRoleMenu();
   try{if(on&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){/* fullscreen is optional */}
 }
 function start(){
   if(introOn){document.body.classList.add('intro');setTimeout(()=>document.body.classList.remove('intro'),4300);setTimeout(endIntro,6400);}else endIntro();
   Trinity.init($('trinity-canvas'),introOn?{onFrame,bootDelay:2.1,bootTime:1.7}:{onFrame});
-  if(params.get('broadcast')==='1'||attract){document.body.classList.add('broadcast');$('btn-broadcast').textContent=T('방송 모드 끝내기');$('btn-broadcast').setAttribute('aria-pressed','true');}   // e.g. an OBS browser source: /?attract=1
+  if(params.get('broadcast')==='1'){document.body.classList.add('broadcast');$('btn-broadcast').textContent=T('전체 화면 끝내기');$('btn-broadcast').setAttribute('aria-pressed','true');}
   $('tab-stage').onclick=()=>setView('stage');$('tab-workshop').onclick=()=>setView('workshop');$('attention-go').onclick=()=>{const b=$('attention-go').dataset.here&&document.querySelector('#mission-attention [data-act="approve"]');if(b){b.scrollIntoView({block:'center'});b.focus();}else setView('workshop');};$('rp-close').onclick=closeResult;
-  $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled||replay)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');
+  $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');
     try{const r=await chooseProjectFolder();if(r)notice(r.ok?T('작업 폴더를 바꿨습니다 · ')+r.path:T('선택할 수 없는 폴더입니다 · ')+r.message);}
-    catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (작업실 탭에서 경로를 직접 입력할 수 있습니다)'));}
+    catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (자세히 탭에서 경로를 직접 입력할 수 있습니다)'));}
     finally{b.disabled=false;if(lastModel)paintNow(lastModel);pollStatus();pollChat();}};
   for(const label of document.querySelectorAll('.slot-label')){label.title=T('이 역할의 담당 AI 바꾸기');label.tabIndex=0;label.setAttribute('role','button');label.setAttribute('aria-haspopup','menu');label.setAttribute('aria-expanded','false');
     label.onclick=e=>{e.stopPropagation();openRoleMenu(label);};label.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRoleMenu(label);}};}
   document.addEventListener('click',e=>{if(!e.target.closest('#role-menu'))closeRoleMenu();});
-  $('btn-replay').onclick=startReplay;$('replay-stop').onclick=stopReplay;
   $('btn-broadcast').onclick=()=>setBroadcast(!document.body.classList.contains('broadcast'));
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&document.body.classList.contains('broadcast'))setBroadcast(false);});
   for(const b of $('win-tabs').children)b.onclick=()=>{win=b.dataset.win;winAuto=false;repaint();};
@@ -943,11 +877,11 @@ function start(){
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){   // one layer per press, the topmost first
       if(!$('role-menu').hidden)closeRoleMenu(true);else if(!$('chat-log').hidden){setChatLog(false);if(e.target.id!=='chat-text')$('chat-peek').focus();}
-      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openId!=null)closeCall();else if(replay)stopReplay();return;}
+      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openId!=null)closeCall();return;}
     if(e.target.closest('textarea,input,select,[contenteditable]')||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.repeat||document.body.dataset.view!=='stage')return;
     if(e.key==='b'||e.key==='B'||e.key==='ㅠ')setBroadcast(!document.body.classList.contains('broadcast'));
-    if(e.key==='r'||e.key==='R'||e.key==='ㄱ')startReplay();});
-  setInterval(()=>{const d=new Date();$('top-clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');if(!replay)tickTimer();},1000);
+});
+  setInterval(()=>{const d=new Date();$('top-clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');tickTimer();},1000);
   // Nothing is asked of the server while the window is out of sight; everything is asked again the moment it is back.
   const every=(fn,ms)=>setInterval(()=>{if(!document.hidden)fn();},ms);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollActivity();pollStatus();pollChat();pollRoles();pollCall();pollAI();}});
@@ -955,6 +889,6 @@ function start(){
   every(pollActivity,3000);every(pollStatus,6000);every(pollChat,3000);every(pollCall,2000);pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
      // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
 }
-window.TrinityStage={model:()=>lastModel,replaying:()=>!!replay};
+window.TrinityStage={model:()=>lastModel};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();
