@@ -128,9 +128,17 @@ float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
 float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.03+vec2(11.3,7.7);a*=.5;}return v;}
 void main(){
   vec2 q=(vUv-uCenter)*vec2(uRes.x/uRes.y,1.);float r=length(q);
-  vec3 bg=mix(vec3(.016,.024,.048),vec3(.004,.006,.013),smoothstep(0.,1.15,r));
-  float neb=fbm(q*1.7+vec2(uTime*.012,-uTime*.008));float neb2=fbm(q*3.1-vec2(uTime*.01,0.)+neb);
-  bg+=uTint*(.035+.10*uCore)*neb*neb2*(1.-smoothstep(.05,1.3,r))*1.6;
+  vec3 bg=mix(vec3(.026,.040,.100),vec3(.004,.006,.014),smoothstep(0.,1.25,r));
+  // nebula: two layers of drifting cloud (the second warped by the first), lit by the aurora colours and by whoever works
+  float neb=fbm(q*1.25+vec2(uTime*.011,-uTime*.007));float neb2=fbm(q*2.7-vec2(uTime*.009,uTime*.004)+neb*1.7);
+  float cloud=smoothstep(.46,.74,neb*.62+neb2*.55),wisp=smoothstep(.50,.80,neb2),veil=smoothstep(.44,.66,fbm(q*.7+vec2(-uTime*.006,uTime*.004)+neb2*.6));
+  vec2 a1=q-vec2(-1.02+.07*sin(uTime*.045),.56+.05*cos(uTime*.038)),a2=q-vec2(1.04+.06*cos(uTime*.04),-.62+.06*sin(uTime*.05));
+  bg+=vec3(1.,.54,.36)*.15*exp(-dot(a1,a1)*.95)*(.30+1.5*cloud)+vec3(.24,.95,.75)*.125*exp(-dot(a2,a2)*.9)*(.30+1.5*veil);
+  bg+=vec3(.22,.30,.85)*.30*cloud*(1.-smoothstep(.15,1.5,r))+vec3(.55,.36,.95)*.22*veil*(.35+.65*wisp)*(1.-smoothstep(.3,1.6,r));
+  bg+=vec3(.55,.75,1.)*.13*wisp*cloud*(1.-smoothstep(.1,1.4,r));
+  bg+=uTint*(.05+.13*uCore)*neb*neb2*(1.-smoothstep(.05,1.3,r))*2.1;
+  vec2 sg=floor(vUv*uRes/3.);float sh=hash(sg);
+  bg+=vec3(.75,.85,1.)*step(.9987,sh)*(.10+.16*(.5+.5*sin(uTime*(.6+2.*hash(sg+7.))+sh*90.)))*smoothstep(.25,.6,r)*(1.-.7*cloud);
   float ring=smoothstep(.0035,0.,abs(r-.36))+smoothstep(.0035,0.,abs(r-.72))*.6+smoothstep(.003,0.,abs(r-1.08))*.3;
   bg+=vec3(.35,.5,.8)*ring*.045;
   bg+=uPulseColor*uPulse*.10*(1.-smoothstep(0.,1.2,r));
@@ -282,7 +290,11 @@ function emit(){
 // ---- 2D fallback (no WebGL2): same data, simpler picture
 function drawFlat(){
   const c=flat,cw=canvas.clientWidth,ch=canvas.clientHeight,W=size[0],H=size[1],k=W/cw;
-  c.setTransform(1,0,0,1,0,0);c.fillStyle='#05070d';c.fillRect(0,0,W,H);c.globalCompositeOperation='lighter';
+  c.setTransform(1,0,0,1,0,0);c.fillStyle='#05070d';c.fillRect(0,0,W,H);
+  // the same backdrop the shader paints: navy around the middle, a warm glow upper left, a mint one lower right
+  for(const [x,y,rad,col] of [[W/2,H/2,Math.max(W,H)*.6,'rgba(22,34,80,.55)'],[W*.12,H*.14,Math.max(W,H)*.45,'rgba(255,138,92,.16)'],[W*.9,H*.9,Math.max(W,H)*.45,'rgba(61,242,192,.13)']]){
+    const g=c.createRadialGradient(x,y,0,x,y,rad);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=g;c.fillRect(0,0,W,H);}
+  c.globalCompositeOperation='lighter';
   const pt=p=>{const q=project(p);return [q[0]*W,q[1]*H];},o=pt([0,0,0]),u=Math.abs(pt([.5,0,0])[0]-o[0])*2;
   const rgb=(col,a)=>'rgba('+col.map(v=>Math.round(Math.min(1,v)*255)).join(',')+','+a+')';
   const glow=(x,y,r,col,a)=>{const g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,rgb(col,a));g.addColorStop(1,rgb(col,0));c.fillStyle=g;c.beginPath();c.arc(x,y,r,0,7);c.fill();};
