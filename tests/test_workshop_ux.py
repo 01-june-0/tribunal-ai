@@ -24,10 +24,12 @@ def page():
 
 # ---------------------------------------------------------------- system notices
 @pytest.mark.parametrize("raw,kind,text", [
-    ("[미션 1/2] 실행 시작: Create clamp(). It raises ValueError if low > high.", "ev-info", "● 미션 단계를 시작했습니다."),
-    ("[미션 2/3] 결과 PASS - tests failed earlier but pass now", "ev-ok", "✓ 미션 단계가 통과했습니다."),
-    ("[미션 2/3] 결과 HUMAN_REQUIRED - needs a look", "ev-bad", "⚠ 미션 단계가 통과하지 못했습니다."),
-    ("미션 시작 MSN-1: fix the Error page", "ev-info", "● 미션을 시작했습니다."),
+    ("[미션 1/2] 실행 시작: Create clamp(). It raises ValueError if low > high.", "ev-info", "● 작업 단계를 시작했습니다."),
+    ("[미션 2/3] 결과 PASS - tests failed earlier but pass now", "ev-ok", "✓ 작업 단계가 통과했습니다."),
+    ("[작업 2/3] 결과 PASS - written after the wording change", "ev-ok", "✓ 작업 단계가 통과했습니다."),
+    ("작업 시작 MSN-2: add a page", "ev-info", "● 작업을 시작했습니다."),
+    ("[미션 2/3] 결과 HUMAN_REQUIRED - needs a look", "ev-bad", "⚠ 작업 단계가 통과하지 못했습니다."),
+    ("미션 시작 MSN-1: fix the Error page", "ev-info", "● 작업을 시작했습니다."),
     ("[미션 2/3] ARCHITECT 계획: retry the failed step", "ev-info", "● ARCHITECT가 다음 단계를 계획했습니다."),
     ("결과물을 자동 적용하지 않았습니다: TypeError in hook", "ev-bad", "⚠ 결과물을 자동 적용하지 않았습니다."),
     ("ARCHITECT Error: boom", "ev-bad", "✗ 오류가 발생했습니다."),

@@ -92,9 +92,9 @@ function load(lang){
 }
 const en=load('en'),ko=load('ko');
 console.log(JSON.stringify([en.lang,en.t('보내기'),en.t('도구 {0}회',3),en.t('없는 문구 {0}',1),ko.lang,ko.t('보내기'),ko.t('도구 {0}회',3),
-  en.t('{0} 미션 · 실제 기록 {1} → {2}배속','p','1m',8),en.t('약 {0} 남음 (추정)','$&')]));
+  en.t('{0} 작업 · 실제 기록 {1} → {2}배속','p','1m',8),en.t('약 {0} 남음 (추정)','$&')]));
 """
     out = subprocess.run(["node", "-e", script, str(CONSOLE / "i18n.js")], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout) == ["en", "Send", "3 tool calls", "없는 문구 1", "ko", "보내기", "도구 3회",
-                                      "p mission · real record 1m → 8× speed", "about $& left (estimate)"]
+                                      "p task · real record 1m → 8× speed", "about $& left (estimate)"]

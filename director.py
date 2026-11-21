@@ -176,7 +176,7 @@ def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optio
         previous = latest_deliverable(project)
         context = orch._read_project_context(previous or project)
         if previous:
-            notify(f"이전 미션 결과물에서 이어서 진행: {previous}")
+            notify(f"이전 작업 결과물에서 이어서 진행: {previous}")
             context["note"] = "Continuing from the latest mission deliverable; the listed files already exist there."
         from core import usage
         usage.set_context(stage="CHAT", run_id=None, mission_id=None)   # the ledger shows what this first ARCHITECT call is
@@ -192,18 +192,18 @@ def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optio
             notify(f"사용자 결정 필요: {gate['escalate']}")
             return
         mission_id = runner.create(project, goal, gate["order"], config=config, notes=gate["notes"], profile=profile, source="cli")["mission_id"]
-        notify(f"미션 시작 {mission_id}")
+        notify(f"작업 시작 {mission_id}")
     else:
         if max_steps:
             existing = runner.store.load(mission_id)
             existing["max_steps"] = max(max_steps, len(existing["steps"]) + 1)
             runner.store.save(existing)
-            notify(f"미션 {mission_id} 단계 예산을 {existing['max_steps']}로 조정")
+            notify(f"작업 {mission_id} 최대 단계를 {existing['max_steps']}로 조정")
         if replan:
             existing = runner.store.load(mission_id)
             existing["steps"][-1]["operator_replan"] = replan
             runner.store.save(existing)
-            notify(f"미션 {mission_id}: 멈춘 단계를 운영자가 재계획으로 돌려보냄 - {replan}")
+            notify(f"작업 {mission_id}: 멈춘 단계를 운영자가 재계획으로 돌려보냄 - {replan}")
         runner.reopen(mission_id)
     final = runner.run(mission_id)
     click.echo(f"=== Mission {mission_id}: {final['status']} ===")

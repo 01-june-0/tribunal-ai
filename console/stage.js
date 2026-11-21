@@ -25,11 +25,20 @@ const STAGE_LABEL={PLANNING:T('설계'),ORDER_READY:T('제작 준비'),BUILDING:
   HUMAN_REQUIRED:T('사용자 확인'),TIMEOUT:T('시간 초과'),IDLE:T('대기'),MISSION_PLANNING:T('다음 단계 계획'),ENTRY_REVIEW:T('오더 검토'),CHAT:T('대화')};
 const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료')};
 const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
-const MISSION_BADGE={DONE:[T('완료'),'ok'],INCOMPLETE:[T('예산 소진'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
+const MISSION_BADGE={DONE:[T('완료'),'ok'],INCOMPLETE:[T('단계 한도 도달'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
 // The inspector's own tests in one step (server: inspector_tests.summary) → what to show, or null when there is no record.
 const ITEST_REASON={'no acceptable test file':T('받아들일 수 있는 테스트 파일이 없습니다'),'no test command is configured':T('테스트 명령이 설정되어 있지 않습니다'),"the project's own tests do not pass yet":T('프로젝트 자체 테스트가 아직 통과하지 못했습니다'),'the worktree is too large to copy':T('작업 폴더가 너무 커서 복사하지 않았습니다'),'the run record is inside the worktree':T('실행 기록이 작업 폴더 안에 있습니다'),'the work folder is missing':T('작업 폴더를 찾지 못했습니다'),'could not be run':T('실행하는 중에 오류가 났습니다'),
   'path and content must be text':T('경로와 내용이 글자가 아닙니다'),'must be a repo-relative path with forward slashes':T('프로젝트 기준 상대 경로가 아닙니다'),'must be a plain relative path inside a test directory':T('테스트 폴더 안의 단순한 상대 경로가 아닙니다'),'file name must mark it as an inspector test (e.g. test_inspector_<topic>.py)':T('파일 이름이 감리 테스트 형식이 아닙니다'),'must be inside a test directory (tests/, test/, __tests__/, spec/)':T('테스트 폴더 안이 아닙니다'),'protected path':T('보호된 경로입니다'),'its directory does not exist in the project':T('프로젝트에 없는 폴더입니다'),'a file with this name already exists':T('같은 이름의 파일이 이미 있습니다'),'outside the worktree':T('작업 폴더 밖입니다'),'listed twice':T('두 번 적혀 있습니다'),'contains code that could move real money':T('실제 돈을 움직일 수 있는 코드가 들어 있습니다')};
 function itestReason(r){return ITEST_REASON[r]||(/^larger than /.test(r)?T('파일이 너무 큽니다'):/^more than /.test(r)?T('파일 수가 한도를 넘었습니다'):r);}
+// "1단계 만에 완료 · 최대 6단계": how far the mission got, in words (steps used / passed / the limit).
+function stepLine(used,passed,max,status,live){
+  if(!used)return T('아직 시작한 단계가 없습니다 · 최대 {0}단계',max);
+  if(status==='RUNNING')return live===false?T('{0}단계에서 멈춤 · 최대 {1}단계',used,max):T('{0}단계 진행 중 · 최대 {1}단계',used,max);
+  if(status==='DONE'&&passed===used)return T('{0}단계 만에 완료 · 최대 {1}단계',used,max);
+  if(status==='INCOMPLETE'&&used>=max)return T('{0}단계를 모두 썼지만 끝내지 못함',max);
+  return T('{0}단계 중 {1}단계 통과 · 최대 {2}단계',used,passed,max);
+}
+function testLine(t){const total=t.total||0,bad=Math.max(t.failed||0,total-(t.passed||0));return !total?T('테스트 결과 없음'):bad>0?T('테스트 {0}개 중 {1}개 실패',total,bad):T('테스트 {0}개 모두 통과',total);}
 function inspectorTests(t){
   if(!t||!t.status)return null;
   const files=t.files||[],n=files.length,tip=[];
@@ -86,7 +95,7 @@ function openRoleMenu(label){
   if(!roleSettings){notice(T('역할 정보를 아직 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.'));return;}
   if(!menu.hidden&&menu.dataset.slot===String(slot)){closeRoleMenu(true);return;}
   closeRoleMenu();roleOpener=label;label.setAttribute('aria-expanded','true');
-  menu.dataset.slot=String(slot);menu.replaceChildren(el('p',T('{0} 를 맡을 AI',ROLE_KO[role])+(isLiveNow()?T(' · 진행 중인 작업은 그대로, 다음 작업부터 적용'):'')));
+  menu.dataset.slot=String(slot);menu.replaceChildren(el('p',T('{0} 담당 AI',ROLE_KO[role])+(isLiveNow()?T(' · 진행 중인 작업은 그대로, 다음 작업부터 적용'):'')));
   const key=role.toLowerCase();
   for(const p of ['ANTHROPIC','GOOGLE','OPENAI']){
     const b=el('button',AI[p].name),cur=roleSettings[key]===CLI_OF[p],also=ROLES.filter(r=>r!==role&&roleSettings[r.toLowerCase()]===CLI_OF[p]);
@@ -152,8 +161,8 @@ function paintNow(m){
   document.documentElement.style.setProperty('--actor',actorColor(m));
   setSentence($('now-headline'),m);setSentence($('caption'),m);
   const ms=m.mission,step=ms&&ms.steps.length?ms.steps[ms.steps.length-1].index:0;
-  $('now-sub').textContent=m.phase==='IDLE'?(ms?(m.mode==='replay'?T('다시보기 끝 · ')+(MISSION_BADGE[ms.status]||[ms.status])[0]:T('마지막 미션 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
-    :(ms&&(ms.live||m.mode==='replay')?T('미션 {0}/{1}단계 · {2}',step,ms.max,ms.project):PHASE[m.phase].sub);
+  $('now-sub').textContent=m.phase==='IDLE'?(ms?(m.mode==='replay'?T('다시보기 끝 · ')+(MISSION_BADGE[ms.status]||[ms.status])[0]:T('마지막 작업 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
+    :(ms&&(ms.live||m.mode==='replay')?T('{0}단계 진행 중 · 최대 {1}단계',step,ms.max)+' · '+ms.project:PHASE[m.phase].sub);
   $('now-stage').textContent=m.w?ROLE_KO[m.w.role]||m.w.role:PHASE[m.phase].word;
   timerBase=m.w?{at:m.w.at,fixed:m.mode==='replay'?m.w.elapsed:null,estimate:m.mode==='live'?m.w.estimate:null}:null;tickTimer();
   $('phase-word').textContent=PHASE[m.phase].word;$('phase-sub').textContent=PHASE[m.phase].sub;
@@ -180,16 +189,16 @@ function tickTimer(){
 }
 function paintMission(m){
   const ms=m.mission,badge=$('mission-badge'),steps=$('mission-steps');
-  if(!ms){badge.textContent='—';badge.className='badge';$('mission-goal').textContent=T('아직 미션 기록이 없습니다. 지시를 보내면 여기에 단계별 진행이 표시됩니다.');steps.replaceChildren();$('mission-meta').textContent='';delete $('mission-meta').dataset.sig;return;}
+  if(!ms){badge.textContent='—';badge.className='badge';$('mission-goal').textContent=T('아직 작업 기록이 없습니다. 지시를 보내면 여기에 단계별 진행이 표시됩니다.');steps.replaceChildren();$('mission-meta').textContent='';delete $('mission-meta').dataset.sig;return;}
   const running=ms.status==='RUNNING',b=running?(ms.live?[T('진행 중'),'run']:[T('중단됨 · 재개 대기'),'warn']):(MISSION_BADGE[ms.status]||[ms.status,'']);
   badge.textContent=b[0];badge.className='badge '+b[1];$('mission-goal').textContent=ms.goal;$('mission-goal').title=ms.goal;
   while(steps.children.length>ms.max)steps.lastChild.remove();
   while(steps.children.length<ms.max)steps.append(el('span',String(steps.children.length+1)));
   for(let i=0;i<ms.max;i++){const s=ms.steps.find(x=>x.index===i+1),chip=steps.children[i];
-    chip.className=s?(STEP_CLASS[s.state]||'run'):'todo';chip.title=s?T('{0}단계 · {1}',i+1,STATE_KO[s.state]||T('진행 중')):T('남은 단계 예산');
+    chip.className=s?(STEP_CLASS[s.state]||'run'):'todo';chip.title=s?T('{0}단계 · {1}',i+1,STATE_KO[s.state]||T('진행 중')):T('아직 쓰지 않은 단계');
     const mark=STEP_MARK[chip.className]+(i+1);if(chip.textContent!==mark)chip.textContent=mark;chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);}
   const last=[...ms.steps].reverse().find(s=>s.tests);
-  const meta=$('mission-meta'),text=T('{0}개 단계 통과 · {1}/{2}단계 사용',ms.passed,ms.steps.length,ms.max)+(last?T(' · 테스트 {0}/{1}',last.tests.passed,last.tests.total):'');
+  const meta=$('mission-meta'),text=stepLine(ms.steps.length,ms.passed,ms.max,ms.status,m.mode==='replay'||ms.live)+(last?' · '+testLine(last.tests):'');
   const it=inspectorTests((ms.steps[ms.steps.length-1]||{}).itests),sig=text+'|'+(it?it.cls+it.label+it.tip.join('|'):'');      // the newest step only: an older step's outcome would read as the current one
   if(meta.dataset.sig!==sig){meta.dataset.sig=sig;const open=!!meta.querySelector('details[open]');meta.replaceChildren(text);
     if(it){const box=el('details','','itest '+it.cls);box.open=open&&it.tip.length>0;box.append(el('summary',it.label));for(const line of it.tip)box.append(el('p',line));meta.append(box);}}
@@ -208,7 +217,7 @@ async function decideMission(id,action,extra){
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
     if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('미션을 이어서 진행합니다 (단계 예산 {0})',out.max_steps),busy:T('다른 작업이 진행 중입니다')}[out.status]||(out.status+' '+(out.error||out.reason||''));
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다')}[out.status]||(out.status+' '+(out.error||out.reason||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);}
   catch(e){notice(T('요청 실패 · ')+e.message);}
   finally{deliveryBusy=false;if(lastModel)paintDelivery(lastModel);pollActivity();}
@@ -228,9 +237,9 @@ function paintDelivery(m){
   if(state!=='applied'&&state!=='discarded'){
     const row=el('div','','delivery-actions');
     const apply=el('button',deliveryBusy?T('처리 중…'):T('원본에 적용'));apply.type='button';apply.dataset.act='apply';
-    apply.onclick=()=>{if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',ms.project||'—'):T('이 미션의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',ms.project||'—')))decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block'});};
+    apply.onclick=()=>{if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',ms.project||'—'):T('이 작업의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',ms.project||'—')))decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block'});};
     const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=()=>decideMission(ms.id,'extend');
-    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';drop.onclick=()=>{if(confirm(T('이 미션의 작업본을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard');};
+    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';drop.onclick=()=>{if(confirm(T('이 작업의 결과물을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard');};
     for(const b of [apply,more,drop])b.disabled=deliveryBusy;
     row.append(apply,more,drop);box.append(row);
     if(held){const again=row.querySelector('[data-act="'+held+'"]');if(again&&!again.disabled)again.focus();}
@@ -568,7 +577,7 @@ async function startReplay(){
   let data,failed=false;try{data=await getJSON('/ops/replay');}catch(e){data={calls:[]};failed=true;}finally{replayLoading=false;}
   if(replay)return;
   const calls=(data.calls||[]).filter(c=>ROLES.includes(c.role)&&AI[c.provider]).map(c=>({...c,t0:utc(c.started_at)/1000,dur:Math.max(1,c.seconds||1)}));
-  if(!calls.length){notice(failed?T('다시보기 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'):T('다시 볼 미션 기록이 아직 없습니다.'));return;}
+  if(!calls.length){notice(failed?T('다시보기 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'):T('다시 볼 작업 기록이 아직 없습니다.'));return;}
   let v=0,prevEnd=calls[0].t0,real=0;const gaps=[];
   calls.forEach((c,i)=>{const gap=Math.max(0,c.t0-prevEnd),vg=Math.min(gap,40);
     if(vg>6&&i&&calls[i-1].role==='MAKER')gaps.push([v,v+vg]);                       // Tribunal itself ran the tests between build and review
@@ -577,7 +586,7 @@ async function startReplay(){
   calls.forEach(c=>{if(stepOf.has(c.run_id))lastCall.set(c.run_id,c);});
   replay={data,calls,gaps,total:v,real,speed:v/72,started:performance.now(),stepOf,lastCall,done:new Set(),events:[],finished:false};
   $('replay-bar').hidden=false;document.body.classList.add('replaying');
-  $('replay-text').textContent=T('{0} 미션 · 실제 기록 {1} → {2}배속',data.project,span(real),Math.round(replay.speed));
+  $('replay-text').textContent=T('{0} 작업 · 실제 기록 {1} → {2}배속',data.project,span(real),Math.round(replay.speed));
   $('btn-replay').classList.add('on');$('btn-replay').setAttribute('aria-pressed','true');closeRoleMenu();seenFeed.event.clear();seenFeed.call.clear();
   replay.timer=setInterval(replayTick,120);replayTick();
 }
@@ -597,7 +606,7 @@ function replayTick(){
     const t=usage.total;t.calls++;t.seconds+=c.dur;t.tokens+=c.tokens||0;t.exact_tokens+=c.exact?(c.tokens||0):0;t.failed+=c.status!=='OK'?1:0;
     if(!r.done.has(c)){r.done.add(c);
       const s=r.stepOf.get(c.run_id);
-      if(s&&r.lastCall.get(c.run_id)===c){r.events.unshift({key:'step'+s.index,state:s.state,label:T('{0}단계 {1}',s.index,STATE_KO[s.state]||s.state||T('종료')),sub:s.tests?T('테스트 {0}/{1}',s.tests.passed,s.tests.total):'',when:T('기록')});
+      if(s&&r.lastCall.get(c.run_id)===c){r.events.unshift({key:'step'+s.index,state:s.state,label:T('{0}단계 {1}',s.index,STATE_KO[s.state]||s.state||T('종료')),sub:s.tests?testLine(s.tests):'',when:T('기록')});
         if(STEP_CLASS[s.state])Trinity.pulse(PULSE[STEP_CLASS[s.state]]);}}
   }
   for(const c of r.calls)if(c.v0<=vt&&!c.announced){c.announced=true;r.events.unshift({key:'c'+c.v0,color:AI[c.provider].css,label:T('{0} 시작',(ROLE_KO[c.role]||c.role).split(' · ')[1]),sub:AI[c.provider].name,when:T('기록')});}
@@ -669,7 +678,7 @@ function start(){
     try{const r=await chooseProjectFolder();if(r)notice(r.ok?T('작업 폴더를 바꿨습니다 · ')+r.path:T('선택할 수 없는 폴더입니다 · ')+r.message);}
     catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (작업실 탭에서 경로를 직접 입력할 수 있습니다)'));}
     finally{b.disabled=false;if(lastModel)paintNow(lastModel);pollStatus();pollChat();}};
-  for(const label of document.querySelectorAll('.slot-label')){label.title=T('이 역할을 맡을 AI 바꾸기');label.tabIndex=0;label.setAttribute('role','button');label.setAttribute('aria-haspopup','menu');label.setAttribute('aria-expanded','false');
+  for(const label of document.querySelectorAll('.slot-label')){label.title=T('이 역할의 담당 AI 바꾸기');label.tabIndex=0;label.setAttribute('role','button');label.setAttribute('aria-haspopup','menu');label.setAttribute('aria-expanded','false');
     label.onclick=e=>{e.stopPropagation();openRoleMenu(label);};label.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRoleMenu(label);}};}
   document.addEventListener('click',e=>{if(!e.target.closest('#role-menu'))closeRoleMenu();});
   $('btn-replay').onclick=startReplay;$('replay-stop').onclick=stopReplay;

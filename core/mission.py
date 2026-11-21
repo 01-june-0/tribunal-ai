@@ -192,7 +192,7 @@ class MissionRunner:
             step["result"] = self._evidence(orch, step["run_id"])
             self.store.save(mission)
             r = step["result"]
-            self.notify(f"[미션 {step['index']}/{total}] 결과 {r['final_state']} - "
+            self.notify(f"[작업 {step['index']}/{total}] 결과 {r['final_state']} - "
                         f"{self._one_line(r)}", run_id=step["run_id"])
         result = step["result"]
         if result["final_state"] == State.PASS:
@@ -225,7 +225,7 @@ class MissionRunner:
                     self.store.save(mission)
                     return self._finish(mission, "BLOCKED", blocked=detail)
                 treated = f"FAIL (USER_DECISION reviewed by {source} as not a delegated exception: {why[:300]}; ARCHITECT re-plans)"
-                self.notify(f"[미션 {step['index']}/{total}] 사용자 확인 요청을 ARCHITECT가 재검토: 위임 예외(결제·자격증명·"
+                self.notify(f"[작업 {step['index']}/{total}] 사용자 확인 요청을 ARCHITECT가 재검토: 위임 예외(결제·자격증명·"
                             f"실자금·보안)가 아니므로 계획을 다시 세웁니다.", run_id=step["run_id"])
             result["treated_as"] = treated
             self.store.save(mission)
@@ -278,7 +278,7 @@ class MissionRunner:
             nxt["result"] = self._evidence(orch, nxt["run_id"])
             return self._finish(mission, "BLOCKED", summary=plan.get("summary", ""), blocked=gate["escalate"])
         self.store.save(mission)
-        self.notify(f"[미션 {nxt['index']}/{total}] ARCHITECT 계획: {plan.get('summary', '')[:400]}\n다음 단계: {order.goal[:300]}",
+        self.notify(f"[작업 {nxt['index']}/{total}] ARCHITECT 계획: {plan.get('summary', '')[:400]}\n다음 단계: {order.goal[:300]}",
                     role="ARCHITECT")
         return mission
 
@@ -300,7 +300,7 @@ class MissionRunner:
             self.store.save(mission)
         else:
             orch._reserved_run_ids = set(getattr(orch, "_reserved_run_ids", set())) | {rid}
-        self.notify(f"[미션 {step['index']}/{mission['max_steps']}] 실행 시작: {order.goal[:300]}", run_id=rid)
+        self.notify(f"[작업 {step['index']}/{mission['max_steps']}] 실행 시작: {order.goal[:300]}", run_id=rid)
         try:
             orch.run(project, order.goal, run_id=rid, order=order, base_worktree=mission.get("base_worktree"))
         except Exception as exc:
@@ -402,8 +402,8 @@ class MissionRunner:
         self.store.save(mission)
         passed = sum(1 for s in mission["steps"] if (s.get("result") or {}).get("final_state") == State.PASS)
         where = mission.get("base_worktree") or "(아직 통과한 단계 없음)"
-        head_line = {"DONE": "미션 완료", "BLOCKED": "미션 보류 - 사용자 결정 필요",
-                     "INCOMPLETE": "미션 중단 - 단계 예산 소진 또는 계획 불가", "FAILED": "미션 실패"}[status]
+        head_line = {"DONE": "작업 완료", "BLOCKED": "작업 보류 - 사용자 결정 필요",
+                     "INCOMPLETE": "작업 중단 - 단계 한도 도달 또는 계획 불가", "FAILED": "작업 실패"}[status]
         text = (f"{head_line} ({passed}/{len(mission['steps'])} 단계 통과)\n"
                 f"목표: {mission['goal'][:300]}\n{mission['summary'][:1500]}\n결과물 위치(작업본): {where}")
         if blocked:

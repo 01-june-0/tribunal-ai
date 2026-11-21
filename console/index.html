@@ -18,7 +18,7 @@
   <div class="top-meta">
     <button type="button" id="top-project" class="meta-chip" title="작업할 폴더 바꾸기">프로젝트 · —</button>
     <div id="replay-bar" hidden>
-      <span id="replay-text">지난 미션 다시보기</span>
+      <span id="replay-text">지난 작업 다시보기</span>
       <div class="replay-track"><i id="replay-fill"></i></div>
       <button type="button" id="replay-stop">끝내기</button>
     </div>
@@ -28,11 +28,11 @@
   <nav class="top-actions" aria-label="화면 전환">
     <button type="button" id="tab-stage" class="on" aria-pressed="true">스테이지</button>
     <button type="button" id="tab-workshop" aria-pressed="false">작업실<em id="pending-badge" hidden></em></button>
-    <button type="button" id="btn-replay" title="지난 미션을 실제 기록으로 다시 보기 (R)">다시보기</button>
+    <button type="button" id="btn-replay" title="지난 작업을 실제 기록으로 다시 보기 (R)">다시보기</button>
     <button type="button" id="btn-broadcast" title="방송 모드 (B)">방송 모드</button>
     <button type="button" id="btn-ai" title="AI별 모델·추론 강도와 요금제·한도">AI 설정</button>
     <button type="button" id="btn-lang" title="Switch to English">EN</button>
-    <button type="button" id="btn-halt" title="실행 중인 미션을 멈춥니다 · 대시보드는 켜진 채로">작업 정지</button>
+    <button type="button" id="btn-halt" title="실행 중인 작업을 멈춥니다 · 대시보드는 켜진 채로">작업 정지</button>
     <button type="button" id="btn-shutdown" title="Tribunal AI 시스템 중지 · 기록과 작업본은 남습니다">시스템 중지</button>
   </nav>
 </header>
@@ -47,9 +47,9 @@
     <button type="button" id="now-doing" title="이 호출 안에서 일어나는 일 모두 보기" hidden><span class="kicker">호출 안</span><b></b><small></small></button>
 
     <section id="mission-card" class="card">
-      <div class="card-head"><span class="kicker">미션</span><span id="mission-badge" class="badge">—</span></div>
-      <p id="mission-goal">아직 미션 기록이 없습니다.</p>
-      <div id="mission-steps" class="steps" aria-label="미션 단계"></div>
+      <div class="card-head"><span class="kicker">작업</span><span id="mission-badge" class="badge">—</span></div>
+      <p id="mission-goal">아직 작업 기록이 없습니다.</p>
+      <div id="mission-steps" class="steps" aria-label="작업 단계"></div>
       <small id="mission-meta"></small>
     </section>
 
@@ -83,7 +83,7 @@
   <aside id="panel-work" class="glass" aria-label="AI별 작업량">
     <div class="card-head">
       <span class="kicker">AI별 작업량</span>
-      <div class="seg" id="win-tabs"><button type="button" data-win="mission">미션</button><button type="button" data-win="today">오늘</button><button type="button" data-win="all">전체</button></div>
+      <div class="seg" id="win-tabs"><button type="button" data-win="mission">이번 작업</button><button type="button" data-win="today">오늘</button><button type="button" data-win="all">전체</button></div>
     </div>
     <div class="total"><b id="total-tokens">0</b><span>토큰</span></div>
     <small id="total-sub" class="total-sub">호출 0회 · CLI 0초</small>

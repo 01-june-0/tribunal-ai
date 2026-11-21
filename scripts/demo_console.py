@@ -200,7 +200,7 @@ class Demo:
                                "base_worktree": WORKTREE, "summary": goal.rstrip(".") + " — 완료했습니다.", "owner_pid": None,
                                "applied": {"status": "applied"}, "steps": records})
             self.chat.add_message(sid, "USER", goal)
-            self.chat.add_message(sid, "ARCHITECT", f"미션 완료 ({len(steps)}/{len(steps)} 단계 통과) 목표: {goal}")
+            self.chat.add_message(sid, "ARCHITECT", f"작업 완료 ({len(steps)}/{len(steps)} 단계 통과) 목표: {goal}")
 
         # the mission that is running right now: step 1 passed a few minutes ago, step 2 is in progress
         mid, began = "MSN-DEMO-0003", now - timedelta(minutes=4)

@@ -167,7 +167,7 @@ class CompanionHandler(d.DashboardHandler):
                     ident = path.split('/')[3][:80]
                     m = MissionStore().load(ident)
                     if not m:
-                        return self._send_json({'error': '알 수 없는 미션입니다'}, 404)
+                        return self._send_json({'error': '알 수 없는 작업입니다'}, 404)
                     return self._send_json(d.mission_view(m))
             except ValueError as exc:
                 return self._send_json({'error': str(exc)}, 400)
@@ -268,7 +268,7 @@ class CompanionHandler(d.DashboardHandler):
             logging.getLogger('director.companion').warning('shutdown requested from %s', self.headers.get('Referer') or 'local client')
             import threading
             threading.Thread(target=self.server.shutdown, name='director-shutdown', daemon=True).start()
-            return self._send_json({'stopping': True, 'message': 'Tribunal AI를 멈춥니다. 기록과 작업본은 남고, 다시 켜면 중단된 미션을 이어갑니다.'})
+            return self._send_json({'stopping': True, 'message': 'Tribunal AI를 멈춥니다. 기록과 작업본은 남고, 다시 켜면 중단된 작업을 이어갑니다.'})
         if self.path == '/ops/pick-folder':
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'local authenticated request required'}, 403)

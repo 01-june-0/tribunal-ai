@@ -339,12 +339,12 @@ NEXT_STEP: Dict[str, str] = {
 
 _EVENT_RULES: List[Tuple[str, str, str]] = [   # (regex on raw SYSTEM text, Korean compact text, kind)
     # Mission rows first: they quote the goal or a one-line summary, which may contain "ValueError", "failed" ...
-    (r"\[미션 \d+/\d+\] 실행 시작", "● 미션 단계를 시작했습니다.", "ev-info"),
-    (r"\[미션 \d+/\d+\] 결과 PASS", "✓ 미션 단계가 통과했습니다.", "ev-ok"),
-    (r"\[미션 \d+/\d+\] 결과 ", "⚠ 미션 단계가 통과하지 못했습니다.", "ev-bad"),
-    (r"\[미션 \d+/\d+\] 사용자 확인 요청", "● ARCHITECT가 사용자 확인 요청을 다시 검토합니다.", "ev-info"),
-    (r"\[미션 \d+/\d+\] (?:ARCHITECT|HEAD) 계획", "● ARCHITECT가 다음 단계를 계획했습니다.", "ev-info"),
-    (r"^미션 시작", "● 미션을 시작했습니다.", "ev-info"),
+    (r"\[(?:작업|미션) \d+/\d+\] 실행 시작", "● 작업 단계를 시작했습니다.", "ev-info"),
+    (r"\[(?:작업|미션) \d+/\d+\] 결과 PASS", "✓ 작업 단계가 통과했습니다.", "ev-ok"),
+    (r"\[(?:작업|미션) \d+/\d+\] 결과 ", "⚠ 작업 단계가 통과하지 못했습니다.", "ev-bad"),
+    (r"\[(?:작업|미션) \d+/\d+\] 사용자 확인 요청", "● ARCHITECT가 사용자 확인 요청을 다시 검토합니다.", "ev-info"),
+    (r"\[(?:작업|미션) \d+/\d+\] (?:ARCHITECT|HEAD) 계획", "● ARCHITECT가 다음 단계를 계획했습니다.", "ev-info"),
+    (r"^(?:작업|미션) 시작", "● 작업을 시작했습니다.", "ev-info"),
     (r"결과물을 프로젝트에 적용했습니다", "✓ 결과물을 프로젝트에 적용했습니다.", "ev-ok"),
     (r"결과물을 자동 적용하지 않았습니다", "⚠ 결과물을 자동 적용하지 않았습니다.", "ev-bad"),
     (r"finished: PASS", "✓ 작업이 완료되었습니다.", "ev-ok"),

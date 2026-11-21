@@ -589,7 +589,7 @@ def approve_run(run_id: str, request_id: str = "", note: str = "") -> dict:
                 # the user resolved the blocking decision: hand the project slot back to the mission
                 with _RUN_LOCK:
                     _ACTIVE_PROJECTS[key] = mission["mission_id"]
-                cm.add_message(sid, "SYSTEM", f"승인 반영 - 미션 {mission['mission_id']} 이어서 진행", run_id=run_id)
+                cm.add_message(sid, "SYSTEM", f"승인 반영 - 작업 {mission['mission_id']} 이어서 진행", run_id=run_id)
                 _run_mission_thread(sid, mission["mission_id"], key, reopen=True)
         except Exception as e:
             cm.add_message(sid, "SYSTEM", f"Run failed: {str(e)}", run_id=run_id)
@@ -695,7 +695,7 @@ def _run_mission_thread(sid: str, mission_id: str, key: str, reopen: bool = Fals
         except Exception as e:
             import traceback
             traceback.print_exc()
-            runner.notify(f"미션 {mission_id} 실행 오류: {str(e)[:500]}")
+            runner.notify(f"작업 {mission_id} 실행 오류: {str(e)[:500]}")
         finally:
             with _RUN_LOCK:
                 if _ACTIVE_PROJECTS.get(key) == mission_id:
@@ -716,7 +716,7 @@ def _start_mission(sid: str, orch: Orchestrator, project_path: str, goal: str, o
         _ACTIVE_PROJECTS[key] = mission["mission_id"]
     ChatManager().add_message(
         sid, "SYSTEM",
-        f"미션 시작 {mission['mission_id']}: ARCHITECT가 목표 달성까지 단계별로 계획·판단합니다 (최대 {mission['max_steps']}단계). "
+        f"작업 시작 {mission['mission_id']}: ARCHITECT가 목표 달성까지 단계별로 계획·판단합니다 (최대 {mission['max_steps']}단계). "
         "결제·실계좌 주문·자격증명·외부 비가역 작업만 사용자에게 확인합니다.")
     _run_mission_thread(sid, mission["mission_id"], key)
     return mission["mission_id"]
@@ -908,7 +908,7 @@ def stop_missions(reason: str = "", mission_id: Optional[str] = None, by: str = 
     killed = ProcessTreeRunner.kill_active() if stopped else []
     sid = active_session_id()
     if stopped:
-        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 정지: 미션 {', '.join(stopped)} 정지 · 실행 중이던 AI 프로세스 {len(killed)}개 종료 · 기록과 작업본은 남습니다" + (f" · 사유: {reason[:200]}" if reason else ""))
+        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 정지: {', '.join(stopped)} 정지 · 실행 중이던 AI 프로세스 {len(killed)}개 종료 · 기록과 작업본은 남습니다" + (f" · 사유: {reason[:200]}" if reason else ""))
     invalidate_status_cache()
     return {"status": "stopped" if stopped else "idle", "missions": stopped, "killed": killed}
 
@@ -934,7 +934,7 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         m = store.load(mission_id) or m
         m["applied"] = {"run_id": rid, "at": datetime.utcnow().isoformat(), "by": by, **{k: v for k, v in result.items() if k != "request_id"}}
         store.save(m)
-        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 미션 {mission_id} 결과물 적용: {result.get('status')}"
+        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} 결과물 적용: {result.get('status')}"
                                   + (f" · {len(result.get('files', []))}개 파일" if result.get("files") else "")
                                   + (" · " + "; ".join(result.get("blocks", []))[:300] if result.get("blocks") else ""), run_id=rid)
         invalidate_status_cache()
@@ -944,7 +944,7 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         result = _result_manager().discard(rid, request_id=f"{by.lower()}-{mission_id}", by=by) if rid else {"status": "refused", "reason": "no deliverable"}
         m["applied"] = {"run_id": rid, "at": datetime.utcnow().isoformat(), "by": by, "status": "discarded" if result.get("status") == "discarded" else result.get("status"), "reason": reason[:300]}
         store.save(m)
-        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 미션 {mission_id} 결과물 폐기: {result.get('status')} {reason[:200]}")
+        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} 결과물 폐기: {result.get('status')} {reason[:200]}")
         invalidate_status_cache()
         return result
     if action in ("extend", "replan"):
@@ -962,7 +962,7 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
                 m["steps"][-1]["operator_replan"] = (reason or f"{by} re-plan")[:300]
             store.save(m)
             _ACTIVE_PROJECTS[key] = mission_id
-        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 미션 {mission_id} {'재계획' if action == 'replan' else '연장'}: 단계 예산 {m['max_steps']}" + (f" · {reason[:200]}" if reason else ""))
+        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} {'재계획' if action == 'replan' else '연장'}: 최대 {m['max_steps']}단계" + (f" · {reason[:200]}" if reason else ""))
         _run_mission_thread(sid, mission_id, key, reopen=True)
         return {"status": "resumed", "mission_id": mission_id, "max_steps": m["max_steps"]}
     return {"status": "error", "error": f"unknown action {action!r}"}
@@ -1002,7 +1002,7 @@ def resume_interrupted_missions() -> list:
                 continue
             _ACTIVE_PROJECTS[key] = m["mission_id"]
         sid = active_session_id()
-        ChatManager().add_message(sid, "SYSTEM", f"재시작 후 미션 자동 재개: {m['mission_id']} ({m['goal'][:200]})")
+        ChatManager().add_message(sid, "SYSTEM", f"재시작 후 작업 자동 재개: {m['mission_id']} ({m['goal'][:200]})")
         _run_mission_thread(sid, m["mission_id"], key)
         started.append(m["mission_id"])
     return started
@@ -1024,7 +1024,7 @@ def handle_chat_message(msg: str):
     if is_stop_request(msg):
         result = stop_missions(msg, by="사용자")
         if result["status"] == "idle":
-            cm.add_message(sid, "SYSTEM", "정지할 실행 중 미션이 없습니다. (대기 상태)")
+            cm.add_message(sid, "SYSTEM", "정지할 실행 중 작업이 없습니다. (대기 상태)")
         return
 
     # Cheap health probe (binary + --version, bounded recheck of stale failures). No inference calls.
@@ -1539,8 +1539,8 @@ DASHBOARD_JS = r"""
   var STATE_INDEX = { PLANNING: 0, ORDER_READY: 0, BUILDING: 1, VERIFYING: 2, REVIEWING: 3, DECIDING: 4 };
   var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1 };
   var EVENT_LABELS = [
-    [/\[미션 \d+\/\d+\] 실행 시작/, 'STEP STARTED', 'ev-info'], [/\[미션 \d+\/\d+\] 결과 PASS/, 'STEP PASS', 'ev-ok'], [/\[미션 \d+\/\d+\] 결과 /, 'STEP NOT PASSED', 'ev-bad'],
-    [/\[미션 \d+\/\d+\] 사용자 확인 요청/, 'ARCHITECT REVIEW', 'ev-info'], [/\[미션 \d+\/\d+\] (?:ARCHITECT|HEAD) 계획/, 'ARCHITECT PLAN', 'ev-info'], [/^미션 시작/, 'MISSION STARTED', 'ev-info'],
+    [/\[(?:작업|미션) \d+\/\d+\] 실행 시작/, 'STEP STARTED', 'ev-info'], [/\[(?:작업|미션) \d+\/\d+\] 결과 PASS/, 'STEP PASS', 'ev-ok'], [/\[(?:작업|미션) \d+\/\d+\] 결과 /, 'STEP NOT PASSED', 'ev-bad'],
+    [/\[(?:작업|미션) \d+\/\d+\] 사용자 확인 요청/, 'ARCHITECT REVIEW', 'ev-info'], [/\[(?:작업|미션) \d+\/\d+\] (?:ARCHITECT|HEAD) 계획/, 'ARCHITECT PLAN', 'ev-info'], [/^(?:작업|미션) 시작/, 'MISSION STARTED', 'ev-info'],
     [/결과물을 프로젝트에 적용했습니다/, 'RESULT APPLIED', 'ev-ok'], [/결과물을 자동 적용하지 않았습니다/, 'NOT AUTO-APPLIED', 'ev-bad'],
     [/RESULT_APPLIED/, 'RESULT APPLIED', 'ev-ok'], [/RESULT_ROLLED_BACK|RESULT_BLOCKED/, 'APPLY BLOCKED', 'ev-bad'], [/RESULT_DISCARDED/, 'RESULT DISCARDED', 'ev-info'],
     [/finished: PASS/, 'RUN PASS', 'ev-ok'], [/finished: HUMAN_REQUIRED/, 'HUMAN REQUIRED', 'ev-bad'],
@@ -2488,9 +2488,9 @@ DASHBOARD_CSS = r"""
 
 
 EVENT_LABELS = [
-    (r"\[미션 \d+/\d+\] 실행 시작", "STEP STARTED", "ev-info"), (r"\[미션 \d+/\d+\] 결과 PASS", "STEP PASS", "ev-ok"),
-    (r"\[미션 \d+/\d+\] 결과 ", "STEP NOT PASSED", "ev-bad"), (r"\[미션 \d+/\d+\] 사용자 확인 요청", "ARCHITECT REVIEW", "ev-info"), (r"\[미션 \d+/\d+\] (?:ARCHITECT|HEAD) 계획", "ARCHITECT PLAN", "ev-info"),
-    (r"^미션 시작", "MISSION STARTED", "ev-info"), (r"결과물을 프로젝트에 적용했습니다", "RESULT APPLIED", "ev-ok"),
+    (r"\[(?:작업|미션) \d+/\d+\] 실행 시작", "STEP STARTED", "ev-info"), (r"\[(?:작업|미션) \d+/\d+\] 결과 PASS", "STEP PASS", "ev-ok"),
+    (r"\[(?:작업|미션) \d+/\d+\] 결과 ", "STEP NOT PASSED", "ev-bad"), (r"\[(?:작업|미션) \d+/\d+\] 사용자 확인 요청", "ARCHITECT REVIEW", "ev-info"), (r"\[(?:작업|미션) \d+/\d+\] (?:ARCHITECT|HEAD) 계획", "ARCHITECT PLAN", "ev-info"),
+    (r"^(?:작업|미션) 시작", "MISSION STARTED", "ev-info"), (r"결과물을 프로젝트에 적용했습니다", "RESULT APPLIED", "ev-ok"),
     (r"결과물을 자동 적용하지 않았습니다", "NOT AUTO-APPLIED", "ev-bad"),
     (r"finished: PASS", "RUN PASS", "ev-ok"), (r"finished: HUMAN_REQUIRED", "HUMAN REQUIRED", "ev-bad"),
     (r"finished: (FAIL|TIMEOUT)", "RUN FAILED", "ev-bad"), (r"Starting background run", "RUN STARTED", "ev-info"),

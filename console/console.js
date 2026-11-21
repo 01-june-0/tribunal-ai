@@ -34,7 +34,7 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
  if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('감리에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 감리를 다시 진행해야 합니다.'):next;}
  const nextText=research?(r.next_step||T('연구 기록을 기다리고 있습니다.')):next,nextEl=doc.getElementById('mission-next');
  if(nextEl.textContent!==nextText)nextEl.textContent=nextText;   // announced (aria-live) only when it really changes
- doc.getElementById('mission-project').textContent=s.project_name?T('프로젝트 · ')+s.project_name:(lastMissionProject?T('최근 미션 프로젝트 · ')+lastMissionProject:T('프로젝트 · ')+T('미선택'));
+ doc.getElementById('mission-project').textContent=s.project_name?T('프로젝트 · ')+s.project_name:(lastMissionProject?T('최근 작업 프로젝트 · ')+lastMissionProject:T('프로젝트 · ')+T('미선택'));
  const timestamp=run.updated_at?new Date(run.updated_at+(/Z|[+]\d\d:\d\d$/.test(run.updated_at)?'':'Z')):null;
  const elapsed=timestamp?Math.max(0,Math.floor((Date.now()-timestamp.getTime())/1000)):null;
  doc.getElementById('mission-updated').textContent=elapsed===null?T('아직 실행 기록이 없습니다.'):T('최근 단계 기록 · ')+ago(run.updated_at);
@@ -54,9 +54,18 @@ function setupRoles(){
 // ---------------------------------------------------------------- AI work visibility (missions, who works now, workload)
 const PROVIDER={ANTHROPIC:'Claude',OPENAI:'Codex',GOOGLE:'Antigravity'},ROLE={ARCHITECT:T('ARCHITECT · 설계'),MAKER:T('MAKER · 제작'),INSPECTOR:T('INSPECTOR · 감리'),OTHER:T('기타')};
 const STEP_CLASS={PASS:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
+// "1단계 만에 완료 · 최대 6단계": how far the mission got, in words (steps used / passed / the limit).
+function stepLine(used,passed,max,status,live){
+ if(!used)return T('아직 시작한 단계가 없습니다 · 최대 {0}단계',max);
+ if(status==='RUNNING')return live===false?T('{0}단계에서 멈춤 · 최대 {1}단계',used,max):T('{0}단계 진행 중 · 최대 {1}단계',used,max);
+ if(status==='DONE'&&passed===used)return T('{0}단계 만에 완료 · 최대 {1}단계',used,max);
+ if(status==='INCOMPLETE'&&used>=max)return T('{0}단계를 모두 썼지만 끝내지 못함',max);
+ return T('{0}단계 중 {1}단계 통과 · 최대 {2}단계',used,passed,max);
+}
+function testLine(t){const total=t.total||0,bad=Math.max(t.failed||0,total-(t.passed||0));return !total?T('테스트 결과 없음'):bad>0?T('테스트 {0}개 중 {1}개 실패',total,bad):T('테스트 {0}개 모두 통과',total);}
 function itestLabel(t){if(!t||!t.status)return '';const n=(t.files||[]).length;
  return ' · '+(t.status==='passed'?T('감리 테스트 통과 · 파일 {0}개',n):t.status==='failed'?T('감리 테스트 실패 · 파일 {0}개',n):t.status==='skipped'?T('감리 테스트 건너뜀'):T('감리 테스트 제안 없음'));}
-const MISSION_STATUS={DONE:T('완료'),INCOMPLETE:T('예산 소진'),BLOCKED:T('사용자 결정 필요'),FAILED:T('실패')};
+const MISSION_STATUS={DONE:T('완료'),INCOMPLETE:T('단계 한도 도달'),BLOCKED:T('사용자 결정 필요'),FAILED:T('실패')};
 let activityBusy=false,usageWindow='mission';
 function fmtTime(sec){sec=Math.round(sec||0);if(sec<60)return sec+T('초');const m=Math.floor(sec/60);if(m<60)return m+T('분')+(m<10&&sec%60?' '+(sec%60)+T('초'):'');return Math.floor(m/60)+T('시간 ')+(m%60)+T('분');}
 function fmtTokens(b){if(!b)return '—';if(!b.tokens)return b.unknown_calls?T('기록 전'):'—';const n=b.tokens,t=(!window.I18N||window.I18N.lang==='ko')?(n>=10000?(n/10000).toFixed(1)+'만':n.toLocaleString('ko-KR')):(n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':n.toLocaleString('en-US'));return (b.exact_tokens<b.tokens?'~':'')+t+(b.unknown_calls?T(' (+기록 전 ')+b.unknown_calls+T('회)'):'');}
@@ -68,7 +77,7 @@ function setupActivity(panel){
  const grid=el('div','','ai-grid');
  const mission=el('div','','ai-card');mission.id='ai-mission';
  const work=el('div','','ai-card');const tabs=el('div','','ai-tabs');
- for(const [key,name] of [['mission',T('이번 미션')],['today',T('오늘')],['all',T('전체')]]){const b=el('button',name);b.type='button';b.dataset.win=key;b.onclick=()=>{usageWindow=key;refreshActivity();};tabs.append(b);}
+ for(const [key,name] of [['mission',T('이번 작업')],['today',T('오늘')],['all',T('전체')]]){const b=el('button',name);b.type='button';b.dataset.win=key;b.onclick=()=>{usageWindow=key;refreshActivity();};tabs.append(b);}
  const table=el('div','','ai-table');table.id='ai-work';
  work.append(el('strong',T('AI별 작업량')),tabs,table,el('p',T('토큰: ~ 표시는 글자 수 기반 추정, 없으면 CLI가 보고한 실제 값. "기록 전"은 토큰이 기록되지 않은 예전 호출로, 시간만 집계됩니다.'),'ai-footnote'));
  grid.append(mission,work);
@@ -87,15 +96,15 @@ function paintNow(a,focus){
 }
 function paintMission(focus){
  const m=doc.getElementById('ai-mission'),opened=new Set([...m.querySelectorAll('details[open]>summary')].map(s=>s.textContent)),scroll=m.scrollTop;m.replaceChildren();
- if(!focus){m.append(el('strong',T('미션')),el('p',T('아직 미션 기록이 없습니다. 채팅으로 요청하면 여기에 단계별 진행이 표시됩니다.')));return;}
+ if(!focus){m.append(el('strong',T('작업')),el('p',T('아직 작업 기록이 없습니다. 채팅으로 요청하면 여기에 단계별 진행이 표시됩니다.')));return;}
  const status=focus.status==='RUNNING'?(focus.live?T('진행 중'):T('중단됨 · 재개 대기')):(MISSION_STATUS[focus.status]||focus.status);
- const title=el('div','','ai-mission-title');title.append(el('strong',T('미션 · ')+focus.project),el('span',status,'ai-badge '+(focus.status==='DONE'?'ok':focus.status==='RUNNING'&&focus.live?'run':'warn')));
+ const title=el('div','','ai-mission-title');title.append(el('strong',T('작업 · ')+focus.project),el('span',status,'ai-badge '+(focus.status==='DONE'?'ok':focus.status==='RUNNING'&&focus.live?'run':'warn')));
  m.append(title,el('p',focus.goal,'ai-goal'));
  const bar=el('div','','ai-steps');
- for(let i=1;i<=Math.max(focus.max_steps||0,focus.steps.length);i++){const s=focus.steps.find(x=>x.index===i);const kind=s?(STEP_CLASS[s.state]||'run'):'todo',chip=el('span',STEP_MARK[kind]+i,'chip '+kind);chip.title=s?(T('{0}단계 · ',i)+((s.state_ko&&T(s.state_ko))||T('진행 중'))+' · '+s.goal):T('남은 단계 예산');chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);bar.append(chip);}
- m.append(bar,el('small',focus.passed_steps+T('개 단계 통과 · ')+focus.steps.length+'/'+focus.max_steps+T('단계 사용 · 갱신 ')+ago(focus.updated_at),'ai-sub'));
+ for(let i=1;i<=Math.max(focus.max_steps||0,focus.steps.length);i++){const s=focus.steps.find(x=>x.index===i);const kind=s?(STEP_CLASS[s.state]||'run'):'todo',chip=el('span',STEP_MARK[kind]+i,'chip '+kind);chip.title=s?(T('{0}단계 · ',i)+((s.state_ko&&T(s.state_ko))||T('진행 중'))+' · '+s.goal):T('아직 쓰지 않은 단계');chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);bar.append(chip);}
+ m.append(bar,el('small',stepLine(focus.steps.length,focus.passed_steps,Math.max(focus.max_steps||0,focus.steps.length),focus.status,focus.live)+T(' · 갱신 ')+ago(focus.updated_at),'ai-sub'));
  const list=el('details');list.append(el('summary',T('단계별 결과')));
- for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?(T(' · 테스트 ')+s.tests.passed+'/'+s.tests.total):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 감리 ')+(s.review==='pass'?T('통과'):s.review==='changes_required'?T('수정 요청'):s.review):'')+itestLabel(s.inspector_tests)+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}
+ for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?' · '+testLine(s.tests):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 감리 ')+(s.review==='pass'?T('통과'):s.review==='changes_required'?T('수정 요청'):s.review):'')+itestLabel(s.inspector_tests)+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}
  m.append(list);
  if(focus.summary){const sm=el('details');sm.append(el('summary',T('ARCHITECT 요약')),el('p',focus.summary));m.append(sm);}
  if(focus.blocked_reason){m.append(el('small',T('멈춘 이유: ')+focus.blocked_reason,'ai-sub'));}
@@ -164,7 +173,7 @@ setInterval(async()=>{try{const r=await fetch('/ops/roles',{cache:'no-store'});i
 (()=>{
  const b=document.getElementById('btn-shutdown');if(!b)return;
  b.onclick=async()=>{
-  if(!confirm(T('Tribunal AI를 멈출까요?\n진행 중인 실행이 있으면 중단됩니다. 기록과 작업본은 남고, 다시 켜면 중단된 미션을 이어갑니다.')))return;
+  if(!confirm(T('Tribunal AI를 멈출까요?\n진행 중인 실행이 있으면 중단됩니다. 기록과 작업본은 남고, 다시 켜면 중단된 작업을 이어갑니다.')))return;
   b.disabled=true;b.textContent=T('멈추는 중…');
   try{
    const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
@@ -179,13 +188,13 @@ setInterval(async()=>{try{const r=await fetch('/ops/roles',{cache:'no-store'});i
 (()=>{
  const b=document.getElementById('btn-halt');if(!b)return;
  b.onclick=async()=>{
-  if(!confirm(T('실행 중인 미션을 멈출까요?\n지금 돌고 있는 AI 프로세스를 끊고 미션을 정지 상태로 둡니다. 기록과 작업본은 남고, 나중에 재개할 수 있습니다.')))return;
+  if(!confirm(T('실행 중인 작업을 멈출까요?\n지금 돌고 있는 AI 프로세스를 끊고 작업을 정지 상태로 둡니다. 기록과 작업본은 남고, 나중에 재개할 수 있습니다.')))return;
   b.disabled=true;const was=b.textContent;b.textContent=T('정지 중…');
   try{
    const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
    const r=await fetch('/ops/missions/stop',{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roles.csrf},body:JSON.stringify({reason:'console 작업 정지 버튼'})});
    const j=await r.json();if(!r.ok)throw Error(j.error||T('정지 실패'));
-   alert(j.status==='stopped'?(T('미션 ')+j.missions.join(', ')+T(' 정지 · AI 프로세스 ')+j.killed.length+T('개 종료')):T('실행 중인 미션이 없습니다.'));
+   alert(j.status==='stopped'?(T('작업 ')+j.missions.join(', ')+T(' 정지 · AI 프로세스 ')+j.killed.length+T('개 종료')):T('실행 중인 작업이 없습니다.'));
   }catch(e){alert(T('정지 실패 · ')+e.message);}finally{b.disabled=false;b.textContent=was;}
  };
 })();
