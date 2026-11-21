@@ -14,48 +14,11 @@
 .director-v2 #result-card{background:#182536;padding:22px;width:min(92vw,900px);max-height:88vh;overflow:auto;border-radius:14px;line-height:1.7;box-shadow:0 24px 80px #0008}.director-v2 #rd-head{font-size:12px;line-height:1.7}.director-v2 #result-card .rh{font-size:15px}.director-v2 #result-detail{max-height:55vh;min-height:200px}
 @media(max-width:800px){.director-v2 #main:not([style*="none"]){display:flex!important;flex-direction:column;width:100%;min-width:0}.director-v2 #main>.panel{width:100%;min-width:0;max-height:none;margin-bottom:12px}.director-v2 #chat-panel{height:min(86vh,650px);max-height:none!important}.director-v2 #chat-box{max-height:none!important}.director-v2 #right{max-height:none;overflow:visible}.director-v2 .panel{max-height:none}.director-v2 #hdr{overflow-wrap:anywhere}.director-v2 #right .kv{grid-template-columns:75px minmax(0,1fr)}.director-v2 .node .ntitle details .dbox{min-width:0;width:270px;right:0}.director-v2 .session-label{overflow-wrap:anywhere}}
 .director-v2 .role-notice{color:#a5bbcd;font-size:12px;line-height:1.6;margin:8px 2px 18px}
-.ai-activity{margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--panel)}
-.ai-activity-head{margin-bottom:8px}
-.ai-now{display:grid;gap:6px;margin-bottom:14px}
-.ai-now-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;padding:10px 12px;border-radius:9px;background:#111b27;border:1px solid var(--border)}
-.ai-now-line .dot{width:10px;height:10px;border-radius:50%;background:#56657a;flex:none}
-.ai-now-line.working{border-color:var(--green);background:#15291f}.ai-now-line.working .dot{background:var(--green);box-shadow:0 0 0 0 #6bddb2aa;animation:ai-pulse 1.6s infinite}
-.ai-now-line strong{color:var(--text)}.ai-now-line span{color:var(--muted)}
-@keyframes ai-pulse{0%{box-shadow:0 0 0 0 #6bddb299}70%{box-shadow:0 0 0 9px #6bddb200}100%{box-shadow:0 0 0 0 #6bddb200}}
-.ai-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px}
-.ai-card{padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:#141e2a;min-width:0}
-.ai-card>strong{display:block;margin-bottom:8px}
-.ai-mission-title{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.ai-badge{font-size:12px;padding:2px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap}
-.ai-badge.ok{color:var(--green);border-color:var(--green)}.ai-badge.run{color:var(--blue);border-color:var(--blue)}.ai-badge.warn{color:var(--amber);border-color:var(--amber)}
-.ai-goal{font-size:12px;color:var(--muted);margin:8px 0;max-height:62px;overflow:auto;line-height:1.6}
-.ai-steps{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
-.ai-steps .chip{min-width:28px;text-align:center;padding:3px 0;border-radius:6px;font-size:12px;border:1px solid var(--border);color:var(--muted)}
-.ai-steps .ok{background:#173a2d;color:var(--green);border-color:#2e6b52}.ai-steps .bad{background:#3a2426;color:var(--red);border-color:#6b3a3d}
-.ai-steps .warn{background:#3a3025;color:var(--amber);border-color:#6b5a3a}.ai-steps .run{background:#1d3550;color:var(--blue);border-color:var(--blue)}
-.ai-steps .todo{border-style:dashed;opacity:.55}
-.ai-sub{display:block;font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
-.ai-card details{margin-top:8px;font-size:12px;color:var(--muted)}.ai-card details p{white-space:pre-wrap;line-height:1.6}
-.ai-step{padding:8px 10px;margin:6px 0;border-left:3px solid var(--border);background:#111b27;border-radius:0 7px 7px 0}
-.ai-step.ok{border-left-color:var(--green)}.ai-step.bad{border-left-color:var(--red)}.ai-step.warn{border-left-color:var(--amber)}.ai-step.run{border-left-color:var(--blue)}
-.ai-step strong{font-size:12px;color:var(--text)}.ai-step p{margin:4px 0 0;font-size:12px}.ai-step small{display:block;margin-top:4px;color:var(--amber);overflow-wrap:anywhere}
-.ai-tabs{display:flex;gap:6px;margin-bottom:8px}
-.ai-tabs button{background:transparent!important;color:var(--muted)!important;border:1px solid var(--border)!important;min-height:28px!important;padding:3px 10px!important;font-size:12px!important}
-.ai-tabs button.on{color:var(--text)!important;border-color:var(--blue)!important;background:#1d3550!important}
-.ai-table{display:grid;font-size:12px}
-.ai-row{display:grid;grid-template-columns:1.1fr 1.4fr .6fr 1fr 1.1fr;gap:8px;padding:7px 4px;border-bottom:1px solid #243244;align-items:center}
-.ai-row.head{color:var(--muted);font-size:12px}.ai-row.total{border-bottom:0;font-weight:600}
-.ai-row span{overflow-wrap:anywhere}
-.ai-footnote{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.6}
-.ai-list{display:grid;gap:4px;margin:8px 0;max-height:240px;overflow:auto}
-.ai-item{font-size:12px;color:var(--muted);padding:5px 8px;background:#111b27;border-radius:6px;overflow-wrap:anywhere}
-.director-v2 .ai-card-usage{font-size:12px;color:var(--muted);margin:10px 0 0;padding-top:8px;border-top:1px solid var(--border);line-height:1.5}
-.director-v2 .ai-card-usage.busy{color:var(--green)}
-@media(max-width:1100px){.ai-grid{grid-template-columns:1fr}}
-@media(max-width:800px){.ai-row{grid-template-columns:1fr 1fr;row-gap:2px}.ai-row.head{display:none}}
 /* ---- workshop inside the stage: the working area first, status below it */
 .director-v2 #hdr h1{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.director-v2 #hdr{min-height:0;padding:10px 0 0;border-bottom:0}
-.director-v2 #ai-activity{margin:16px 0}.director-v2 #alert-bar{margin:0 0 12px}
+.director-v2 #alert-bar{margin:0 0 12px}
 .director-v2 #results-list{list-style:none;margin:4px 0 0;padding:0}
 @media(max-width:1023px){.director-v2 #main>.panel{max-height:none}.director-v2 #chat-box{max-height:none}}
 @media(min-width:801px) and (max-width:1023px){.director-v2 #nodes{grid-template-columns:repeat(3,minmax(0,1fr))}.director-v2 .node .ntitle details .dbox{min-width:0;width:min(320px,80vw)}}
+/* Approve / reject once: the approval panel on the right keeps them; the copies in the chat, the to-do box and the alert bar are hidden. */
+.director-v2 #chat-action-card,.director-v2 #todo-approve-btn,.director-v2 #todo-reject-btn,.director-v2 #alert-approve-btn,.director-v2 #alert-reject-btn{display:none!important}

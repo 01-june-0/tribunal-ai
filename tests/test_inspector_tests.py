@@ -214,9 +214,10 @@ def test_the_mission_view_carries_it_per_step_and_only_for_plain_run_ids(tmp_pat
 def test_both_screens_show_the_outcome():
     console = Path(__file__).resolve().parents[1] / "console"
     stage, workshop = (console / "stage.js").read_text(encoding="utf-8"), (console / "console.js").read_text(encoding="utf-8")
-    assert "itests:s.inspector_tests" in stage and "inspectorTests(" in stage and "itestLabel(s.inspector_tests)" in workshop
+    assert "itests:s.inspector_tests" in stage and "inspectorTests(" in stage
     for text in ("감리 테스트 통과 · 파일 {0}개", "감리 테스트 실패 · 파일 {0}개", "감리 테스트 건너뜀", "감리 테스트 제안 없음"):
-        assert text in stage and text in workshop, text
+        assert text in stage, text
+    assert "itestLabel" not in workshop and "/ops/activity" not in workshop      # the workshop no longer repeats the stage's lists
 
 
 def test_a_round_that_did_not_ask_shows_nothing_and_a_crash_shows_as_skipped(tmp_path):

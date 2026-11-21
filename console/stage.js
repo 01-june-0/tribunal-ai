@@ -139,7 +139,7 @@ function liveModel(){
   for(const p of Object.keys(AI))stats[p]=today[p]?T('오늘 {0}회 · {1} 토큰',today[p].calls,(today[p].exact_tokens<today[p].tokens?'~':'')+tok(today[p].tokens)):T('오늘 호출 없음');
   return {mode:'live',working,assign:assignment(),...phaseOf(working,verifying,!!(focus&&focus.live)),
     mission:focus&&{goal:focus.goal,project:focus.project,status:focus.status,live:focus.live,max:Math.max(focus.max_steps||0,focus.steps.length),
-      steps:focus.steps.map(s=>({index:s.index,state:s.state,tests:s.tests,itests:s.inspector_tests})),passed:focus.passed_steps,updated:utc(focus.updated_at),id:focus.mission_id,
+      steps:focus.steps.map(s=>({index:s.index,state:s.state,tests:s.tests,itests:s.inspector_tests,run:s.run_id,note:s.note,review:s.review,repairs:s.repairs})),passed:focus.passed_steps,blocked:focus.blocked_reason,summary:focus.summary,deliverableRun:focus.deliverable_run_id,updated:utc(focus.updated_at),id:focus.mission_id,
       deliverable:focus.deliverable,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
     usage:usage[win]||{by_role:{},by_provider:{},total:{calls:0,seconds:0,tokens:0,exact_tokens:0}},windows:{mission:!!usage.mission,today:!!usage.today,all:!!usage.all},
     calls:(a.recent_calls||[]).slice(0,6).map(c=>({id:c.id,key:c.at+c.role+c.provider,role:c.role,provider:c.provider,seconds:c.seconds,tokens:c.tokens,exact:c.exact,status:c.status,at:utc(c.at)})),
@@ -202,7 +202,7 @@ function paintMission(m){
   const it=inspectorTests((ms.steps[ms.steps.length-1]||{}).itests),sig=text+'|'+(it?it.cls+it.label+it.tip.join('|'):'');      // the newest step only: an older step's outcome would read as the current one
   if(meta.dataset.sig!==sig){meta.dataset.sig=sig;const open=!!meta.querySelector('details[open]');meta.replaceChildren(text);
     if(it){const box=el('details','','itest '+it.cls);box.open=open&&it.tip.length>0;box.append(el('summary',it.label));for(const line of it.tip)box.append(el('p',line));meta.append(box);}}
-  paintDelivery(m);
+  paintAttention(m);paintDelivery(m);
   if(m.mode!=='live')return;
   for(const s of ms.steps){const key=ms.id+':'+s.index,prev=seenSteps.get(key);seenSteps.set(key,s.state);
     if(!firstPaint&&prev!==s.state&&STEP_CLASS[s.state])Trinity.pulse(PULSE[STEP_CLASS[s.state]]);}
@@ -212,16 +212,198 @@ function paintMission(m){
 const APPLY_KO={applied:[T('원본에 적용됨'),'ok'],blocked:[T('적용 보류 · 충돌/조건'),'warn'],pending:[T('적용 대기'),'warn'],discarded:[T('폐기됨'),''],rolled_back:[T('적용 실패 · 복구됨'),'bad'],busy:[T('적용 진행 중'),'run'],error:[T('적용 오류'),'bad']};
 let deliveryBusy=false;
 async function decideMission(id,action,extra){
-  if(deliveryBusy)return;deliveryBusy=true;if(lastModel)paintDelivery(lastModel);
+  if(deliveryBusy)return null;deliveryBusy=true;let answer=null;if(lastModel){paintAttention(lastModel);paintDelivery(lastModel);}if(result)paintResult();
   try{const body=new URLSearchParams({mission_id:id,action,...(extra||{})});
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
     if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다')}[out.status]||(out.status+' '+(out.error||out.reason||''));
-    notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);}
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
+    notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);answer=out;}
   catch(e){notice(T('요청 실패 · ')+e.message);}
-  finally{deliveryBusy=false;if(lastModel)paintDelivery(lastModel);pollActivity();}
+  finally{deliveryBusy=false;if(lastModel){paintAttention(lastModel);paintDelivery(lastModel);}await pollActivity();if(result)paintResult();}
+  return answer;
 }
+function applyMission(ms,state){
+  if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',ms.project||'—'):T('이 작업의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',ms.project||'—')))
+    return decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block',...(ms.deliverableRun?{run_id:ms.deliverableRun}:{})});
+  return null;
+}
+
+// ------------------------------------------------------------------ approval and "why it stopped", on the mission card
+const KO=!window.I18N||window.I18N.lang!=='en';
+let approvalBusy=false,approvalSaid='';
+const orders=new Map();                                    // run id -> ORDER, fetched once when its details are opened
+async function decideRun(runId,kind){
+  if(approvalBusy)return;approvalBusy=true;if(lastModel)paintAttention(lastModel);
+  try{const rid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+'-'+Math.random().toString(16).slice(2);
+    const res=await fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json','X-Requested-With':'fetch'},body:new URLSearchParams({run_id:runId,request_id:rid})});
+    const out=await res.json().catch(()=>({}));
+    if(!res.ok&&!out.status)throw Error(T('서버 응답 ')+res.status);
+    const good=out.status==='accepted'||out.status==='ok';
+    approvalSaid=good?(kind==='approve'?T('승인했습니다 · 안전 검사를 거쳐 작업을 계속합니다'):T('거절했습니다 · 이 단계는 실행되지 않습니다')):T('처리하지 못했습니다 · ')+(out.message||out.error||out.status||'');
+    notice(approvalSaid);if(good)Trinity.pulse(kind==='approve'?PULSE.ok:PULSE.warn);}
+  catch(e){notice(T('요청 실패 · ')+e.message);}
+  finally{approvalBusy=false;await pollStatus();pollActivity();}
+}
+function stopReason(text){
+  const s=String(text||'');let m;
+  if((m=s.match(/^(\d+) consecutive milestones failed/)))return T('{0}단계 연속으로 통과하지 못해 멈췄습니다.',m[1]);
+  if((m=s.match(/^step budget \((\d+)\) used; next step was: (.*)$/s)))return T('최대 {0}단계를 모두 썼습니다. 다음에 하려던 일: {1}',m[1],m[2]);
+  if((m=s.match(/^ARCHITECT could not plan the next step: (.*)$/s)))return T('ARCHITECT가 다음 단계를 계획하지 못했습니다: {0}',m[1]);
+  return s;
+}
+function stepNote(s){
+  const bits=[T('{0}단계 · {1}',s.index,STATE_KO[s.state]||s.state||T('진행 중'))];
+  if(s.tests)bits.push(testLine(s.tests));
+  if(s.review)bits.push(s.review==='pass'?T('감리 통과'):T('감리 수정 요청'));
+  if(s.repairs)bits.push(T('자동 수정 {0}회',s.repairs));
+  return bits.join(' · ');
+}
+function orderDetails(runId){
+  const box=el('details','','more');box.append(el('summary',T('ARCHITECT가 세운 이 단계의 지시서')));const body=el('div');box.append(body);
+  const fill=o=>{body.replaceChildren();
+    if(!o){body.append(el('p',T('지시서를 불러오지 못했습니다.')));return;}
+    const list=el('ol');
+    const row=(label,value)=>{const text=Array.isArray(value)?value.join(', '):value;if(text){const li=el('li');li.append(el('b',label+' '),el('span',String(text).slice(0,600)));list.append(li);}};
+    row(T('목표:'),o.goal);row(T('바꿀 수 있는 파일:'),o.allowed_paths);row(T('건드리면 안 되는 파일:'),o.protected_paths);row(T('지울 수 있는 것:'),o.allowed_deletions);row(T('완료 기준:'),o.acceptance_criteria);
+    body.append(list);};
+  box.addEventListener('toggle',async()=>{if(!box.open||box.dataset.loaded)return;box.dataset.loaded='1';
+    if(orders.has(runId))return fill(orders.get(runId));
+    body.replaceChildren(el('p',T('지시서를 불러오는 중…')));
+    try{const r=await getJSON('/run/inspect?run_id='+encodeURIComponent(runId));if(r.error)throw Error(r.error);if(r.order)orders.set(runId,r.order);fill(r.order||null);if(!r.order)delete box.dataset.loaded;}catch(e){fill(null);delete box.dataset.loaded;}});
+  return box;
+}
+// Which block the card shows: 'approve' (a decision is asked of the user), 'wait' (approved, restarting), 'stuck'
+// (stopped by a gate no approval can open) or 'stopped' (the mission ended without finishing). null: nothing to say.
+const AT_WORK=new Set(['PLANNING','ORDER_READY','BUILDING','VERIFYING','REVIEWING','DECIDING']);
+function attentionKind(m){
+  const ms=m.mission,ap=status&&status.approval;
+  if(m.mode!=='live')return null;
+  const mine=ap&&ap.state==='HUMAN_REQUIRED'&&(!ms||ms.steps.some(s=>s.run===ap.run_id));
+  if(mine&&ap.required)return 'approve';
+  if(mine&&(ap.inflight||ap.approved)&&!ap.rejected)return 'wait';
+  if(mine&&!ap.rejected&&(ap.blocking||[]).length)return 'stuck';
+  if(ms&&!ms.live&&['BLOCKED','INCOMPLETE','FAILED'].includes(ms.status)){
+    // An approved run is picked up again before the mission record says so: its last step is at work, nothing is stopped.
+    const last=ms.steps[ms.steps.length-1];
+    return last&&AT_WORK.has(last.state)?'wait':'stopped';}
+  return null;
+}
+function paintAttention(m){
+  let box=$('mission-attention');
+  if(!box){box=el('div','','delivery attention-box');box.id='mission-attention';$('mission-card').append(box);}
+  const ms=m.mission,ap=(status&&status.approval)||{},kind=attentionKind(m);
+  $('mission-card').classList.toggle('attn',kind==='approve');$('mission-card').classList.toggle('stopped',kind==='stuck'||kind==='stopped');
+  const dstate=ms?((ms.applied&&ms.applied.status)||ms.applyState||'pending'):'',offered=!!(ms&&ms.deliverable&&dstate!=='applied'&&dstate!=='discarded');   // the delivery box below offers "이어서 진행"
+  const sig=JSON.stringify(!kind?[]:[kind,ms&&ms.id,ms&&ms.status,ms&&ms.blocked,ms&&ms.summary,ms&&ms.steps,ap.run_id,ap.stage,ap.items,ap.blocking,approvalBusy,deliveryBusy,offered]);
+  if(box.dataset.sig===sig)return;box.dataset.sig=sig;        // rebuilt only on a real change: an open list or the focus survives every poll
+  const held=box.contains(document.activeElement)?document.activeElement.dataset.act:null,opened=[...box.querySelectorAll('details[open]')].map(d=>d.dataset.k);
+  box.replaceChildren();box.hidden=!kind;if(!kind){delete box.dataset.kind;return;}
+  const word=it=>(KO&&it.title_ko)||it.title||it.code||'',why=it=>(KO&&it.why_ko)||it.why||'';
+  const list=items=>{const ul=el('ul','','why');for(const it of items){const li=el('li',word(it));if(it.file){li.append(' · ',el('code',it.file));}ul.append(li);}return ul;};
+  if(kind==='approve'){
+    const items=ap.items||[];
+    box.append(el('strong',ap.stage==='POST_BUILD'?T('제작 결과에 확인이 필요합니다'):T('시작 전에 확인이 필요합니다')));
+    if(items[0]&&why(items[0]))box.append(el('p',why(items[0])));
+    if(items.length)box.append(list(items));
+    const row=el('div','','delivery-actions');
+    const yes=el('button',approvalBusy?T('처리 중…'):T('승인하고 계속'));yes.type='button';yes.className='warn';yes.dataset.act='approve';yes.onclick=()=>decideRun(ap.run_id,'approve');
+    const no=el('button',T('거절'));no.type='button';no.dataset.act='reject';no.onclick=()=>{if(confirm(T('이 단계를 거절할까요? 거절하면 이 단계는 실행되지 않습니다.')))decideRun(ap.run_id,'reject');};
+    for(const b of [yes,no])b.disabled=approvalBusy;
+    row.append(yes,no);box.append(row);const d=orderDetails(ap.run_id);d.dataset.k='order';box.append(d);
+  }else if(kind==='wait'){
+    box.append(el('strong',T('작업을 다시 시작하는 중')),el('p',T('안전 검사를 거친 뒤 이어서 진행합니다.')));
+  }else{
+    box.append(el('strong',T('멈춘 이유')));
+    if(kind==='stuck'){box.append(el('p',T('승인으로 풀 수 없는 문제로 멈췄습니다. ARCHITECT에게 다시 지시해 주세요.')),list(ap.blocking));
+      const first=ap.blocking[0];if(why(first))box.append(el('small',why(first),'ai-sub'));}
+    else box.append(el('p',stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
+    if(ms&&ms.steps.length){const d=el('details','','more');d.dataset.k='steps';d.append(el('summary',T('단계별 결과')));const ol=el('ol');
+      for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
+      d.append(ol);box.append(d);}
+    if(ms&&ms.summary){const d=el('details','','more');d.dataset.k='summary';d.append(el('summary',T('ARCHITECT 요약')),el('p',ms.summary));box.append(d);}
+    if(kind==='stopped'&&(!offered||ms.status==='BLOCKED')){      // BLOCKED: more steps would stop at the same gate, so the ARCHITECT plans again
+      const act=ms.status==='BLOCKED'?'replan':'extend',row=el('div','','delivery-actions'),again=el('button',deliveryBusy?T('처리 중…'):act==='replan'?T('다시 계획해서 시도'):T('이어서 시도'));
+      again.type='button';again.dataset.act=act;again.disabled=deliveryBusy;again.onclick=()=>decideMission(ms.id,act);row.append(again);box.append(row);}
+  }
+  for(const d of box.querySelectorAll('details'))if(opened.includes(d.dataset.k)||(d.dataset.k==='steps'&&box.dataset.kind!==kind))d.open=true;   // the step list starts open
+  box.dataset.kind=kind;
+  if(held){const again=box.querySelector('[data-act="'+held+'"]');if(again&&!again.disabled)again.focus();}
+}
+
+// ------------------------------------------------------------------ what changed (the deliverable), then apply
+let result=null,resultOpener=null;                         // {ms, data, file, done}: the result exactly as it was opened
+function diffBody(text){                                   // the file header (up to the first @@) is not content; later "--- x" lines are
+  const lines=String(text||'').split('\n'),at=lines.findIndex(l=>l.startsWith('@@'));
+  return at<0?lines.filter(l=>!/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode|similarity index|rename (from|to) )/.test(l)):lines.slice(at);
+}
+function diffLines(text){let a=0,d=0;for(const l of diffBody(text)){if(l[0]==='+')a++;else if(l[0]==='-')d++;}return [a,d];}
+async function openResult(ms){
+  if(!$('ai-panel').hidden)setAIPanel(false,true);if(openId!=null)closeCall();
+  resultOpener=document.activeElement;const mine=result={ms,data:null,file:null,done:null};
+  for(const id of ['rp-sum','rp-files','rp-diff','rp-actions'])delete $(id).dataset.sig;
+  $('result-panel').hidden=false;paintResult();$('rp-close').focus();
+  try{mine.data=await getJSON('/result?run_id='+encodeURIComponent(ms.deliverableRun));}catch(e){mine.data={error:e.message};}
+  if(result===mine){const files=(mine.data.changed_files||[]);mine.file=files.length?files[0].path:null;paintResult();}
+}
+function closeResult(){if(!result)return;result=null;$('result-panel').hidden=true;
+  const back=resultOpener&&document.contains(resultOpener)?resultOpener:document.querySelector('#mission-delivery [data-act="apply"]')||$('tab-stage');   // the opener may have been redrawn meanwhile
+  resultOpener=null;if(back)back.focus();}
+// Each part is rebuilt only when what it shows changed, so a poll never moves the diff being read or drops the focus.
+function paintResult(){
+  if(!result)return;
+  const now=lastModel&&lastModel.mode==='live'&&lastModel.mission&&lastModel.mission.id===result.ms.id?lastModel.mission:null,live=now||result.ms,d=result.data;
+  const state=result.done||(live.applied&&live.applied.status)||live.applyState||'pending';
+  // Deciding is offered only for what is on screen: not while the task runs again, and not once its result is another run.
+  const moved=!now?T('이 작업은 지금 화면의 작업이 아닙니다. 작업 카드에서 다시 열어 주세요.'):now.status==='RUNNING'?T('작업이 다시 진행 중입니다. 끝난 뒤 변경 내용을 다시 열어 주세요.'):now.deliverableRun!==result.ms.deliverableRun?T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.'):'';
+  $('rp-title').textContent=live.goal;
+  let meta=T('프로젝트 · ')+(live.project||'—')+' · '+((APPLY_KO[state]||[state])[0]),where='';
+  if(d&&d.worktree_path){const full=String(d.worktree_path),base=String(d.project_path||''),inside=base&&full.startsWith(base);
+    meta+=' · '+T('결과물 위치: ')+(inside?(live.project||'')+full.slice(base.length):full.split(/[\\/]/).slice(-2).join('/'));where=full;}
+  if($('rp-meta').textContent!==meta)$('rp-meta').textContent=meta;$('rp-meta').title=where;
+  const sum=$('rp-sum'),files=$('rp-files'),diff=$('rp-diff'),note=$('rp-note'),acts=$('rp-actions');
+  const once=(node,sig,build)=>{if(node.dataset.sig===sig)return;node.dataset.sig=sig;node.replaceChildren();build();};
+  let said='';
+  if(!d||d.error){for(const n of [sum,files,diff,acts]){n.replaceChildren();delete n.dataset.sig;}diff.hidden=true;
+    note.textContent=!d?T('변경 내용을 불러오는 중…'):T('변경 내용을 불러오지 못했습니다 · ')+d.error;return;}
+  const list=d.changed_files||[],diffs=d.file_diffs||{};let add=0,del=0;const per={};
+  for(const f of list){per[f.path]=diffLines(diffs[f.path]);add+=per[f.path][0];del+=per[f.path][1];}
+  once(sum,'s'+result.ms.deliverableRun,()=>{
+    const tile=(big,small,cls)=>{const t=el('div','','rp-tile'+(cls?' '+cls:''));t.append(el('b',big),el('span',small));sum.append(t);};
+    tile(T('파일 {0}개',list.length),T('+{0}줄 · −{1}줄',add,del));
+    const post=(d.tests||{}).post;
+    if(post&&post.total){const bad=Math.max(post.failed||0,post.total-(post.passed||0));tile(bad?T('{0}개 실패',bad):T('{0}개 통과',post.passed||0),bad?T('테스트 {0}개 중',post.total):T('테스트 · 실패 없음'),bad?'bad':'ok');}
+    else tile(T('테스트 결과 없음'),T('테스트'),'');
+    const verdict=(d.tests||{}).inspector||(d.inspector||{}).verdict,found=((d.inspector||{}).p0||[]).length+((d.inspector||{}).p1||[]).length;
+    if(verdict)tile(verdict==='pass'?T('감리 통과'):T('감리 수정 요청'),found?T('지적 {0}건',found):T('지적 없음'),verdict==='pass'?'ok':'bad');});
+  once(files,'f'+result.ms.deliverableRun+'|'+result.file,()=>{
+    for(const f of list){const b=el('button',f.path+' ');b.type='button';b.dataset.path=f.path;b.setAttribute('aria-pressed',String(f.path===result.file));
+      if(per[f.path][0])b.append(el('em','+'+per[f.path][0]));if(per[f.path][1])b.append(' ',el('s','−'+per[f.path][1]));
+      if(f.type==='D')b.append(' ',el('s',T('삭제')));else if(f.type==='A')b.append(' ',el('em',T('새 파일')));
+      b.onclick=()=>{result.file=f.path;paintResult();[...files.children].find(x=>x.dataset.path===f.path)?.focus();};files.append(b);}});
+  if(!list.length)said=d.worktree_exists===false?T('작업 사본이 더 이상 없어 변경 내용을 보여 줄 수 없습니다.'):T('바뀐 파일이 없습니다.');
+  const lines=result.file?diffBody(diffs[result.file]).filter((l,i,all)=>i<all.length-1||l!==''):[],MAX=1500;
+  diff.hidden=!result.file;
+  once(diff,'d'+result.ms.deliverableRun+'|'+result.file,()=>{
+    diff.setAttribute('aria-label',T('{0} 변경 내용',result.file||''));diff.scrollTop=0;
+    for(const l of lines.slice(0,MAX))diff.append(el('div',l||' ',l.startsWith('@@')?'h':l[0]==='+'?'a':l[0]==='-'?'d':''));
+    if(result.file&&!lines.length)diff.append(el('div',T('이 파일은 변경 내용을 글자로 보여 줄 수 없습니다.')));});
+  if(lines.length>MAX)said=T('변경 내용이 길어 앞의 {0}줄만 보여 줍니다.',MAX);
+  const pre=d.preconditions||{},open=state!=='applied'&&state!=='discarded';
+  if(open&&moved)said=moved;
+  else if(state==='blocked'&&live.applied&&live.applied.blocks)said=T('적용 보류: ')+live.applied.blocks.join('; ').slice(0,300);
+  else if(pre.ok===false&&(pre.blocks||[]).length&&state==='pending')said=T('지금은 적용할 수 없습니다: ')+pre.blocks.join('; ').slice(0,300);
+  if(note.textContent!==said)note.textContent=said;
+  once(acts,JSON.stringify([state,deliveryBusy,!!moved,open]),()=>{
+    if(!open||moved)return;
+    const apply=el('button',deliveryBusy?T('처리 중…'):T('원본에 적용'));apply.type='button';apply.dataset.act='apply';
+    apply.onclick=async()=>{const mine=result,out=await applyMission(result.ms,state);if(out&&out.status==='applied'&&result===mine)mine.done='applied';paintResult();if(result===mine&&mine.done)$('rp-close').focus();};
+    const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=async()=>{await decideMission(result.ms.id,'extend');closeResult();};
+    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';
+    drop.onclick=async()=>{if(confirm(T('이 작업의 결과물을 폐기할까요? 기록은 남습니다.'))){await decideMission(result.ms.id,'discard',{run_id:result.ms.deliverableRun});closeResult();}};
+    for(const b of [apply,more,drop])b.disabled=deliveryBusy;acts.append(apply,more,drop);});
+}
+
 function paintDelivery(m){
   let box=$('mission-delivery');
   if(!box){box=el('div','','delivery');box.id='mission-delivery';$('mission-card').append(box);}
@@ -236,14 +418,16 @@ function paintDelivery(m){
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',ms.applied.blocks.join('; ').slice(0,220),'ai-sub'));
   if(state!=='applied'&&state!=='discarded'){
     const row=el('div','','delivery-actions');
-    const apply=el('button',deliveryBusy?T('처리 중…'):T('원본에 적용'));apply.type='button';apply.dataset.act='apply';
-    apply.onclick=()=>{if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',ms.project||'—'):T('이 작업의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',ms.project||'—')))decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block'});};
+    // The first button shows what changed; "원본에 적용" lives in that panel, after the changes have been seen.
+    const apply=el('button',deliveryBusy?T('처리 중…'):ms.deliverableRun?T('변경 내용 보기'):T('원본에 적용'));apply.type='button';apply.dataset.act='apply';
+    apply.onclick=()=>{if(ms.deliverableRun)openResult(ms);else applyMission(ms,state);};
     const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=()=>decideMission(ms.id,'extend');
-    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';drop.onclick=()=>{if(confirm(T('이 작업의 결과물을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard');};
+    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';drop.onclick=()=>{if(confirm(T('이 작업의 결과물을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard',ms.deliverableRun?{run_id:ms.deliverableRun}:{});};
     for(const b of [apply,more,drop])b.disabled=deliveryBusy;
     row.append(apply,more,drop);box.append(row);
     if(held){const again=row.querySelector('[data-act="'+held+'"]');if(again&&!again.disabled)again.focus();}
     if(state==='blocked')box.append(el('small',T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'),'ai-sub'));
+    else if(ms.status==='DONE'&&ms.deliverableRun)box.append(el('small',T('원본 프로젝트는 아직 그대로입니다. 변경 내용을 보고 정하세요.'),'ai-sub'));
   }
 }
 function paintWork(m){
@@ -321,7 +505,7 @@ function paintCall(){
     :!shown.length?(callFilter==='error'?T('오류가 난 도구 호출이 없습니다.'):callFilter==='tool'?T('도구를 쓰지 않은 호출입니다.'):T('기록된 활동이 없습니다.'))
     :d.total>d.events.length?T('최근 {0}건만 표시합니다 (전체 {1}건).',d.events.length,d.total):'';
 }
-function openCall(id){if(!$('ai-panel').hidden)setAIPanel(false,true);callOpener=document.activeElement;openId=id;callRetry=5;openData=liveCall&&liveCall.id===id?liveCall:null;$('call-panel').hidden=false;paintCall();pollCall();$('cp-close').focus();}
+function openCall(id){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();callOpener=document.activeElement;openId=id;callRetry=5;openData=liveCall&&liveCall.id===id?liveCall:null;$('call-panel').hidden=false;paintCall();pollCall();$('cp-close').focus();}
 function closeCall(){openId=null;openData=null;$('call-panel').hidden=true;
   const back=callOpener&&callOpener.dataset.key?document.querySelector('[data-key="'+callOpener.dataset.key+'"]'):callOpener;callOpener=null;if(back&&back.isConnected)back.focus();}
 async function pollCall(){
@@ -359,7 +543,7 @@ function stinger(m){
   const s=$('stinger');s.replaceChildren(el('small',m.w?(AI[m.w.provider]||{name:''}).name+' · '+(m.w.role||''):'TRIBUNAL'),el('strong',PHASE[m.phase].word));
   s.style.setProperty('--c',actorColor(m));s.classList.remove('show');void s.offsetWidth;s.classList.add('show');
 }
-function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintFeeds(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');}
+function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintFeeds(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');if(result)paintResult();}
 const params=new URLSearchParams(location.search),attract=params.get('attract')==='1';let idleSince=null;
 function repaint(){
   if(attract&&activity){
@@ -565,8 +749,11 @@ const pollActivity=guarded(async()=>{
 const pollStatus=guarded(async()=>{try{status=await getJSON('/status');
   const pending=status.pending_result_count||0,need=status.human_required_count||0,badge=$('pending-badge');
   badge.hidden=!pending;badge.textContent=pending>99?'99+':String(pending);
+  repaint();          // the card first: the pill points at it when the card itself asks for the decision
+  const here=lastModel&&attentionKind(lastModel)==='approve';
   $('attention').hidden=!need||document.body.dataset.view==='workshop';$('attention-text').textContent=T('확인이 필요한 작업이 {0}건 있습니다.',need);
-  repaint();}catch(e){/* the activity poll reports connection trouble */}});
+  $('attention-go').textContent=here?T('확인하기'):T('작업실에서 확인');$('attention-go').dataset.here=here?'1':'';
+  if(result)paintResult();}catch(e){/* the activity poll reports connection trouble */}});
 
 // ------------------------------------------------------------------ replay (real ledger of a finished mission)
 let replayLoading=false;
@@ -654,7 +841,7 @@ function grow(){const t=$('chat-text');t.style.height='48px';const h=t.scrollHei
 
 // ------------------------------------------------------------------ views
 function setAIPanel(open,quiet){const p=$('ai-panel');p.hidden=!open;$('btn-ai').setAttribute('aria-expanded',String(open));
-  if(open){if(openId!=null)closeCall();paintAI(true);pollAI();$('ai-close').focus();}else if(!quiet)$('btn-ai').focus();
+  if(open){if(openId!=null)closeCall();if(result)closeResult();paintAI(true);pollAI();$('ai-close').focus();}else if(!quiet)$('btn-ai').focus();
   paintLimitAlert();}
 function setChatLog(open){const log=$('chat-log');log.hidden=!open;$('chat-peek').setAttribute('aria-expanded',String(open));if(open)log.scrollTop=log.scrollHeight;}
 function setView(view){
@@ -663,7 +850,7 @@ function setView(view){
   $('tab-stage').setAttribute('aria-pressed',String(!work));$('tab-workshop').setAttribute('aria-pressed',String(work));
   if(work&&!frame.getAttribute('src'))frame.src='/classic';
   if(work)Trinity.pause();else Trinity.resume();   // the workshop covers the whole scene
-  if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openId!=null)closeCall();if(!$('ai-panel').hidden)setAIPanel(false,true);}
+  if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openId!=null)closeCall();if(result)closeResult();if(!$('ai-panel').hidden)setAIPanel(false,true);}
 }
 function setBroadcast(on){
   document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('방송 모드 끝내기'):T('방송 모드');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on)closeRoleMenu();
@@ -673,7 +860,7 @@ function start(){
   if(introOn){document.body.classList.add('intro');setTimeout(()=>document.body.classList.remove('intro'),4300);setTimeout(endIntro,6400);}else endIntro();
   Trinity.init($('trinity-canvas'),introOn?{onFrame,bootDelay:2.1,bootTime:1.7}:{onFrame});
   if(params.get('broadcast')==='1'||attract){document.body.classList.add('broadcast');$('btn-broadcast').textContent=T('방송 모드 끝내기');$('btn-broadcast').setAttribute('aria-pressed','true');}   // e.g. an OBS browser source: /?attract=1
-  $('tab-stage').onclick=()=>setView('stage');$('tab-workshop').onclick=()=>setView('workshop');$('attention-go').onclick=()=>setView('workshop');
+  $('tab-stage').onclick=()=>setView('stage');$('tab-workshop').onclick=()=>setView('workshop');$('attention-go').onclick=()=>{const b=$('attention-go').dataset.here&&document.querySelector('#mission-attention [data-act="approve"]');if(b){b.scrollIntoView({block:'center'});b.focus();}else setView('workshop');};$('rp-close').onclick=closeResult;
   $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled||replay)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');
     try{const r=await chooseProjectFolder();if(r)notice(r.ok?T('작업 폴더를 바꿨습니다 · ')+r.path:T('선택할 수 없는 폴더입니다 · ')+r.message);}
     catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (작업실 탭에서 경로를 직접 입력할 수 있습니다)'));}
@@ -708,7 +895,7 @@ function start(){
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){   // one layer per press, the topmost first
       if(!$('role-menu').hidden)closeRoleMenu(true);else if(!$('chat-log').hidden){setChatLog(false);if(e.target.id!=='chat-text')$('chat-peek').focus();}
-      else if(!$('ai-panel').hidden)setAIPanel(false);else if(openId!=null)closeCall();else if(replay)stopReplay();return;}
+      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openId!=null)closeCall();else if(replay)stopReplay();return;}
     if(e.target.closest('textarea,input,select,[contenteditable]')||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.repeat||document.body.dataset.view!=='stage')return;
     if(e.key==='b'||e.key==='B'||e.key==='ㅠ')setBroadcast(!document.body.classList.contains('broadcast'));
     if(e.key==='r'||e.key==='R'||e.key==='ㄱ')startReplay();});

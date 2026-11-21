@@ -94,6 +94,46 @@ body.broadcast button.meta-chip::after{content:""}
 .delivery-actions button{height:30px;padding:0 11px;border-radius:9px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--text);font-size:12px}
 .delivery-actions button:first-child{background:var(--ok);border-color:var(--ok);color:#06101c;font-weight:700}
 .delivery-actions button.ghost{color:var(--muted)}
+.delivery-actions button.warn{background:var(--warn);border-color:var(--warn);color:#1a1204;font-weight:700}
+.delivery-actions button:disabled{opacity:.55;cursor:default}
+/* approval and "why it stopped" on the mission card */
+#mission-attention[hidden]{display:none}
+#mission-card.attn{border-color:#ffc46b88;box-shadow:0 0 0 1px #ffc46b33,0 0 26px -8px #ffc46b66}
+#mission-card.stopped{border-color:#ff6b7a66}
+.attention-box strong{font-size:13px}
+.attention-box p{margin:0;font-size:13px;color:#d6dff2;overflow-wrap:anywhere}
+.attention-box .why{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.attention-box .why li{font-size:12px;padding:7px 9px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid var(--line);overflow-wrap:anywhere}
+.attention-box code,#result-panel code{font:12px ui-monospace,Menlo,Consolas,monospace;color:#cfe0ff}
+.attention-box details.more{font-size:12px;color:var(--muted)}
+.attention-box details.more summary{cursor:pointer;padding:3px 0}
+.attention-box details.more ol{margin:6px 0 0;padding-left:18px;max-height:190px;overflow-y:auto}
+.attention-box details.more li{margin-bottom:5px;overflow-wrap:anywhere}
+.attention-box details.more li b{color:var(--text);font-weight:600}
+.attention-box details.more p{margin:6px 0 0}
+/* what changed */
+#result-panel{position:fixed;z-index:6;top:72px;right:18px;bottom:100px;width:min(640px,calc(100vw - 36px));display:flex;flex-direction:column;gap:10px;padding:16px;background:rgba(7,10,19,.95)}
+#result-panel[hidden]{display:none}
+#result-panel header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+#result-panel h3{margin:6px 0 2px;font:600 17px/1.3 var(--body);overflow-wrap:anywhere}
+#rp-meta{margin:0;font-size:12px;color:var(--muted)}
+#rp-close{height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:transparent;font-size:12px;color:var(--muted);white-space:nowrap}
+#rp-close:hover{color:var(--text)}
+#rp-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#rp-sum:empty,#rp-files:empty,#rp-note:empty,#rp-actions:empty{display:none}
+.rp-tile{padding:9px 11px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);min-width:0}
+.rp-tile b{display:block;font:700 16px var(--num)}.rp-tile span{font-size:12px;color:var(--muted)}
+.rp-tile.ok b{color:var(--ok)}.rp-tile.bad b{color:var(--bad)}
+#rp-files{display:flex;gap:6px;flex-wrap:wrap;max-height:108px;overflow-y:auto}
+#rp-files button{min-height:30px;padding:3px 10px;border-radius:9px;border:1px solid var(--line2);background:transparent;color:var(--muted);font:12px ui-monospace,Menlo,Consolas,monospace;overflow-wrap:anywhere;text-align:left}
+#rp-files button[aria-pressed=true]{background:rgba(255,255,255,.12);color:var(--text)}
+#rp-files em{font-style:normal;color:var(--ok)}#rp-files s{text-decoration:none;color:var(--bad)}
+#rp-diff{flex:1;min-height:90px;overflow:auto;margin:0;padding:10px 0;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.35);font:12px/1.65 ui-monospace,Menlo,Consolas,monospace}
+#rp-diff[hidden]{display:none}
+#rp-diff div{padding:0 12px;white-space:pre}#rp-diff .a{background:rgba(94,242,176,.12);color:#bdf7dc}#rp-diff .d{background:rgba(255,107,122,.12);color:#ffc2c8}#rp-diff .h{color:var(--agy)}
+#rp-note{margin:0;font-size:12px;color:var(--warn);overflow-wrap:anywhere}
+#rp-actions button{height:34px;padding:0 14px}
+@media(max-width:760px){#result-panel{top:60px;right:8px;left:8px;bottom:8px;width:auto}#rp-sum{grid-template-columns:1fr}}
 .delivery-actions button:hover{filter:brightness(1.1)}
 .badge.run{color:var(--agy);border-color:var(--agy)}
 .feed{display:flex;flex-direction:column;gap:8px;min-height:72px;flex:1 1 0%!important}

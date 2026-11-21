@@ -2,7 +2,7 @@
 const T=(window.I18N&&window.I18N.t)||((s,...a)=>s.replace(/\{(\d+)\}/g,(m,i)=>i<a.length?String(a[i]):m));   // i18n.js missing: Korean, and the stop buttons still work
 const frame=document.getElementById('workspace');
 const labels={NONE:T('작업 대기'),IDLE:T('작업 대기'),PLANNING:T('설계 중'),ORDER_READY:T('제작 준비'),BUILDING:T('제작 중'),VERIFYING:T('테스트 실행 중'),REVIEWING:T('감리 중'),DECIDING:T('결과 판단 중'),PASS:T('검증 통과'),RECOVERED:T('복구 완료 · 검증 통과'),FAIL:T('검증 실패'),HUMAN_REQUIRED:T('확인 · 수정 필요'),TIMEOUT:T('실행 시간 초과')};
-let busy=false,doc,lastMissionProject='';
+let busy=false,doc;
 function el(tag,text,cls){const n=doc.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;}
 function setup(){
  doc=frame.contentDocument;if(!doc?.getElementById('main'))return;
@@ -21,7 +21,8 @@ function setup(){
  tools.append(noise,latest);doc.getElementById('chat-head').after(tools);
  setupRoles();
  setupFolderPicker();
- setupActivity(panel);
+ // reading and tab order = what is seen: summary, alerts, working area, AI cards, role note
+ {const main=doc.getElementById('main'),alertBar=doc.getElementById('alert-bar');if(alertBar)main.before(alertBar);main.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'));}
  doc.getElementById('chat-box').setAttribute('aria-label',T('ARCHITECT 대화 기록'));refresh();
  for(const id of ['normal-mode-btn','triad-mode-btn'])doc.getElementById(id)?.addEventListener('click',()=>refresh());
 }
@@ -34,7 +35,7 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
  if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('감리에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 감리를 다시 진행해야 합니다.'):next;}
  const nextText=research?(r.next_step||T('연구 기록을 기다리고 있습니다.')):next,nextEl=doc.getElementById('mission-next');
  if(nextEl.textContent!==nextText)nextEl.textContent=nextText;   // announced (aria-live) only when it really changes
- doc.getElementById('mission-project').textContent=s.project_name?T('프로젝트 · ')+s.project_name:(lastMissionProject?T('최근 작업 프로젝트 · ')+lastMissionProject:T('프로젝트 · ')+T('미선택'));
+ doc.getElementById('mission-project').textContent=T('프로젝트 · ')+(s.project_name||T('미선택'));
  const timestamp=run.updated_at?new Date(run.updated_at+(/Z|[+]\d\d:\d\d$/.test(run.updated_at)?'':'Z')):null;
  const elapsed=timestamp?Math.max(0,Math.floor((Date.now()-timestamp.getTime())/1000)):null;
  doc.getElementById('mission-updated').textContent=elapsed===null?T('아직 실행 기록이 없습니다.'):T('최근 단계 기록 · ')+ago(run.updated_at);
@@ -45,7 +46,7 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
 // The workshop is only kept fresh while it is the view in front and the window is visible.
 const workshopSeen=()=>!document.hidden&&document.body.dataset.view==='workshop';
 const onWorkshopSeen=fn=>{new MutationObserver(()=>{if(workshopSeen())fn();}).observe(document.body,{attributes:true,attributeFilter:['data-view']});document.addEventListener('visibilitychange',()=>{if(workshopSeen())fn();});};
-setInterval(()=>{if(workshopSeen()){refresh();refreshActivity();}},5000);onWorkshopSeen(()=>{refresh();refreshActivity();});
+setInterval(()=>{if(workshopSeen())refresh();},5000);onWorkshopSeen(refresh);
 frame.addEventListener('load',setup);if(frame.contentDocument?.readyState==='complete')setup();
 
 
@@ -56,88 +57,8 @@ function setupRoles(){
  notice.id='role-notice';doc.getElementById('corestrip').after(notice);
 }
 
-// ---------------------------------------------------------------- AI work visibility (missions, who works now, workload)
-const PROVIDER={ANTHROPIC:'Claude',OPENAI:'Codex',GOOGLE:'Antigravity'},ROLE={ARCHITECT:T('ARCHITECT · 설계'),MAKER:T('MAKER · 제작'),INSPECTOR:T('INSPECTOR · 감리'),OTHER:T('기타')};
-const STEP_CLASS={PASS:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
-// "1단계 만에 완료 · 최대 6단계": how far the mission got, in words (steps used / passed / the limit).
-function stepLine(used,passed,max,status,live){
- if(!used)return T('아직 시작한 단계가 없습니다 · 최대 {0}단계',max);
- if(status==='RUNNING')return live===false?T('{0}단계에서 멈춤 · 최대 {1}단계',used,max):T('{0}단계 진행 중 · 최대 {1}단계',used,max);
- if(status==='DONE'&&passed===used)return T('{0}단계 만에 완료 · 최대 {1}단계',used,max);
- if(status==='INCOMPLETE'&&used>=max)return T('{0}단계를 모두 썼지만 끝내지 못함',max);
- return T('{0}단계 중 {1}단계 통과 · 최대 {2}단계',used,passed,max);
-}
-function testLine(t){const total=t.total||0,bad=Math.max(t.failed||0,total-(t.passed||0));return !total?T('테스트 결과 없음'):bad>0?T('테스트 {0}개 중 {1}개 실패',total,bad):T('테스트 {0}개 모두 통과',total);}
-function itestLabel(t){if(!t||!t.status)return '';const n=(t.files||[]).length;
- return ' · '+(t.status==='passed'?T('감리 테스트 통과 · 파일 {0}개',n):t.status==='failed'?T('감리 테스트 실패 · 파일 {0}개',n):t.status==='skipped'?T('감리 테스트 건너뜀'):T('감리 테스트 제안 없음'));}
-const MISSION_STATUS={DONE:T('완료'),INCOMPLETE:T('단계 한도 도달'),BLOCKED:T('사용자 결정 필요'),FAILED:T('실패')};
-let activityBusy=false,usageWindow='mission';
-function fmtTime(sec){sec=Math.round(sec||0);if(sec<60)return sec+T('초');const m=Math.floor(sec/60);if(m<60)return m+T('분')+(m<10&&sec%60?' '+(sec%60)+T('초'):'');return Math.floor(m/60)+T('시간 ')+(m%60)+T('분');}
-function fmtTokens(b){if(!b)return '—';if(!b.tokens)return b.unknown_calls?T('기록 전'):'—';const n=b.tokens,t=(!window.I18N||window.I18N.lang==='ko')?(n>=10000?(n/10000).toFixed(1)+'만':n.toLocaleString('ko-KR')):(n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':n.toLocaleString('en-US'));return (b.exact_tokens<b.tokens?'~':'')+t+(b.unknown_calls?T(' (+기록 전 ')+b.unknown_calls+T('회)'):'');}
+// The mission, workload, call and event lists live on the stage only; the workshop keeps the time helper.
 function ago(iso){if(!iso)return '';const t=new Date(iso+(/Z|[+]\d\d:\d\d$/.test(iso)?'':'Z')),s=Math.max(0,Math.floor((Date.now()-t)/1000));return s<60?s+T('초 전'):s<3600?Math.floor(s/60)+T('분 전'):s<86400?Math.floor(s/3600)+T('시간 전'):Math.floor(s/86400)+T('일 전');}
-function setupActivity(panel){
- const box=el('section','','ai-activity');box.id='ai-activity';box.setAttribute('aria-label',T('AI 작업 현황'));
- const head=el('div','','ai-activity-head');head.append(el('span',T('AI 작업 현황 · 5초마다 갱신'),'mission-kicker'));
- const now=el('div','','ai-now');now.id='ai-now';now.append(el('span',T('작업 기록을 읽고 있습니다.')));
- const grid=el('div','','ai-grid');
- const mission=el('div','','ai-card');mission.id='ai-mission';
- const work=el('div','','ai-card');const tabs=el('div','','ai-tabs');
- for(const [key,name] of [['mission',T('이번 작업')],['today',T('오늘')],['all',T('전체')]]){const b=el('button',name);b.type='button';b.dataset.win=key;b.onclick=()=>{usageWindow=key;refreshActivity();};tabs.append(b);}
- const table=el('div','','ai-table');table.id='ai-work';
- work.append(el('strong',T('AI별 작업량')),tabs,table,el('p',T('토큰: ~ 표시는 글자 수 기반 추정, 없으면 CLI가 보고한 실제 값. "기록 전"은 토큰이 기록되지 않은 예전 호출로, 시간만 집계됩니다.'),'ai-footnote'));
- grid.append(mission,work);
- const calls=el('details','','mission-evidence');calls.append(el('summary',T('최근 AI 호출')));const callList=el('div','','ai-list');callList.id='ai-calls';calls.append(callList);
- const events=el('details','','mission-evidence');events.append(el('summary',T('최근 진행 기록 (단계 전환)')));const eventList=el('div','','ai-list');eventList.id='ai-events';events.append(eventList);
- box.append(head,now,grid,calls,events);
- // reading and tab order = what is seen: summary, alerts, working area, AI activity, AI cards, role note
- const main=doc.getElementById('main'),alertBar=doc.getElementById('alert-bar');if(alertBar)main.before(alertBar);
- main.after(box);box.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'));
- refreshActivity();   // kept fresh by the one timer registered next to `workshopSeen`
-}
-function paintNow(a,focus){
- const now=doc.getElementById('ai-now');now.replaceChildren();
- if((a.working_now||[]).length){for(const w of a.working_now){const line=el('div','','ai-now-line working');line.append(el('span','','dot'),el('strong',(ROLE[w.role]||w.role||'AI')+' · '+(PROVIDER[w.provider]||w.provider)),el('span',T(' 작업 중 · ')+fmtTime(w.elapsed_sec)+((w.stage_ko&&T(w.stage_ko))?' · '+(w.stage_ko&&T(w.stage_ko)):'')+(w.mission_id?' · '+w.mission_id:'')));now.append(line);}return;}
- const line=el('div','','ai-now-line idle');line.append(el('span','','dot'),el('span',focus&&focus.live?T('다음 AI 호출을 준비하고 있습니다.'):T('지금 실행 중인 AI 작업은 없습니다.')));now.append(line);
-}
-function paintMission(focus){
- const m=doc.getElementById('ai-mission'),opened=new Set([...m.querySelectorAll('details[open]>summary')].map(s=>s.textContent)),scroll=m.scrollTop;m.replaceChildren();
- if(!focus){m.append(el('strong',T('작업')),el('p',T('아직 작업 기록이 없습니다. 채팅으로 요청하면 여기에 단계별 진행이 표시됩니다.')));return;}
- const status=focus.status==='RUNNING'?(focus.live?T('진행 중'):T('중단됨 · 재개 대기')):(MISSION_STATUS[focus.status]||focus.status);
- const title=el('div','','ai-mission-title');title.append(el('strong',T('작업 · ')+focus.project),el('span',status,'ai-badge '+(focus.status==='DONE'?'ok':focus.status==='RUNNING'&&focus.live?'run':'warn')));
- m.append(title,el('p',focus.goal,'ai-goal'));
- const bar=el('div','','ai-steps');
- for(let i=1;i<=Math.max(focus.max_steps||0,focus.steps.length);i++){const s=focus.steps.find(x=>x.index===i);const kind=s?(STEP_CLASS[s.state]||'run'):'todo',chip=el('span',STEP_MARK[kind]+i,'chip '+kind);chip.title=s?(T('{0}단계 · ',i)+((s.state_ko&&T(s.state_ko))||T('진행 중'))+' · '+s.goal):T('아직 쓰지 않은 단계');chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);bar.append(chip);}
- m.append(bar,el('small',stepLine(focus.steps.length,focus.passed_steps,Math.max(focus.max_steps||0,focus.steps.length),focus.status,focus.live)+T(' · 갱신 ')+ago(focus.updated_at),'ai-sub'));
- const list=el('details');list.append(el('summary',T('단계별 결과')));
- for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?' · '+testLine(s.tests):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 감리 ')+(s.review==='pass'?T('통과'):s.review==='changes_required'?T('수정 요청'):s.review):'')+itestLabel(s.inspector_tests)+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}
- m.append(list);
- if(focus.summary){const sm=el('details');sm.append(el('summary',T('ARCHITECT 요약')),el('p',focus.summary));m.append(sm);}
- if(focus.blocked_reason){m.append(el('small',T('멈춘 이유: ')+focus.blocked_reason,'ai-sub'));}
- if(focus.deliverable){const full=String(focus.deliverable),base=String(focus.project_path||''),inside=base&&(full.startsWith(base+'/')||full.startsWith(base+'\\'));
-  const where=el('small',T('결과물 위치: ')+(inside?focus.project+full.slice(base.length):full.split(/[\\/]/).slice(-3).join('/')),'ai-sub path');where.title=full;m.append(where);}   // the full path only on hover
- for(const d of m.querySelectorAll('details'))if(opened.has(d.querySelector('summary').textContent))d.open=true;m.scrollTop=scroll;
-}
-function paintWork(a){
- for(const b of doc.querySelectorAll('.ai-tabs button')){b.classList.toggle('on',b.dataset.win===usageWindow);b.disabled=b.dataset.win==='mission'&&!a.usage.mission;}
- if(usageWindow==='mission'&&!a.usage.mission)usageWindow='today';
- const win=a.usage[usageWindow],table=doc.getElementById('ai-work');table.replaceChildren();
- const header=el('div','','ai-row head');for(const h of [T('역할'),T('담당 AI (호출 수)'),T('호출'),T('CLI 작업 시간'),T('토큰')])header.append(el('span',h));table.append(header);
- for(const role of ['ARCHITECT','MAKER','INSPECTOR','OTHER']){const b=win.by_role[role];if(!b&&role==='OTHER')continue;const who=b?Object.entries(b.providers||{}).sort((x,y)=>y[1]-x[1]).map(([p,n])=>(PROVIDER[p]||p)+' '+n).join(', '):T('호출 없음');const row=el('div','','ai-row');row.append(el('span',ROLE[role]),el('span',who),el('span',b?String(b.calls)+(b.failed?T(' (실패 ')+b.failed+')':''):'0'),el('span',b?fmtTime(b.seconds):'—'),el('span',fmtTokens(b)));table.append(row);}
- const tot=el('div','','ai-row total');tot.append(el('span',T('합계')),el('span',''),el('span',String(win.total.calls)),el('span',fmtTime(win.total.seconds)),el('span',fmtTokens(win.total)));table.append(tot);
- for(const p of ['OPENAI','GOOGLE','ANTHROPIC']){const node=doc.getElementById('node-'+p);if(!node)continue;let line=node.querySelector('.ai-card-usage');if(!line){line=el('p','','ai-card-usage');node.append(line);}const b=a.usage.today.by_provider[p],busy=(a.working_now||[]).find(w=>w.provider===p);line.textContent=(busy?T('● 작업 중 · ')+(ROLE[busy.role]||busy.role)+' · '+fmtTime(busy.elapsed_sec)+' — ':'')+T('오늘 ')+(b?b.calls+T('회 · ')+fmtTime(b.seconds)+T(' · 토큰 ')+fmtTokens(b):T('호출 없음'));line.classList.toggle('busy',!!busy);}
-}
-function paintLists(a){
- const calls=doc.getElementById('ai-calls');calls.replaceChildren();
- for(const c of a.recent_calls||[])calls.append(el('div',ago(c.at)+' · '+(ROLE[c.role]||c.role||'?')+' · '+(PROVIDER[c.provider]||c.provider)+' · '+fmtTime(c.seconds)+' · '+(c.tokens?((c.exact?'':'~')+c.tokens.toLocaleString('ko-KR')+T(' 토큰')):T('토큰 기록 전'))+(c.status!=='OK'?' · '+c.status:''),'ai-item'));
- if(!calls.children.length)calls.append(el('div',T('아직 기록된 AI 호출이 없습니다.'),'ai-item'));
- const events=doc.getElementById('ai-events');events.replaceChildren();
- for(const e of a.events||[])events.append(el('div',ago(e.at)+' · '+e.project+' · '+((e.state_ko&&T(e.state_ko))||e.to_state)+(e.details?' — '+e.details:''),'ai-item'));
-}
-async function refreshActivity(){if(activityBusy||!doc||!doc.getElementById('ai-activity'))return;activityBusy=true;try{
- const response=await fetch('/ops/activity',{cache:'no-store'});if(!response.ok)throw Error(T('작업 현황 조회 실패'));const a=await response.json();if(a.error)throw Error(a.error);
- const focus=(a.missions||[]).find(m=>m.mission_id===a.focus_mission_id);lastMissionProject=(focus&&focus.project)||lastMissionProject;
- paintNow(a,focus);paintMission(focus);paintWork(a);paintLists(a);
- }catch(e){const now=doc.getElementById('ai-now');if(now)now.textContent=T('작업 현황 연결 중 · ')+e.message;}finally{activityBusy=false;}}
 
 // ---------------------------------------------------------------- project folder: native Windows dialog instead of typing a path
 async function chooseProjectFolder(){

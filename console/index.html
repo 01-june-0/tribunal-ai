@@ -115,6 +115,14 @@
   <ol id="cp-events"></ol>
   <p id="cp-note"></p>
 </section>
+<section id="result-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="rp-title" hidden>
+  <header><div><span class="kicker">변경 내용</span><h3 id="rp-title">—</h3><p id="rp-meta"></p></div><button type="button" id="rp-close" aria-label="닫기">닫기</button></header>
+  <div id="rp-sum"></div>
+  <div id="rp-files" role="group" aria-label="바뀐 파일"></div>
+  <pre id="rp-diff" tabindex="0" aria-label="파일 변경 내용"></pre>
+  <p id="rp-note"></p>
+  <div id="rp-actions" class="delivery-actions"></div>
+</section>
 <section id="ai-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="ai-title" hidden>
   <header><div><span class="kicker">AI 설정</span><h3 id="ai-title">모델 · 추론 강도 · 한도</h3><p id="ai-sub">바꾼 설정은 다음 호출부터 적용됩니다.</p></div><button type="button" id="ai-close" aria-label="닫기">닫기</button></header>
   <div id="ai-tools">

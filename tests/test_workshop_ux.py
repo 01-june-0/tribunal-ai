@@ -189,15 +189,17 @@ def test_overlay_puts_the_working_area_first_and_leaves_roles_to_the_stage():
     for gone in ("ANTIGRAVITY / DEVELOPMENT WORKSPACE", "role-cycle", "method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':csrf}", "TRIAD 연구 배정", "9/30", "대화로 이동"):
         assert gone not in js, gone
     assert "역할은 스테이지의 역할 메뉴에서 지정합니다" in js
-    assert "main.after(box);box.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'))" in js    # order in the page itself,
+    assert "main.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'))" in js    # order in the page itself,
     assert "#ai-activity{order" not in css and ".role-notice{order" not in css and "#corestrip{order" not in css    # so keyboard and screen-reader order match what is seen
     assert "main.before(alertBar)" in js                                    # alerts (approve / reject) stay above the working area
     assert "\n.director-v2 .role-notice{color:#a5bbcd;font-size:12px;line-height:1.6;margin:8px 2px 18px}\n" in css
     assert "min-height:440px;height:calc(100vh" in css                      # a short window still shows the chat form
     assert "@media(max-width:1023px){.director-v2 #main>.panel{max-height:none}" in css      # the chat form is not clipped at 801-1023px
     assert "role-cycle" not in css and "calc(100vh - 430px)" not in css
-    assert "lastMissionProject" in js and "결과물 {0}건이 적용을 기다립니다" in js
-    assert "where.title=full" in js                                         # the full path only on hover
+    assert "결과물 {0}건이 적용을 기다립니다" in js
+    for gone in ("ai-activity", "refreshActivity", "/ops/activity", "lastMissionProject"):      # mission, workload and call lists: stage only
+        assert gone not in js and gone not in css, gone
+    assert "#chat-action-card,.director-v2 #todo-approve-btn,.director-v2 #todo-reject-btn,.director-v2 #alert-approve-btn,.director-v2 #alert-reject-btn{display:none!important}" in css   # approve / reject once
 
 
 # ---------------------------------------------------------------- readability and structure (second pass)
@@ -233,7 +235,6 @@ def test_page_regions_and_announcements(page):
     js = (ROOT / "console" / "console.js").read_text(encoding="utf-8")
     css = (ROOT / "console" / "console.css").read_text(encoding="utf-8")
     assert "if(nextEl.textContent!==nextText)nextEl.textContent=nextText" in js      # announced only when it changes
-    assert "STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''}" in js and "chip.setAttribute('aria-label',chip.title)" in js
     assert ".director-v2 #hdr h1{position:absolute;width:1px;height:1px" in css and "#hdr h1{display:none}" not in css
 
 

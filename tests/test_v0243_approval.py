@@ -103,7 +103,9 @@ def test_abc_sensitive_file_halts_before_maker_and_shows_actions(approval_env, s
         ap = st["approval"]
         assert ap["required"] is True and ap["headline"] == "HUMAN APPROVAL REQUIRED" and ap["next"] == "Approval required before continuing"
         assert ap["items"][0] == {"code": "SENSITIVE_FILE_IN_SCOPE", "file": "requirements.txt", "title": "Sensitive file in scope",
-                                  "why": "Dependency/configuration file modification requires user approval.", "approvable": True}
+                                  "why": "Dependency/configuration file modification requires user approval.", "approvable": True,
+                                  "title_ko": "의존성·환경 설정 파일 변경 승인 필요",          # the stage shows the Korean wording
+                                  "why_ko": "실행 환경이나 의존성에 영향을 줄 수 있는 파일이 작업 범위에 포함되어 있습니다. 수정 전에 확인이 필요합니다."}
         html = render_html()
         for bid in ("approve-btn", "reject-btn", "inspect-btn", "chat-approve-btn", "chat-reject-btn", "alert-approve-btn", "alert-reject-btn"):
             assert f'id="{bid}"' in html

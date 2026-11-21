@@ -394,6 +394,15 @@ def parse_approval_reason(details: str) -> dict:
     return {"raw": details, "items": items, "approvable": bool(items) and all(i["approvable"] for i in items)}
 
 
+def _reason_ko(code) -> dict:
+    """The Korean wording of a gate for the stage (the English one is `title` / `why`); empty when there is none."""
+    try:
+        title, why = I18N.reason_ko(code)
+    except Exception:
+        return {}
+    return {"title_ko": title, "why_ko": why} if I18N.REASON_TEXT.get("UNKNOWN") != (title, why) else {}
+
+
 def approval_info(run_id: str, state: str, details: str) -> dict:
     """Display + action state for a HUMAN_REQUIRED run (read-only). Approvable only when the orchestrator's
     classification says so (ENTRY policy halt, or POST_BUILD halt made only of waivable gate+file pairs)."""
@@ -406,7 +415,7 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
     items = []
     for i in st.get("items") or []:
         title, why = APPROVAL_REASONS.get(i["gate"], (i["gate"].replace("_", " ").capitalize(), "This gate requires a human decision."))
-        items.append({"code": i["gate"], "file": i.get("file", ""), "title": title, "why": why, "approvable": True})
+        items.append({"code": i["gate"], "file": i.get("file", ""), "title": title, "why": why, "approvable": True, **_reason_ko(i["gate"])})
     blocking = []
     for b in st.get("blocking") or []:
         if isinstance(b, dict):
@@ -415,7 +424,7 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
             text = str(b)
             gate, file = I18N.reason_code(text), ""
         title, why = APPROVAL_REASONS.get(gate, ((gate.replace("_", " ").capitalize() if gate else "Blocked"), "This gate cannot be approved; it requires ARCHITECT to replan."))
-        blocking.append({"code": gate, "file": file, "text": text, "title": title, "why": why, "approvable": False})
+        blocking.append({"code": gate, "file": file, "text": text, "title": title, "why": why, "approvable": False, **_reason_ko(gate)})
     with _APPROVAL_LOCK:
         inflight = run_id in _APPROVAL_INFLIGHT
     approvable = bool(st.get("approvable")) and not inflight
@@ -914,7 +923,7 @@ def stop_missions(reason: str = "", mission_id: Optional[str] = None, by: str = 
 
 
 def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Optional[int] = None,
-                   on_conflict: str = "block", by: str = "HUMAN") -> dict:
+                   on_conflict: str = "block", by: str = "HUMAN", expected_run: str = "") -> dict:
     """A decision about a finished mission: apply its deliverable, discard it, extend its budget and continue,
     or send a blocked step back to ARCHITECT planning. The stopped run itself is never approved by this."""
     from core.mission import deliverable_run_id
@@ -925,10 +934,20 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
     sid = active_session_id()
     if action == "stop":
         return stop_missions(reason, mission_id, by=by)
+    if action in ("apply", "discard"):
+        # The screen that sent this showed one particular result. While the mission runs, or once its deliverable is
+        # another run than the one shown, the decision is refused rather than carried out on something unseen.
+        if m.get("status") == "RUNNING":
+            return {"status": "busy", "error": "mission is still running"}
+        if expected_run and expected_run != (deliverable_run_id(m) or ""):
+            return {"status": "stale", "error": "the result changed since it was shown; open it again"}
     if action == "apply":
         rid = deliverable_run_id(m)
         if not rid:
             return {"status": "blocked", "blocks": ["no PASSED milestone to apply"]}
+        done = m.get("applied") or {}
+        if done.get("status") == "applied" and done.get("run_id") == rid:
+            return {**{k: v for k, v in done.items() if k not in ("at", "by")}, "already": True}      # a second click changes nothing
         result = _result_manager().apply_tree(rid, request_id=f"{by.lower()}-{mission_id}-{datetime.utcnow().strftime('%H%M%S')}",
                                               applied_by=by, on_conflict=on_conflict)
         m = store.load(mission_id) or m
@@ -3198,7 +3217,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 result = decide_mission(params.get('mission_id', [''])[0], params.get('action', [''])[0],
                                         reason=params.get('reason', [''])[0], max_steps=int(params.get('max_steps', ['0'])[0] or 0) or None,
-                                        on_conflict=params.get('on_conflict', ['block'])[0], by="HUMAN")
+                                        on_conflict=params.get('on_conflict', ['block'])[0], by="HUMAN",
+                                        expected_run=params.get('run_id', [''])[0])
             except Exception as e:
                 result = {"status": "error", "error": str(e)[:300]}
             self._send_json(result, 200 if result.get("status") not in ("error",) else 400)

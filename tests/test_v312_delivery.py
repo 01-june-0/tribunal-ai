@@ -186,3 +186,37 @@ def test_bridge_mission_start_decide_and_duplicate_request(http_server, monkeypa
     assert code == 200 and decided[0][0] == "MSN-X" and decided[0][2]["by"] == "BRIDGE" and decided[0][2]["on_conflict"] == "skip"
     code, data = request(http_server, "GET", "/bridge/digest", headers=hdr)
     assert code == 200 and "awaiting_decision" in json.loads(data)
+
+
+def test_a_decision_is_refused_for_a_running_mission_or_another_result(monkeypatch):
+    """The stage's change panel names the run it showed: nothing unseen is applied or discarded, twice is once."""
+    import dashboard_server as d
+    mission = {"mission_id": "MSN-D", "status": "DONE", "project_path": "/nowhere", "steps": [], "base_worktree": "/nowhere/wt"}
+    saved, applied = [], []
+
+    class Store:
+        def load(self, mid): return dict(mission) if mid == "MSN-D" else None
+        def save(self, m): saved.append(m); mission.update(m)
+
+    class Results:
+        def apply_tree(self, rid, **kw): applied.append(rid); return {"status": "applied", "files": ["a.py"], "request_id": "x"}
+        def discard(self, rid, **kw): applied.append("discard " + rid); return {"status": "discarded"}
+    monkeypatch.setattr(d, "MissionStore", Store)
+    monkeypatch.setattr(d, "_result_manager", lambda: Results())
+    monkeypatch.setattr(d, "active_session_id", lambda: "S")
+    monkeypatch.setattr(d, "ChatManager", lambda: type("C", (), {"add_message": lambda *a, **k: None})())
+    monkeypatch.setattr(d, "invalidate_status_cache", lambda: None)
+    import core.mission
+    monkeypatch.setattr(core.mission, "deliverable_run_id", lambda m: "RUN-2")
+
+    assert d.decide_mission("MSN-D", "apply", expected_run="RUN-1")["status"] == "stale" and applied == []
+    assert d.decide_mission("MSN-D", "discard", expected_run="RUN-1")["status"] == "stale" and applied == []
+    mission["status"] = "RUNNING"
+    assert d.decide_mission("MSN-D", "apply", expected_run="RUN-2")["status"] == "busy"
+    assert d.decide_mission("MSN-D", "discard")["status"] == "busy" and applied == []
+    mission["status"] = "DONE"
+    first = d.decide_mission("MSN-D", "apply", expected_run="RUN-2")
+    assert first["status"] == "applied" and applied == ["RUN-2"] and mission["applied"]["status"] == "applied"
+    again = d.decide_mission("MSN-D", "apply", expected_run="RUN-2")
+    assert again["status"] == "applied" and again["already"] is True and applied == ["RUN-2"]      # not applied twice, record untouched
+    assert mission["applied"]["status"] == "applied"
