@@ -125,7 +125,7 @@ def test_a_run_record_inside_the_worktree_is_never_copied_into_itself(project):
 def test_the_review_asks_for_tests_only_when_they_will_be_run():
     assert it.prompt_section({"passed": True}) == "" and it.prompt_section({"inspector_tests": {"wanted": False}}) == ""
     text = it.prompt_section({"inspector_tests": {"wanted": True, "previous": None}})
-    assert "INDEPENDENT TESTS (optional)" in text and "test_inspector_<topic>.py" in text and "PREVIOUS ROUND" not in text
+    assert "INDEPENDENT TESTS:" in text and "For every criterion that no test asserts" in text and "test_inspector_<topic>.py" in text and "PREVIOUS ROUND" not in text
     for agent in ("claude_inspector.py", "codex_inspector.py", "google_roles.py"):
         source = (Path(__file__).resolve().parent.parent / "agents" / agent).read_text(encoding="utf-8")
         assert "inspector_tests.prompt_section(verification)" in source, agent

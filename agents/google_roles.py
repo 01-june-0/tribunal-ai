@@ -39,7 +39,7 @@ class GoogleInspector(GoogleArchitect):
         prompt = ('Independently review the ORDER against the code diff and test evidence. '
                   'Never claim tests were run by you. Identify concrete defects and requirement violations. '
                   'File-count and diff-size limits are enforced by the Director: never report them. '
-                  'Return only JSON: {"verdict":"pass or changes_required","p0":[],"p1":[],"p2":[],"summary":"...","tests":[]}.\n'
+                  'Return only JSON: {"verdict":"pass or changes_required","p0":[],"p1":[],"p2":[],"summary":"...","tests":[{"path":"...","content":"..."}]} ("tests" may be [] — see INDEPENDENT TESTS when that section follows).\n'
                   + inspector_tests.prompt_section(verification)
                   + json.dumps({'order':order.model_dump(), 'diff':git_diff,
                                 'verification':{k:v for k,v in verification.items() if k not in ('git_diff', 'inspector_tests')}}, ensure_ascii=False))

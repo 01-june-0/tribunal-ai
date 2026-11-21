@@ -33,13 +33,15 @@ def prompt_section(verification: Optional[Dict[str, Any]]) -> str:
     info = (verification or {}).get("inspector_tests")
     if not isinstance(info, dict) or not info.get("wanted"):
         return ""
-    text = ("INDEPENDENT TESTS (optional): the tests in the diff were written by the same agent that wrote the code. "
-            f"You may add up to {MAX_FILES} NEW test files that check the ACCEPTANCE CRITERIA from the outside, in the "
+    text = ("INDEPENDENT TESTS: the tests in the diff were written by the same agent that wrote the code, so they do "
+            "not prove the criteria on their own. Go through the ACCEPTANCE CRITERIA one by one and find, for each, a "
+            "test in the diff that asserts it. For every criterion that no test asserts, write a test yourself: up to "
+            f"{MAX_FILES} NEW test files, in the "
             'field "tests": [{"path": "<repo-relative path>", "content": "<full file text>"}]. Rules: you still modify '
             "nothing yourself — the Director runs these files in a throw-away copy of the project; new files only, inside an existing test directory, named like `test_inspector_<topic>.py` "
             "(or `inspector_<topic>.test.js`, `inspector_<topic>_test.go`); use only what the project already uses; "
-            "assert only behaviour the ORDER states. If the existing tests already cover the criteria well, return "
-            '"tests": [] — a wrong test costs a whole correction round.\n')
+            "assert only behaviour the ORDER states, never a guess — a wrong test costs a whole correction round. "
+            'Return "tests": [] only when every criterion is already asserted by a test in the diff.\n')
     previous = info.get("previous")
     if previous:
         text += ("YOUR TESTS FROM THE PREVIOUS ROUND FAILED. Decide whether the code is wrong or your test was, and "
