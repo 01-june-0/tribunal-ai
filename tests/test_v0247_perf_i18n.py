@@ -30,7 +30,7 @@ def test_1_status_and_state_mapping():
     assert I18N.state_ko("REVIEWING") == "코드 검토 중" and I18N.state_ko("DECIDING") == "최종 판단 중"
     assert I18N.state_ko("PASS") == "완료" and I18N.state_ko("HUMAN_REQUIRED") == "사용자 확인 필요"
     assert I18N.result_ko("APPLIED") == "적용 완료" and I18N.result_ko("DISCARDED") == "폐기됨" and I18N.result_ko("READY") == "적용 대기"   # v0.2.4.8 terminology pass
-    assert I18N.role_ko("HEAD, REVIEWER") == "HEAD · REVIEWER (작업 지휘 · 코드 검토)"
+    assert I18N.role_ko("HEAD, REVIEWER") == "HEAD · REVIEWER (지휘 · 검수)"
     assert I18N.status_ko("SOMETHING_NEW") == "SOMETHING_NEW"                 # unknown enum passes through unchanged
 
 
@@ -81,7 +81,7 @@ def test_4_provider_status_display(server, env):
     assert 'id="prov-ANTHROPIC-status" data-raw="RECOVERING">복구 중</td>' in html
     assert 'id="system-mode" data-raw="DEGRADED">일부 기능 제한</span>' in html
     assert "Claude 백업 AI가 복구 중입니다." in html and "정상 사용 가능합니다." in html
-    assert "HEAD · REVIEWER (작업 지휘 · 코드 검토)" in html and "BACKUP (예비 AI)" in html
+    assert "HEAD · REVIEWER (지휘 · 검수)" in html and "BACKUP (예비 AI)" in html
     assert "OpenAI" in html and "Google" in html and "Anthropic" in html                 # vendor labels kept
     st = _get_json(server, "/status")[1]
     assert st["system_mode_sentence"].startswith("Claude 백업 AI가 복구 중입니다.")

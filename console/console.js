@@ -9,9 +9,9 @@ function setup(){
  if(doc.getElementById('mission-control'))return;
  doc.body.classList.add('director-v2');
  const css=doc.createElement('link');css.rel='stylesheet';css.href='/console.css';doc.head.append(css);
- const panel=el('section','','mission-control');panel.id='mission-control';
+ const panel=el('section','','mission-control');panel.id='mission-control';panel.setAttribute('aria-label',T('현재 작업 요약'));
  const summary=el('div','','mission-summary'),state=el('div','','mission-state');state.append(el('span',T('현재 작업'),'mission-kicker'),el('strong',T('연결 중')));state.lastChild.id='mission-state';
- const next=el('div','','mission-next');next.append(el('span',T('다음 행동'),'mission-kicker'),el('p',T('실행 기록을 읽고 있습니다.')));next.lastChild.id='mission-next';summary.append(state,next);
+ const next=el('div','','mission-next');next.append(el('span',T('다음 행동'),'mission-kicker'),el('p',T('실행 기록을 읽고 있습니다.')));next.lastChild.id='mission-next';next.lastChild.setAttribute('aria-live','polite');summary.append(state,next);
  const meta=el('div','','mission-meta');for(const id of ['mission-project','mission-updated','mission-tests']){const n=el('span','—');n.id=id;meta.append(n);}
  const evidence=el('details','','mission-evidence');evidence.append(el('summary',T('현재 실행의 상세 원인과 ID')));const body=el('pre');body.id='mission-details';evidence.append(body);
  panel.append(summary,meta,evidence);doc.getElementById('corestrip').before(panel);
@@ -32,7 +32,8 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
  let next=s.next_step||s.stage_sentence||T('새 작업을 입력해 주세요.');
  if(!s.next_step&&(s.pending_result_count||0)>0&&state!=='HUMAN_REQUIRED')next=T('결과물 {0}건이 적용을 기다립니다. 확인하고 적용할지 결정하세요.',s.pending_result_count);
  if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('코드 검토에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 검토를 다시 진행해야 합니다.'):next;}
- doc.getElementById('mission-next').textContent=research?(r.next_step||T('연구 기록을 기다리고 있습니다.')):next;
+ const nextText=research?(r.next_step||T('연구 기록을 기다리고 있습니다.')):next,nextEl=doc.getElementById('mission-next');
+ if(nextEl.textContent!==nextText)nextEl.textContent=nextText;   // announced (aria-live) only when it really changes
  doc.getElementById('mission-project').textContent=s.project_name?T('프로젝트 · ')+s.project_name:(lastMissionProject?T('최근 미션 프로젝트 · ')+lastMissionProject:T('프로젝트 · ')+T('미선택'));
  const timestamp=run.updated_at?new Date(run.updated_at+(/Z|[+]\d\d:\d\d$/.test(run.updated_at)?'':'Z')):null;
  const elapsed=timestamp?Math.max(0,Math.floor((Date.now()-timestamp.getTime())/1000)):null;
@@ -52,14 +53,14 @@ function setupRoles(){
 
 // ---------------------------------------------------------------- AI work visibility (missions, who works now, workload)
 const PROVIDER={ANTHROPIC:'Claude',OPENAI:'Codex',GOOGLE:'Antigravity'},ROLE={HEAD:T('HEAD · 지휘'),BUILDER:T('BUILDER · 구현'),REVIEWER:T('REVIEWER · 검수'),OTHER:T('기타')};
-const STEP_CLASS={PASS:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'};
+const STEP_CLASS={PASS:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
 const MISSION_STATUS={DONE:T('완료'),INCOMPLETE:T('예산 소진'),BLOCKED:T('사용자 결정 필요'),FAILED:T('실패')};
 let activityBusy=false,usageWindow='mission';
 function fmtTime(sec){sec=Math.round(sec||0);if(sec<60)return sec+T('초');const m=Math.floor(sec/60);if(m<60)return m+T('분')+(m<10&&sec%60?' '+(sec%60)+T('초'):'');return Math.floor(m/60)+T('시간 ')+(m%60)+T('분');}
 function fmtTokens(b){if(!b)return '—';if(!b.tokens)return b.unknown_calls?T('기록 전'):'—';const n=b.tokens,t=(!window.I18N||window.I18N.lang==='ko')?(n>=10000?(n/10000).toFixed(1)+'만':n.toLocaleString('ko-KR')):(n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':n.toLocaleString('en-US'));return (b.exact_tokens<b.tokens?'~':'')+t+(b.unknown_calls?T(' (+기록 전 ')+b.unknown_calls+T('회)'):'');}
 function ago(iso){if(!iso)return '';const t=new Date(iso+(/Z|[+]\d\d:\d\d$/.test(iso)?'':'Z')),s=Math.max(0,Math.floor((Date.now()-t)/1000));return s<60?s+T('초 전'):s<3600?Math.floor(s/60)+T('분 전'):s<86400?Math.floor(s/3600)+T('시간 전'):Math.floor(s/86400)+T('일 전');}
 function setupActivity(panel){
- const box=el('section','','ai-activity');box.id='ai-activity';
+ const box=el('section','','ai-activity');box.id='ai-activity';box.setAttribute('aria-label',T('AI 작업 현황'));
  const head=el('div','','ai-activity-head');head.append(el('span',T('AI 작업 현황 · 5초마다 갱신'),'mission-kicker'));
  const now=el('div','','ai-now');now.id='ai-now';now.append(el('span',T('작업 기록을 읽고 있습니다.')));
  const grid=el('div','','ai-grid');
@@ -89,7 +90,7 @@ function paintMission(focus){
  const title=el('div','','ai-mission-title');title.append(el('strong',T('미션 · ')+focus.project),el('span',status,'ai-badge '+(focus.status==='DONE'?'ok':focus.status==='RUNNING'&&focus.live?'run':'warn')));
  m.append(title,el('p',focus.goal,'ai-goal'));
  const bar=el('div','','ai-steps');
- for(let i=1;i<=Math.max(focus.max_steps||0,focus.steps.length);i++){const s=focus.steps.find(x=>x.index===i);const chip=el('span',String(i),'chip '+(s?(STEP_CLASS[s.state]||'run'):'todo'));chip.title=s?(T('{0}단계 · ',i)+((s.state_ko&&T(s.state_ko))||T('진행 중'))+' · '+s.goal):T('남은 단계 예산');bar.append(chip);}
+ for(let i=1;i<=Math.max(focus.max_steps||0,focus.steps.length);i++){const s=focus.steps.find(x=>x.index===i);const kind=s?(STEP_CLASS[s.state]||'run'):'todo',chip=el('span',STEP_MARK[kind]+i,'chip '+kind);chip.title=s?(T('{0}단계 · ',i)+((s.state_ko&&T(s.state_ko))||T('진행 중'))+' · '+s.goal):T('남은 단계 예산');chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);bar.append(chip);}
  m.append(bar,el('small',focus.passed_steps+T('개 단계 통과 · ')+focus.steps.length+'/'+focus.max_steps+T('단계 사용 · 갱신 ')+ago(focus.updated_at),'ai-sub'));
  const list=el('details');list.append(el('summary',T('단계별 결과')));
  for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?(T(' · 테스트 ')+s.tests.passed+'/'+s.tests.total):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 리뷰 ')+s.review:'')+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}

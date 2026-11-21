@@ -108,7 +108,10 @@ RESULT_TEXT: Dict[str, str] = {
     "APPLY_FAILED_ROLLED_BACK": "적용 실패 · 복구됨", "APPLY_VERIFY_FAILED_ROLLED_BACK": "검증 실패 · 복구됨",
 }
 
-ROLE_TEXT: Dict[str, str] = {"HEAD": "작업 지휘", "BUILDER": "코드 작성", "REVIEWER": "코드 검토", "BACKUP": "예비 AI", "NONE": "역할 없음"}
+# the same words the stage uses for the three roles
+ROLE_TEXT: Dict[str, str] = {"HEAD": "지휘", "BUILDER": "구현", "REVIEWER": "검수", "BACKUP": "예비 AI", "NONE": "역할 없음"}
+# who is speaking in the chat (the role code stays in the CSS class)
+SPEAKER_TEXT: Dict[str, str] = {"USER": "나", "HEAD": "HEAD", "SYSTEM": "시스템", "ERROR": "오류"}
 
 STAGE_TEXT: Dict[str, str] = {"HEAD": "요청 분석", "BUILD": "코드 작성", "VERIFY": "테스트·안전 검증", "REVIEW": "코드 검토", "DECIDE": "최종 판단"}
 
@@ -255,7 +258,7 @@ def result_ko(raw: str) -> str:
 
 
 def role_ko(roles: str) -> str:
-    """'HEAD, REVIEWER' -> 'HEAD · REVIEWER (작업 지휘 · 코드 검토)'"""
+    """'HEAD, REVIEWER' -> 'HEAD · REVIEWER (지휘 · 검수)'"""
     parts = [r.strip().upper() for r in str(roles or "").replace("·", ",").split(",") if r.strip()]
     if not parts:
         return ""
@@ -372,7 +375,7 @@ def event_ko(raw: str) -> Tuple[str, str]:
 def i18n_bundle() -> Dict[str, object]:
     """Everything the page script needs to render Korean labels client-side."""
     return {
-        "lang": LANG, "ui": UI_TEXT, "status": STATUS_TEXT, "state": STATE_TEXT, "result": RESULT_TEXT, "role": ROLE_TEXT,
+        "lang": LANG, "ui": UI_TEXT, "status": STATUS_TEXT, "state": STATE_TEXT, "result": RESULT_TEXT, "role": ROLE_TEXT, "speaker": SPEAKER_TEXT,
         "stage": STAGE_TEXT, "help": HELP_TEXT, "next": NEXT_STEP,
         "provider": {d: {"name": v[0], "vendor": v[1], "subject": v[2]} for d, v in PROVIDER_LABEL.items()},
         "events": [[p, txt, k] for p, txt, k in _EVENT_RULES],

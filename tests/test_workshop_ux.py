@@ -196,3 +196,48 @@ def test_overlay_puts_the_working_area_first_and_leaves_roles_to_the_stage():
     assert "role-cycle" not in css and "calc(100vh - 430px)" not in css
     assert "lastMissionProject" in js and "결과물 {0}건이 적용을 기다립니다" in js
     assert "where.title=full" in js                                         # the full path only on hover
+
+
+# ---------------------------------------------------------------- readability and structure (second pass)
+def test_nothing_in_the_workshop_is_set_smaller_than_12px(page):
+    css = (ROOT / "console" / "console.css").read_text(encoding="utf-8")
+    for text in (page, css):
+        assert not re.search(r"font-size:\s*(?:\d|1[01])(?:\.\d+)?px", text)
+        assert not re.search(r"font:[^;}]*?(?<![\d.])(?:\d|1[01])(?:\.\d+)?px\s*/", text) and not re.search(r"font:\s*(?:\d|1[01])(?:\.\d+)?px", text)
+
+
+def test_chat_names_the_speaker_in_korean_and_roles_use_the_stage_words(page):
+    assert dashboard_i18n.SPEAKER_TEXT["USER"] == "나" and dashboard_i18n.i18n_bundle()["speaker"]["USER"] == "나"
+    assert "(I18N.speaker || {})[m.role] || m.role" in page
+    assert dashboard_i18n.role_ko("HEAD, BUILDER, REVIEWER") == "HEAD · BUILDER · REVIEWER (지휘 · 구현 · 검수)"
+    cm = ChatManager(); sid = ds.active_session_id()
+    cm.add_message(sid, "USER", "hello there")
+    html = ds.render_html()
+    assert "<strong>나</strong><pre>hello there</pre>" in html and "class='msg msg-USER'" in html
+
+
+def test_any_ai_without_a_role_is_the_spare_one():
+    roles = {"OPENAI": {"role": "BACKUP"}, "ANTHROPIC": {"role": "HEAD, BUILDER, REVIEWER"}, "GOOGLE": {"role": "BACKUP"}}
+    nodes = ds._node_activity("IDLE", roles)["nodes"]
+    assert nodes["OPENAI"]["backup"] and nodes["GOOGLE"]["backup"] and not nodes["ANTHROPIC"]["backup"]
+    for not_spare in ("NONE", "UNKNOWN", ""):                               # down, or not decided yet
+        assert not ds._node_activity("IDLE", {"OPENAI": {"role": not_spare}})["nodes"]["OPENAI"]["backup"]
+
+
+def test_page_regions_and_announcements(page):
+    for part in ('<div id="hdr" role="banner">', '<div id="main" role="main">', '<div id="corestrip" role="region" aria-label="AI 상태">',
+                 '<div id="chat-box" role="log" aria-live="polite" tabindex="0"', '<span id="alert-text" role="status"'):
+        assert part in page, part
+    js = (ROOT / "console" / "console.js").read_text(encoding="utf-8")
+    css = (ROOT / "console" / "console.css").read_text(encoding="utf-8")
+    assert "if(nextEl.textContent!==nextText)nextEl.textContent=nextText" in js      # announced only when it changes
+    assert "STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''}" in js and "chip.setAttribute('aria-label',chip.title)" in js
+    assert ".director-v2 #hdr h1{position:absolute;width:1px;height:1px" in css and "#hdr h1{display:none}" not in css
+
+
+def test_phone_width_keeps_the_stop_buttons_on_screen():
+    css = (ROOT / "console" / "stage.css").read_text(encoding="utf-8")
+    phone = css[css.index("@media(max-width:760px){\n  #stage{"):]
+    phone = phone[:phone.index("\n}")]
+    assert "#btn-replay,#btn-broadcast,#btn-lang{order:1}" in phone and ".brand{display:none}" in phone   # stop buttons first
+    assert "overflow-x:auto" in phone and "display:none}   /*" not in phone   # nothing is taken away from a touch screen

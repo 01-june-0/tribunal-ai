@@ -324,6 +324,8 @@ const EN={
   " (+기록 전 ": " (+before records ",
   "회)": ")",
   "AI 작업 현황 · 5초마다 갱신": "AI work status · refreshed every 5 s",
+  "AI 작업 현황": "AI work status",
+  "현재 작업 요약": "Current work summary",
   "이번 미션": "This mission",
   "최근 진행 기록 (단계 전환)": "Recent progress (stage changes)",
   " 작업 중 · ": " working · ",

@@ -239,7 +239,7 @@ def _node_activity(state: str, providers: dict) -> dict:
         active = bool(stage) and ((stage == "HEAD" and "HEAD" in rs) or (stage == "REVIEWER" and "REVIEWER" in rs)
                                   or (stage == "BUILDER" and "BUILDER" in rs))
         working_roles = [r for r in rs if r in ("HEAD", "REVIEWER", "BUILDER")]
-        out["nodes"][dom] = {"active": active, "roles": rs, "backup": dom == "ANTHROPIC" and not working_roles and not active}
+        out["nodes"][dom] = {"active": active, "roles": rs, "backup": "BACKUP" in rs and not working_roles and not active}   # a down AI ("NONE") is not a spare
     return out
 
 
@@ -1579,7 +1579,7 @@ DASHBOARD_JS = r"""
       div.appendChild(tag); div.appendChild(txt); div.appendChild(raw);
       div.addEventListener('click', function () { div.classList.toggle('expanded'); });
     } else {
-      var strong = document.createElement('strong'); strong.textContent = m.role;
+      var strong = document.createElement('strong'); strong.textContent = (I18N.speaker || {})[m.role] || m.role;
       var pre = document.createElement('pre'); pre.textContent = m.content;
       div.appendChild(strong); div.appendChild(pre);
     }
@@ -2249,15 +2249,15 @@ DASHBOARD_CSS = r"""
     .status-PLANNING, .status-ORDER_READY, .status-BUILDING, .status-VERIFYING, .status-REVIEWING, .status-DECIDING, .status-IDLE { color: var(--blue); font-weight: 600; }
     .status-NONE { color: var(--muted); }
     #system-mode, #core-mode { padding: 1px 8px; border-radius: 4px; border: 1px solid currentColor; font-size: 12px; }
-    #system-mode-hint { color: var(--muted); font-size: 11px; margin-left: 6px; }
-    .badge { white-space: nowrap; display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; line-height: 1.4; }
+    #system-mode-hint { color: var(--muted); font-size: 12px; margin-left: 6px; }
+    .badge { white-space: nowrap; display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; line-height: 1.4; }
     .b-green { color: var(--green); } .b-red { color: var(--red); } .b-busy { color: var(--amber); } .b-blue { color: var(--blue); } .b-muted { color: var(--muted); }
     /* header */
     #hdr { display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap; overflow: hidden; }
     #hdr h1 { font-size: 15px; margin: 0; color: var(--blue); letter-spacing: 0.6px; }
-    #hdr h1 small { color: var(--muted); font-weight: 400; font-size: 10px; letter-spacing: 1.2px; margin-left: 8px; }
+    #hdr h1 small { color: var(--muted); font-weight: 400; font-size: 12px; letter-spacing: 1.2px; margin-left: 8px; }
     #hdr .sep { color: var(--border); }
-    #hdr .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; margin-right: 4px; }
+    #hdr .lbl { color: var(--muted); font-size: 12px; text-transform: uppercase; margin-right: 4px; }
     #hdr button { margin-left: auto; flex-shrink: 0; }
     #hdr #mode-switch { display:flex; gap:4px; margin-left:auto; }
     #hdr #mode-switch[hidden] { display:none; }
@@ -2275,9 +2275,9 @@ DASHBOARD_CSS = r"""
     /* AI core strip: DIRECTOR CORE + bus + 3 nodes */
     #corestrip { display: grid; grid-template-columns: 200px 1fr; gap: 0; padding: 8px 12px 6px 12px; border-bottom: 1px solid var(--border); align-items: stretch; }
     #director-core { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; gap: 3px; position: relative; }
-    #director-core .ctitle { font-size: 11px; letter-spacing: 1.4px; color: var(--blue); font-weight: 700; }
-    #director-core .csub { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
-    #director-core .cstage { font-size: 11px; color: var(--muted); font-weight: 600; }
+    #director-core .ctitle { font-size: 12px; letter-spacing: 1.4px; color: var(--blue); font-weight: 700; }
+    #director-core .csub { font-size: 12px; color: var(--muted); letter-spacing: 0.5px; }
+    #director-core .cstage { font-size: 12px; color: var(--muted); font-weight: 600; }
     #director-core.active { border-color: var(--blue); box-shadow: 0 0 0 1px rgba(90,169,255,0.25), 0 0 14px rgba(90,169,255,0.15); }
     #director-core.active .cstage { color: var(--blue); }
     #director-core::after { content: ""; position: absolute; right: -1px; top: 50%; width: 1px; height: 1px; }
@@ -2292,12 +2292,12 @@ DASHBOARD_CSS = r"""
     @keyframes signal { from { top: -3px; opacity: 0.2; } to { top: 11px; opacity: 1; } }
     .node .ntitle { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
     .node .nname { font-size: 13px; font-weight: 700; letter-spacing: 0.8px; color: var(--text); }
-    .node h3 { margin: 0; font-size: 10px; color: var(--muted); letter-spacing: 0.5px; font-weight: 400; }
-    .node .ind { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--blue); }
+    .node h3 { margin: 0; font-size: 12px; color: var(--muted); letter-spacing: 0.5px; font-weight: 400; }
+    .node .ind { margin-left: auto; font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--blue); }
     .node.backup .ind { color: var(--amber); }
-    .node .ntitle details { font-size: 11px; color: var(--muted); }
+    .node .ntitle details { font-size: 12px; color: var(--muted); }
     .node .ntitle details[open] { position: relative; }
-    .node .ntitle details .dbox { position: absolute; right: 0; top: 18px; z-index: 5; background: #24262c; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-width: 320px; max-width: 520px; white-space: normal; word-break: break-word; color: var(--text); font-size: 11px; line-height: 1.35; }
+    .node .ntitle details .dbox { position: absolute; right: 0; top: 18px; z-index: 5; background: #24262c; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-width: 320px; max-width: 520px; white-space: normal; word-break: break-word; color: var(--text); font-size: 12px; line-height: 1.35; }
     .node table { border-collapse: collapse; font-size: 12px; }
     .node th { text-align: left; color: var(--muted); font-weight: 400; padding: 0 10px 0 0; width: 52px; }
     .node td { padding: 0; white-space: nowrap; }
@@ -2313,22 +2313,22 @@ DASHBOARD_CSS = r"""
     #triad-research-center { display:none; grid-row:2 / 4; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); gap:10px; padding:8px 12px; min-height:0; overflow:auto; }
     .research-hero { grid-column:1 / 4; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 18px; align-items:start; }
     .research-hero h2 { color:var(--purple); margin-bottom:2px; }
-    .research-meta { display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:11px; }
+    .research-meta { display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
     .research-moonshot { font-size:15px; line-height:1.45; color:var(--text); margin-top:4px; white-space:pre-wrap; }
     .research-column { min-height:0; overflow:auto; }
     .research-card { border:1px solid var(--border); border-radius:6px; background:var(--panel2); padding:8px 10px; margin-bottom:8px; }
-    .research-card h3 { color:var(--muted); font-size:11px; letter-spacing:.5px; text-transform:uppercase; margin:0 0 5px; }
+    .research-card h3 { color:var(--muted); font-size:12px; letter-spacing:.5px; text-transform:uppercase; margin:0 0 5px; }
     .research-card p { margin:0; white-space:pre-wrap; word-break:break-word; }
     .research-card ul { margin:0; padding-left:18px; }
     .research-card li { margin:3px 0; line-height:1.35; }
     .research-empty { color:var(--muted); }
     #research-next { color:var(--green); }
-    #research-raw { max-height:280px; overflow:auto; white-space:pre; font:10px/1.35 Consolas,monospace; color:var(--muted); }
+    #research-raw { max-height:280px; overflow:auto; white-space:pre; font:12px/1.4 Consolas,monospace; color:var(--muted); }
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     .panel h2 { font-size: 12px; margin: 0 0 6px 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
     .proj-name { font-size: 15px; font-weight: 600; color: var(--text); }
     .proj-none { color: var(--amber); }
-    .proj-path { font-size: 11px; color: var(--muted); word-break: break-all; }
+    .proj-path { font-size: 12px; color: var(--muted); word-break: break-all; }
     #project-form input { width: 100%; box-sizing: border-box; margin: 6px 0; }
     input[type=text], textarea { padding: 5px 7px; background: #111214; color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-family: inherit; font-size: 13px; }
     .kv { font-size: 12px; display: grid; grid-template-columns: 62px 1fr; gap: 2px 6px; }
@@ -2336,23 +2336,23 @@ DASHBOARD_CSS = r"""
     .kv .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
     #recovery-short { font-size: 12px; color: var(--amber); }
-    #recovery-details div, #recovery-reasons { font-size: 11px; color: var(--muted); white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+    #recovery-details div, #recovery-reasons { font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
     #stale-warning { color: var(--red); font-weight: 600; font-size: 12px; }
-    #stale-list { margin: 4px 0 0 0; padding-left: 16px; font-size: 11px; max-height: 120px; overflow-y: auto; color: var(--muted); }
+    #stale-list { margin: 4px 0 0 0; padding-left: 16px; font-size: 12px; max-height: 120px; overflow-y: auto; color: var(--muted); }
     /* chat */
     #chat-panel { padding: 0; }
     #chat-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
     #chat-head h2 { margin: 0; }
-    #chat-head .session-label { color: var(--muted); font-size: 10px; margin-left: auto; }
+    #chat-head .session-label { color: var(--muted); font-size: 12px; margin-left: auto; }
     #chat-box { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 12px; font-size: 13.5px; }
     .msg { margin-bottom: 10px; }
     .msg-USER, .msg-HEAD { padding: 6px 10px; border-left: 3px solid var(--blue); background: rgba(90,169,255,0.05); border-radius: 0 4px 4px 0; }
     .msg-HEAD { border-left-color: var(--purple); background: rgba(185,135,216,0.06); }
-    .msg strong { font-size: 10px; letter-spacing: 0.6px; display: block; color: var(--muted); margin-bottom: 2px; }
+    .msg strong { font-size: 12px; letter-spacing: 0.6px; display: block; color: var(--muted); margin-bottom: 2px; }
     .msg-USER strong { color: var(--blue); } .msg-HEAD strong { color: var(--purple); }
     .msg pre { white-space: pre-wrap; margin: 0; font-family: inherit; font-size: 13.5px; line-height: 1.4; }
-    .msg-SYSTEM { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px 0; font-size: 11px; color: var(--muted); cursor: pointer; }
-    .msg-SYSTEM .ev { display: none; flex: 0 0 auto; font-size: 9px; font-weight: 700; letter-spacing: 0.6px; padding: 0 5px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+    .msg-SYSTEM { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px 0; font-size: 12px; color: var(--muted); cursor: pointer; }
+    .msg-SYSTEM .ev { display: none; flex: 0 0 auto; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; padding: 0 5px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
     .msg-SYSTEM.expanded .ev { display: inline-block; }
     .ev-ok { color: var(--green); } .ev-bad { color: var(--red); } .ev-info { color: var(--amber); }
     .msg-SYSTEM .evt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2363,7 +2363,7 @@ DASHBOARD_CSS = r"""
     #send-status { color: var(--amber); font-size: 12px; min-height: 14px; }
     /* run */
     .pipeline { display: flex; gap: 4px; margin: 4px 0 8px 0; align-items: stretch; }
-    .stage { flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 3px 0; font-size: 10.5px; color: var(--muted); position: relative; }
+    .stage { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 3px 0; font-size: 12px; color: var(--muted); position: relative; }
     .stage .mark { display: block; font-size: 14px; line-height: 16px; }
     .stage.done { color: var(--green); border-color: var(--green); }
     .stage.active { color: var(--blue); border-color: var(--blue); background: rgba(90,169,255,0.10); font-weight: 700; animation: pulse 1.6s ease-in-out infinite; }
@@ -2371,32 +2371,32 @@ DASHBOARD_CSS = r"""
     .stage.warn { color: var(--amber); border-color: var(--amber); background: rgba(226,179,74,0.10); }
     #run-label { font-size: 13px; }
     #pipeline-badge { margin-left: auto; }
-    #run-details-panel div { font-size: 11px; color: var(--muted); word-break: break-all; }
+    #run-details-panel div { font-size: 12px; color: var(--muted); word-break: break-all; }
     /* pending actions */
     .pendbox { margin-top: 12px; }
     #pending-count { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); }
     .pendbox.has #pending-count { color: var(--amber); }
     #pending-list, #results-list { list-style: none; margin: 4px 0 0 0; padding: 0; }
     #pending-list { max-height: 150px; overflow-y: auto; }
-    li.pend { border: 1px solid var(--border); border-left: 3px solid var(--amber); border-radius: 4px; padding: 4px 6px; margin-bottom: 4px; cursor: pointer; font-size: 11px; }
+    li.pend { border: 1px solid var(--border); border-left: 3px solid var(--amber); border-radius: 4px; padding: 4px 6px; margin-bottom: 4px; cursor: pointer; font-size: 12px; }
     li.pend.sel { background: rgba(226,179,74,0.10); border-color: var(--amber); }
     li.pend .pname { font-weight: 700; color: var(--text); }
     li.pend .ptitle2 { color: var(--amber); }
-    li.pend .prun { color: var(--muted); font-size: 10px; }
+    li.pend .prun { color: var(--muted); font-size: 12px; }
     .rawtag { display: none; }
     /* RESULTS: latest 3 shown flat; the rest live in a height-capped, project-grouped "전체 보기" panel
        so the left column never grows past its allotted height */
     #results-more-row { margin-top: 4px; }
-    #results-more-row button { width: 100%; font-size: 10px; }
+    #results-more-row button { width: 100%; font-size: 12px; }
     #results-grouped { max-height: 200px; overflow-y: auto; margin-top: 4px; border-top: 1px dashed var(--border); padding-top: 4px; }
     .resgroup { margin-bottom: 4px; }
-    .resgroup summary { cursor: pointer; font-size: 11px; color: var(--muted); padding: 2px 0; list-style: none; }
+    .resgroup summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 2px 0; list-style: none; }
     .resgroup summary::-webkit-details-marker { display: none; }
     .resgroup ul { list-style: none; margin: 2px 0 0 0; padding: 0 0 0 6px; }
     /* "내가 할 일" - one glance, one next action, scoped to the CURRENT run only (never a past
        run's result) so it stays true 3-second-glance material */
     .todobox { margin: 6px 0 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--border); }
-    .todobox .tt { font-size: 10px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 2px; }
+    .todobox .tt { font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 2px; }
     #run-todo-text { font-size: 13px; font-weight: 700; color: var(--text); }
     .todobox.approvable, .todobox.nonapprovable { border-color: var(--amber); background: rgba(226,179,74,0.06); }
     .todobox.pass { border-color: var(--blue); background: rgba(90,169,255,0.06); }
@@ -2409,17 +2409,17 @@ DASHBOARD_CSS = r"""
     .modal-overlay.open { display: flex; }
     #result-card.modalbox { max-width: 640px; width: 92%; max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 44px rgba(0,0,0,0.55); }
     #approval-nonapprovable #ap-na-desc { font-weight: 700; color: var(--text); margin-bottom: 2px; }
-    #approval-nonapprovable #ap-na-blocked { color: var(--red); font-size: 11px; margin: 4px 0; }
+    #approval-nonapprovable #ap-na-blocked { color: var(--red); font-size: 12px; margin: 4px 0; }
     #approval-nonapprovable #ap-na-reco { margin-top: 2px; }
-    #approval-raw-details { margin-top: 6px; font-size: 10px; color: var(--muted); }
+    #approval-raw-details { margin-top: 6px; font-size: 12px; color: var(--muted); }
     #approval-raw-details summary { cursor: pointer; }
-    .stage small { display: block; font-size: 9px; color: var(--muted); font-weight: 400; }
+    .stage small { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
     .stage.active small, .stage.done small { color: inherit; }
     .stage-sentence { font-size: 12px; color: var(--text); margin: 2px 0 0 0; }
-    .next-step { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    .node .vendor { font-size: 10px; color: var(--muted); }
+    .next-step { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .node .vendor { font-size: 12px; color: var(--muted); }
     .msg-SYSTEM .evraw { display: none; }
-    .msg-SYSTEM.expanded .evraw { display: block; color: var(--muted); font-size: 10px; white-space: pre-wrap; word-break: break-word; }
+    .msg-SYSTEM.expanded .evraw { display: block; color: var(--muted); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
     /* result center */
     .resultcard { border: 1px solid var(--blue); border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: rgba(90,169,255,0.06); font-size: 12px; }
     .resultcard.r-applied { border-color: var(--green); background: rgba(79,195,122,0.07); }
@@ -2429,24 +2429,24 @@ DASHBOARD_CSS = r"""
     .resultcard.r-applied .rh { color: var(--green); } .resultcard.r-blocked .rh { color: var(--amber); } .resultcard.r-discarded .rh { color: var(--muted); }
     .resultcard .rs { color: var(--muted); margin: 2px 0 4px 0; white-space: pre-wrap; }
     .resultcard .abtns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-    .resultcard .abtns button { font-size: 11px; padding: 3px 8px; }
+    .resultcard .abtns button { font-size: 12px; padding: 3px 8px; }
     button.apply { background: #2f7d4a; border-color: #3f9a5e; }
     button.discard { background: #5a3a3a; border-color: #7a4a4a; }
-    #result-status { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: pre-wrap; }
+    #result-status { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: pre-wrap; }
     #result-confirm { border: 1px solid var(--amber); border-radius: 6px; padding: 8px 10px; margin-top: 6px; background: rgba(226,179,74,0.08); }
     #result-confirm .ct { font-weight: 700; color: var(--amber); }
-    #result-confirm pre { white-space: pre-wrap; font-family: inherit; font-size: 11px; margin: 4px 0; }
-    #run-result-state { font-size: 11px; color: var(--blue); font-weight: 700; margin-left: 6px; }
+    #result-confirm pre { white-space: pre-wrap; font-family: inherit; font-size: 12px; margin: 4px 0; }
+    #run-result-state { font-size: 12px; color: var(--blue); font-weight: 700; margin-left: 6px; }
     #result-detail { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; min-height: 0; max-height: 46vh; }
     #result-detail .rdtabs { display: flex; gap: 6px; margin-bottom: 4px; }
     #result-detail .rdtabs button.on { color: var(--blue); border-color: var(--blue); }
-    #rd-head { font-size: 10px; color: var(--muted); white-space: pre-wrap; margin-bottom: 4px; }
-    #rd-files { list-style: none; margin: 0 0 4px 0; padding: 0; max-height: 90px; overflow-y: auto; font-size: 11px; }
+    #rd-head { font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-bottom: 4px; }
+    #rd-files { list-style: none; margin: 0 0 4px 0; padding: 0; max-height: 90px; overflow-y: auto; font-size: 12px; }
     #rd-files li { cursor: pointer; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; }
     #rd-files li.sel { background: rgba(90,169,255,0.15); }
     #rd-files li.t-A { color: var(--green); } #rd-files li.t-M { color: var(--amber); } #rd-files li.t-D { color: var(--red); }
-    #rd-diff { flex: 1 1 auto; min-height: 0; overflow: auto; font-family: Consolas, monospace; font-size: 10.5px; white-space: pre; margin: 0; background: #111214; padding: 6px; border-radius: 4px; }
-    #rd-evidence { font-size: 10px; color: var(--muted); white-space: pre-wrap; margin-top: 4px; max-height: 60px; overflow-y: auto; }
+    #rd-diff { flex: 1 1 auto; min-height: 0; overflow: auto; font-family: Consolas, monospace; font-size: 12px; white-space: pre; margin: 0; background: #111214; padding: 6px; border-radius: 4px; }
+    #rd-evidence { font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 4px; max-height: 60px; overflow-y: auto; }
     li.pend.res { border-left-color: var(--blue); } li.pend .ptitle2.blue { color: var(--blue); }
     /* approval */
     .approval { border: 1px solid var(--amber); border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: rgba(226,179,74,0.07); font-size: 12px; }
@@ -2457,13 +2457,13 @@ DASHBOARD_CSS = r"""
     .approval .an { color: var(--text); margin: 2px 0 6px 0; }
     .approval .ak { color: var(--muted); }
     .approval .abtns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-    .approval .abtns button { font-size: 11px; padding: 3px 8px; }
+    .approval .abtns button { font-size: 12px; padding: 3px 8px; }
     button.approve { background: #2f7d4a; border-color: #3f9a5e; }
     button.reject { background: #8a2e2e; border-color: #b04040; }
-    #approval-raw { font-size: 10px; color: var(--muted); word-break: break-all; }
-    #approval-result { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    #approval-raw { font-size: 12px; color: var(--muted); word-break: break-all; }
+    #approval-result { font-size: 12px; color: var(--muted); margin-top: 4px; }
     #chat-action-card { margin: 0 10px 6px 10px; }
-    #inspect-body { white-space: pre-wrap; font-size: 11px; color: var(--text); max-height: 260px; overflow-y: auto; margin: 4px 0; }
+    #inspect-body { white-space: pre-wrap; font-size: 12px; color: var(--text); max-height: 260px; overflow-y: auto; margin: 4px 0; }
     .alert .abtns { display: flex; gap: 6px; margin-left: 12px; }
     /* alert */
     .alert { display: flex; align-items: center; gap: 12px; padding: 0 12px; border-top: 1px solid var(--border); font-size: 12px; overflow: hidden; white-space: nowrap; }
@@ -2564,7 +2564,7 @@ def render_html():
                               f"<span class='evt' title=\"눌러서 원문 보기\" data-raw=\"{content}\">{html_lib.escape(ko_text)}</span>"
                               f"<span class='evraw'>{content}</span></div>")
             else:
-                chat_html += f"<div class='msg msg-{role}' data-id='{mid}'><strong>{role}</strong><pre>{content}</pre></div>"
+                chat_html += f"<div class='msg msg-{role}' data-id='{mid}'><strong>{html_lib.escape(I18N.SPEAKER_TEXT.get(str(msg['role']), str(msg['role'])))}</strong><pre>{content}</pre></div>"
 
         system_mode = st["system_mode"]
         mode_hint = html_lib.escape(st.get("system_mode_hint") or "")
@@ -2748,7 +2748,7 @@ def render_html():
     <style>{DASHBOARD_CSS}</style>
 </head>
 <body>
-    <div id="hdr">
+    <div id="hdr" role="banner">
         <h1>TRIBUNAL AI<small>{I18N.t("app_subtitle")}</small></h1>
         <span class="sep">|</span>
         <span class="lbl" title="SYSTEM MODE: {system_mode}">{I18N.t("system_mode")}: <span class="status-{system_mode}" id="system-mode" data-raw="{system_mode}">{I18N.status_ko(system_mode)}</span><span id="system-mode-hint" data-raw="{mode_hint}">{html_lib.escape(mode_sentence)}</span><span class="rawtag">SYSTEM MODE: {system_mode}</span></span>
@@ -2762,7 +2762,7 @@ def render_html():
         <span id="mode-switch"{'' if triad_switch_enabled() else ' hidden'}><button id="normal-mode-btn" type="button" class="ghost on">NORMAL</button><button id="triad-mode-btn" type="button" class="ghost">TRIAD 연구</button></span>
     </div>
 
-    <div id="corestrip">
+    <div id="corestrip" role="region" aria-label="AI 상태">
         <div id="director-core" class="{core_cls.strip()}">
             <div class="ctitle">TRIBUNAL AI CORE</div>
             <div class="csub">{I18N.t("core_sub")} \u00b7 <span class="status-{system_mode}" id="core-mode" data-raw="{system_mode}">{I18N.status_ko(system_mode)}</span></div>
@@ -2830,7 +2830,7 @@ def render_html():
         </div>
     </section>
 
-    <div id="main">
+    <div id="main" role="main">
         <div class="panel" id="left">
             <h2>{I18N.t("project")}</h2>
             <div id="project-name" class="{proj_cls}">{project_name}</div>
@@ -2839,7 +2839,7 @@ def render_html():
             <form id="project-form" method="POST" action="/project" accept-charset="utf-8" style="{'display:none;' if project_path else ''}">
                 <input type="text" id="project-input" name="path" placeholder="git 저장소의 절대 경로" aria-label="프로젝트 폴더 경로" />
                 <button type="submit" id="project-btn">{I18N.t("select_project")}</button>
-                <div id="project-result" style="color:var(--amber); font-size:11px; margin-top:4px;"></div>
+                <div id="project-result" style="color:var(--amber); font-size:12px; margin-top:4px;"></div>
             </form>
             <h2 style="margin-top:14px;">{I18N.t("recovery")}</h2>
             <div id="recovery-short" data-raw="{recovery_short}">{html_lib.escape(st.get("recovery_short_ko") or st.get("recovery_short") or "")}</div>
@@ -2871,7 +2871,7 @@ def render_html():
             <div id="chat-head"><h2>{I18N.t("head_chat")}</h2><span id="chat-badge" class="badge {chat_badge_cls}" data-raw="{chat_badge}">{chat_badge_ko}</span>
                 <button id="new-chat-btn" type="button" class="ghost"{busy_attr}>{I18N.t("new_chat")}</button>
                 <span class="session-label mono" id="session-label">{html_lib.escape(sid)}</span></div>
-            <div id="chat-box" data-last-id="{last_id}">
+            <div id="chat-box" role="log" aria-live="polite" tabindex="0" data-last-id="{last_id}">
                 {chat_html}
             </div>
             <div id="chat-result-card" class="resultcard r-ready" style="margin:0 10px 6px 10px;{r_chat_style}">
@@ -2992,7 +2992,7 @@ def render_html():
     </div>
 
     <div id="alert-bar" class="alert {alert_cls}">
-        <span id="alert-text" data-raw="{html_lib.escape(alert_text)}">{html_lib.escape(alert_text_ko)}</span>
+        <span id="alert-text" role="status" data-raw="{html_lib.escape(alert_text)}">{html_lib.escape(alert_text_ko)}</span>
         <div class="abtns" style="margin-left:auto;">
             <button id="alert-inspect" type="button" class="ghost">{I18N.t("inspect")}</button>
             <button id="alert-approve-btn" type="button" class="approve" style="{ap_btn_style}">{I18N.t("approve_resume")}</button>

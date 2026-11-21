@@ -346,8 +346,10 @@ body.broadcast #call-panel,body.broadcast #now-doing{display:none}
   #composer{grid-template-columns:1fr}
   #chat-peek,.brand div,.meta-clock,#top-project{display:none}
   #topbar{gap:8px;padding:0 10px}
-  .top-actions{gap:4px}
-  .top-actions button{padding:0 8px;font-size:11px;white-space:nowrap}
+  .top-actions{gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
+  .top-actions button{padding:0 7px;font-size:12px;white-space:nowrap;flex:none}
+  .brand{display:none}
+  #btn-replay,#btn-broadcast,#btn-lang{order:1}   /* the stop buttons come first; the rest is reached by swiping the row */
   .live-chip b{display:none}.live-chip{padding:6px}
   #pipeline{max-width:100%;padding:8px 6px}
   #pipeline li{padding:4px 12px 4px 4px;column-gap:5px}
