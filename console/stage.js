@@ -389,6 +389,59 @@ function choiceRow(label,key,field,items,fixed){
     if(field==='model'){const m=((ai.options[key]||{}).models||[]).find(x=>x.id===sel.value);if(m&&m.efforts&&!m.efforts.includes(s[key].effort))s[key].effort=null;}});   // a level the new model does not have is cleared
   wrap.append(el('span',label),sel);return wrap;
 }
+// ---- accounts: who each CLI is signed in as, and its own sign-in / switch / sign-out (core/cli_accounts.py)
+const ACC_METHOD={subscription:T('구독 로그인'),api_console:T('API 과금 로그인'),api_key:T('API 키 로그인'),other:T('로그인됨')};
+const ACC_ACTION={login:T('로그인'),switch:T('계정 변경'),logout:T('로그아웃'),open:T('터미널에서 열기')};
+const revealed={};let accountBusy=false;
+async function accountPost(path,body){
+  const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken},body:JSON.stringify(body)}),out=await res.json().catch(()=>({}));
+  if(!res.ok)throw Error(out.error||out.message||(T('서버 응답 ')+res.status));return out;}
+async function toggleReveal(key){
+  if(revealed[key]){clearTimeout(revealed[key].timer);delete revealed[key];paintAI(true);return;}
+  try{const out=await accountPost('/ops/ai/account/reveal',{cli:key});if(!out.email){notice(T('계정 주소를 받지 못했습니다.'));return;}
+    revealed[key]={email:out.email,masked:((ai.accounts||{})[key]||{}).email_masked,timer:setTimeout(()=>{delete revealed[key];paintAI(true);},20000)};paintAI(true);}   // shown for 20 seconds, then masked again
+  catch(e){notice(T('계정 주소 확인 실패 · ')+e.message);}
+}
+async function accountAction(p,key,act){
+  const name=AI[p].name;
+  if(accountBusy)return;
+  if(act==='logout'&&!confirm(T('{0}에서 로그아웃할까요? 다시 로그인하기 전까지 이 AI는 일할 수 없습니다.',name)))return;
+  if(act==='switch'&&!confirm(T('{0} 계정을 바꿀까요? 지금 계정에서 로그아웃한 뒤, 터미널 창에서 새 계정으로 로그인합니다.',name)))return;
+  accountBusy=true;paintAI(true);
+  try{const out=await accountPost('/ops/ai/account',{cli:key,action:act});
+    if(revealed[key]){clearTimeout(revealed[key].timer);delete revealed[key];}
+    if(out.status==='started')notice(act==='open'?T('터미널 창에 {0}를 열었습니다.',name):T('터미널 창을 열었습니다. 거기서 {0} 로그인을 마쳐 주세요.',name));
+    else if(out.status==='manual')prompt(T('이 환경에서는 터미널 창을 열 수 없습니다. 아래 명령을 터미널에서 직접 실행해 주세요.'),out.command);
+    else if(out.status==='busy')notice(T('AI가 일하는 중이라 지금은 할 수 없습니다. 작업이 끝난 뒤 다시 시도해 주세요.'));
+    else if(out.status==='done')notice(T('{0}에서 로그아웃했습니다.',name));
+    else if(out.status==='checked')notice(T('{0} 계정 상태를 다시 확인합니다.',name));
+    else if(out.status==='failed')notice(T('{0} 로그아웃 명령이 실패했습니다. 터미널에서 직접 확인해 주세요.',name));
+    else if(out.status==='unavailable')notice(T('{0} CLI가 설치되어 있지 않습니다.',name));
+    else notice(T('요청을 끝내지 못했습니다 · ')+(out.message||out.status||''));}
+  catch(e){notice(T('요청 실패 · ')+e.message);}
+  finally{accountBusy=false;await pollAI(true);}
+}
+function accountBox(p,key){
+  const a=(ai.accounts||{})[key];if(!a)return null;
+  const box=el('div','','ai-account'),line=el('div','','ai-account-line');box.append(el('span',T('계정'),'ai-account-k'),line);
+  if(a.loading)line.append(el('span',T('계정을 확인하는 중…')));
+  else if(a.installed===false)line.append(el('span',T('CLI가 설치되어 있지 않습니다.')));
+  else if(a.signed_in===false)line.append(el('span',T('로그인되어 있지 않습니다.')));
+  else if(a.email_masked){if(revealed[key]&&revealed[key].masked!==a.email_masked){clearTimeout(revealed[key].timer);delete revealed[key];}   // another account now
+    const open=revealed[key];line.append(el('span',open?open.email:a.email_masked,'ai-account-who'));
+    const eye=el('button',open?T('가리기'):T('보기'));eye.type='button';eye.className='ai-eye';eye.dataset.k=key+':eye';eye.setAttribute('aria-pressed',String(!!open));
+    eye.title=T('계정 주소 전체를 20초 동안 보여 줍니다. 저장하지 않습니다.');eye.onclick=()=>toggleReveal(key);line.append(eye);}
+  else line.append(el('span',!a.identity_known?(a.signed_in?T('로그인됨 · 계정 이름은 CLI가 알려 주지 않습니다.'):T('계정 이름과 로그인 여부를 CLI가 알려 주지 않습니다.')):a.signed_in?T('로그인됨'):T('로그인 상태를 확인하지 못했습니다.')));
+  const sub=[a.method&&ACC_METHOD[a.method],a.org].filter(Boolean).join(' · ');if(sub)box.append(el('small',sub,'ai-note'));
+  if(a.pending)box.append(el('small',T('로그인 진행 중 · 터미널과 브라우저에서 마치면 여기가 바뀝니다.'),'ai-note pend'));
+  const row=el('div','','ai-account-actions');
+  for(const act of (a.actions||[]).concat(a.pending||!a.identity_known||a.signed_in==null?['check']:[])){
+    const b=el('button',act==='check'?T('다시 확인'):ACC_ACTION[act]||act);b.type='button';b.dataset.k=key+':acc:'+act;if(accountBusy)b.setAttribute('aria-busy','true');   // not disabled: the focus stays on it
+    if(act==='logout')b.className='danger';if(act==='login')b.className='primary';
+    b.onclick=()=>accountAction(p,key,act);row.append(b);}
+  if(row.children.length)box.append(row);
+  return box;
+}
 function paintAI(force){
   const box=$('ai-cards');if($('ai-panel').hidden)return;
   if(!ai){box.replaceChildren(el('p',T('불러오는 중…'),'ai-note'));return;}
@@ -405,7 +458,8 @@ function paintAI(force){
       sel.title=T('CLI가 요금제를 알려 주지 않습니다. 구독 중인 요금제를 직접 고르세요.');
       sel.append(new Option(T('요금제 선택'),''));for(const it of (o.plans||[]))sel.append(new Option(it.id==='other'?T('기타'):it.name,it.id));
       sel.value=cur;sel.onchange=()=>saveAI(s=>{s[key]={...s[key],plan:sel.value||null};});head.append(sel);}
-    card.append(head,limitRow(T('5시간 한도'),l.five_hour,l.state,alertOf(key,'five_hour')),limitRow(T('주간 한도'),l.weekly,l.state,alertOf(key,'weekly')));
+    const acct=accountBox(p,key);card.append(head);if(acct)card.append(acct);
+    card.append(limitRow(T('5시간 한도'),l.five_hour,l.state,alertOf(key,'five_hour')),limitRow(T('주간 한도'),l.weekly,l.state,alertOf(key,'weekly')));
     if(key==='openai'&&l.as_of&&l.source!=='live')card.append(el('small',T('마지막 Codex 호출 기준 · {0}',ago(utc(l.as_of))),'ai-note'));
     const main=key==='antigravity'&&(l.groups||[]).length?(l.headline||l.groups[0].name):null;
     if(main)card.insertBefore(el('small',T('{0} 기준',main),'ai-note'),card.children[1]);
@@ -611,7 +665,8 @@ function start(){
     if(e.key==='r'||e.key==='R'||e.key==='ㄱ')startReplay();});
   setInterval(()=>{const d=new Date();$('top-clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');if(!replay)tickTimer();},1000);
   pollActivity();pollStatus();pollChat();pollRoles();setInterval(pollRoles,8000);
-  setInterval(pollActivity,3000);setInterval(pollStatus,6000);setInterval(pollChat,3000);setInterval(pollCall,2000);pollAI();setInterval(pollAI,20000);   // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
+  setInterval(pollActivity,3000);setInterval(pollStatus,6000);setInterval(pollChat,3000);setInterval(pollCall,2000);pollAI();setInterval(pollAI,20000);setInterval(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
+     // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
 }
 window.TrinityStage={model:()=>lastModel,replaying:()=>!!replay};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();

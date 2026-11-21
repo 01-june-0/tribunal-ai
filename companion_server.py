@@ -123,7 +123,9 @@ class CompanionHandler(d.DashboardHandler):
             from core import cli_limits, cli_settings
             settings = cli_settings.load()
             limits = cli_limits.snapshot(settings['antigravity']['model'], settings['usage_poll_minutes'] * 60)
+            from core import cli_accounts
             return self._send_json({'settings': settings, 'options': cli_settings.options(), 'limits': limits,
+                                    'accounts': cli_accounts.snapshot(limits),
                                     'alerts': cli_limits.alerts(limits, {c: settings[c]['warn_percent'] for c in cli_settings.CLIS})})
         if path in STATIC_FILES:
             name = STATIC_FILES[path]
@@ -184,6 +186,25 @@ class CompanionHandler(d.DashboardHandler):
                 pass
             from core import cli_limits
             return self._send_json({'refreshing': cli_limits.refresh_now()})
+        if self.path in ('/ops/ai/account', '/ops/ai/account/reveal'):   # sign in / switch / sign out through the CLI itself
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            try:
+                from core import cli_accounts
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 1024 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                    raise ValueError('Invalid account request')
+                body = json.loads(self.rfile.read(size))
+                cli, action = str(body.get('cli') or ''), str(body.get('action') or '')
+                if cli not in cli_accounts.CLIS:
+                    raise ValueError('Unknown AI')
+                if self.path.endswith('/reveal'):           # the full address, only on request and never stored by us
+                    return self._send_json({'email': cli_accounts.reveal(cli)})
+                return self._send_json(cli_accounts.start(cli, action))
+            except (ValueError, TypeError) as exc:
+                return self._send_json({'error': str(exc)[:300]}, 400)
+            except Exception as exc:
+                return self._send_json({'error': type(exc).__name__ + ': ' + str(exc)[:200]}, 500)
         if self.path == '/ops/ai':
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'local authenticated request required'}, 403)
