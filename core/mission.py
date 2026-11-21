@@ -388,7 +388,7 @@ class MissionRunner:
         if tests:
             parts.append(f"테스트 {tests.get('passed', 0)} 통과/{tests.get('failed', 0)} 실패")
         if result.get("review_verdict"):
-            parts.append(f"리뷰 {result['review_verdict']}")
+            parts.append("감리 " + {"pass": "통과", "changes_required": "수정 요청"}.get(result["review_verdict"], str(result["review_verdict"])))
         if result.get("repair_rounds"):
             parts.append(f"자동 수정 {result['repair_rounds']}회")
         if result["final_state"] != State.PASS:
