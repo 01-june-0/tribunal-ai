@@ -217,12 +217,14 @@ async function decideMission(id,action,extra){
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
     if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);answer=out;}
   catch(e){notice(T('요청 실패 · ')+e.message);}
   finally{deliveryBusy=false;if(lastModel){paintAttention(lastModel);paintDelivery(lastModel);}await pollActivity();if(result)paintResult();}
   return answer;
 }
+// The engine names conflicting files in English ("Conflicts: a.py, b.py"); the rest of a refusal is shown as it is.
+function blockText(blocks){return (blocks||[]).map(b=>String(b).replace(/^Conflicts: /,T('충돌한 파일: '))).join('; ');}
 function applyMission(ms,state){
   if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',ms.project||'—'):T('이 작업의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',ms.project||'—')))
     return decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block',...(ms.deliverableRun?{run_id:ms.deliverableRun}:{})});
@@ -401,7 +403,7 @@ function paintResult(){
   if(lines.length>MAX)said=T('변경 내용이 길어 앞의 {0}줄만 보여 줍니다.',MAX);
   const open=state!=='applied'&&state!=='discarded';
   if(open&&moved)said=moved;
-  else if(state==='blocked'){const why=result.blocks||(live.applied&&live.applied.blocks)||[];said=T('적용 보류: ')+(why.join('; ').slice(0,300)||T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'));}
+  else if(state==='blocked'){const why=result.blocks||(live.applied&&live.applied.blocks)||[];said=T('적용 보류: ')+(blockText(why).slice(0,300)||T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'));}
   // (the server's own pre-check is not repeated here: it is decided, and explained, when "원본에 적용" is pressed)
   if(note.textContent!==said)note.textContent=said;
   once(acts,JSON.stringify([state,deliveryBusy,!!moved,open]),()=>{
@@ -430,7 +432,7 @@ async function decideResult(runId,kind,extra){
     const res=await fetch(kind==='apply'?'/result/apply':'/result/discard',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json','X-Requested-With':'fetch'},body:new URLSearchParams({run_id:runId,request_id:rid,...(extra||{})})});
     const out=await res.json().catch(()=>({}));
     if(!out.status)throw Error(out.error||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다')}[out.status]||(out.status+' '+(out.error||out.reason||(out.blocks||[]).join('; ')||''));
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),discarded:T('결과물을 폐기했습니다')}[out.status]||(out.status+' '+(out.error||out.reason||(out.blocks||[]).join('; ')||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='discarded'?PULSE.ok:PULSE.warn);answer=out;}
   catch(e){notice(T('요청 실패 · ')+e.message);}
   finally{deliveryBusy=false;await pollStatus();if(result)paintResult();}
@@ -461,7 +463,7 @@ function paintDelivery(m){
   box.replaceChildren();if(!shown)return;
   const head=el('div','','delivery-head');head.append(el('span',(ms.source==='bridge'||ms.source==='solomon'?T('외부 지시 · '):ms.source==='cli'?T('CLI 지시 · '):'')+T('결과물'),'kicker'),el('span',label,'badge '+cls));box.append(head);
   if(ms.applied&&ms.applied.files)box.append(el('small',ms.applied.files.slice(0,6).join(', ')+(ms.applied.files.length>6?T(' 외 {0}개',ms.applied.files.length-6):''),'ai-sub'));
-  if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',ms.applied.blocks.join('; ').slice(0,220),'ai-sub'));
+  if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',blockText(ms.applied.blocks).slice(0,220),'ai-sub'));
   if(state!=='applied'&&state!=='discarded'){
     const row=el('div','','delivery-actions');
     // The first button shows what changed; "원본에 적용" lives in that panel, after the changes have been seen.
@@ -472,7 +474,7 @@ function paintDelivery(m){
     for(const b of [apply,more,drop])b.disabled=deliveryBusy;
     row.append(apply,more,drop);box.append(row);
     if(held){const again=row.querySelector('[data-act="'+held+'"]');if(again&&!again.disabled)again.focus();}
-    if(state==='blocked')box.append(el('small',T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'),'ai-sub'));
+    if(state==='blocked')box.append(el('small',ms.deliverableRun?T('"변경 내용 보기"에서 "원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'):T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'),'ai-sub'));
     else if(ms.status==='DONE'&&ms.deliverableRun)box.append(el('small',T('원본 프로젝트는 아직 그대로입니다. 변경 내용을 보고 정하세요.'),'ai-sub'));
   }
 }

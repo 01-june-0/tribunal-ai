@@ -296,6 +296,8 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "충돌한 파일: ": "Conflicting files: ",
+  "\"변경 내용 보기\"에서 \"원본에 적용\"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.": "Press \"Apply to the original\" again in \"View changes\" to skip the conflicting files and apply the rest.",
   "작업 기록 없이 끝난 결과물": "Results finished outside a task",
   "적용 대기 {0}건": "{0} waiting to be applied",
   "새 작업이 승인을 기다립니다": "A new task is waiting for your approval",
