@@ -15,7 +15,7 @@ const PHASE={
   BETWEEN:{word:T('준비'),sub:T('다음 AI 호출을 준비합니다'),core:.42},
   PLANNING:{word:T('설계'),sub:T('ARCHITECT가 할 일을 정합니다'),core:.56},
   BUILDING:{word:T('제작'),sub:T('MAKER가 코드를 씁니다'),core:.72},
-  VERIFYING:{word:T('테스트'),sub:T('Director가 직접 실행해 확인합니다'),core:1},
+  VERIFYING:{word:T('테스트'),sub:T('TRIBUNAL이 직접 실행해 확인합니다'),core:1},
   REVIEWING:{word:T('감리'),sub:T('INSPECTOR가 독립적으로 살핍니다'),core:.72},
   DECIDING:{word:T('판단'),sub:T('ARCHITECT가 통과 여부를 결정합니다'),core:.86}};
 const STAGE_TEXT={CHAT:T('요청을 읽고 있습니다'),MISSION_PLANNING:T('다음 단계를 계획하고 있습니다'),PLANNING:T('작업 지시서를 쓰고 있습니다'),ORDER_READY:T('작업 지시서를 쓰고 있습니다'),
@@ -126,7 +126,7 @@ function liveModel(){
 function actorColor(m){return m.w?AI[m.w.provider]?.css||'#fff':m.phase==='VERIFYING'?'#b9ffe2':'#9fb4d8';}
 function sentence(m){
   if(m.w){const name=(AI[m.w.provider]||{name:m.w.provider}).name;return [name,T('가 ')+(STAGE_TEXT[m.w.stage]||(m.w.role==='MAKER'?STAGE_TEXT.BUILDING:m.w.role==='INSPECTOR'?STAGE_TEXT.REVIEWING:T('생각하고 있습니다')))];}
-  if(m.phase==='VERIFYING')return ['Director',T('가 테스트를 실행하고 있습니다')];
+  if(m.phase==='VERIFYING')return ['TRIBUNAL',T('이 테스트를 실행하고 있습니다')];
   if(m.phase==='BETWEEN')return ['',T('다음 AI 호출을 준비하고 있습니다')];
   return ['',T('세 AI가 지시를 기다리고 있습니다')];
 }
@@ -328,7 +328,7 @@ function stinger(m){
   const key=m.phase+(m.w?m.w.provider:'');
   if(key===lastPhase)return;const first=lastPhase===null;lastPhase=key;
   if(first||m.phase==='IDLE'||m.phase==='BETWEEN')return;
-  const s=$('stinger');s.replaceChildren(el('small',m.w?(AI[m.w.provider]||{name:''}).name+' · '+(m.w.role||''):'DIRECTOR'),el('strong',PHASE[m.phase].word));
+  const s=$('stinger');s.replaceChildren(el('small',m.w?(AI[m.w.provider]||{name:''}).name+' · '+(m.w.role||''):'TRIBUNAL'),el('strong',PHASE[m.phase].word));
   s.style.setProperty('--c',actorColor(m));s.classList.remove('show');void s.offsetWidth;s.classList.add('show');
 }
 function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintFeeds(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');}
@@ -552,7 +552,7 @@ async function startReplay(){
   if(!calls.length){notice(failed?T('다시보기 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'):T('다시 볼 미션 기록이 아직 없습니다.'));return;}
   let v=0,prevEnd=calls[0].t0,real=0;const gaps=[];
   calls.forEach((c,i)=>{const gap=Math.max(0,c.t0-prevEnd),vg=Math.min(gap,40);
-    if(vg>6&&i&&calls[i-1].role==='MAKER')gaps.push([v,v+vg]);                       // Director ran the tests between build and review
+    if(vg>6&&i&&calls[i-1].role==='MAKER')gaps.push([v,v+vg]);                       // Tribunal itself ran the tests between build and review
     v+=vg;c.v0=v;c.v1=v+c.dur;v=c.v1;real+=gap+c.dur;prevEnd=Math.max(prevEnd,c.t0+c.dur);});
   const stepOf=new Map((data.steps||[]).map(s=>[s.run_id,s])),lastCall=new Map();
   calls.forEach(c=>{if(stepOf.has(c.run_id))lastCall.set(c.run_id,c);});
