@@ -24,7 +24,7 @@ const SHORT={CHAT:T('요청 확인 중'),MISSION_PLANNING:T('다음 단계 계�
 const STAGE_LABEL={PLANNING:T('계획'),ORDER_READY:T('구현 준비'),BUILDING:T('코드 작성'),VERIFYING:T('테스트'),REVIEWING:T('독립 검토'),DECIDING:T('HEAD 판단'),PASS:T('통과'),FAIL:T('실패'),
   HUMAN_REQUIRED:T('사용자 확인'),TIMEOUT:T('시간 초과'),IDLE:T('대기'),MISSION_PLANNING:T('다음 단계 계획'),ENTRY_REVIEW:T('오더 검토'),CHAT:T('대화')};
 const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료')};
-const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'};
+const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
 const MISSION_BADGE={DONE:[T('완료'),'ok'],INCOMPLETE:[T('예산 소진'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
 const PULSE={ok:[.35,1,.7],bad:[1,.32,.4],warn:[1,.78,.4],done:[1,.93,.75]};
 
@@ -45,12 +45,14 @@ function countTo(node,value,fmt){
   const t0=performance.now(),step=now=>{const k=Math.min(1,(now-t0)/900),e=1-Math.pow(1-k,3);node.textContent=fmt(from+(value-from)*e);if(k<1)node._raf=requestAnimationFrame(step);};
   node._raf=requestAnimationFrame(step);
 }
+function guarded(fn){let p=null,again=false;const run=()=>{if(p){again=true;return p;}
+  p=(async()=>{try{await fn();}finally{p=null;}if(again){again=false;await run();}})();return p;};return run;}
 async function getJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error(url+' '+r.status);return r.json();}
 
 // ------------------------------------------------------------------ model
 const CLI={claude:'ANTHROPIC',antigravity:'GOOGLE',openai:'OPENAI'},CLI_OF={ANTHROPIC:'claude',GOOGLE:'antigravity',OPENAI:'openai'};
 let roleSettings=null,roleToken=null;                 // what the NEXT task will use (data/role_settings.json via /ops/roles)
-async function pollRoles(){try{const r=await getJSON('/ops/roles');roleSettings=r.roles;roleToken=r.csrf;repaint();}catch(e){/* keep the last known roles */}}
+const pollRoles=guarded(async()=>{try{const r=await getJSON('/ops/roles');roleSettings=r.roles;roleToken=r.csrf;repaint();}catch(e){/* keep the last known roles */}});
 function assignment(){
   if(roleSettings&&!isLiveNow())return {HEAD:CLI[roleSettings.head],BUILDER:CLI[roleSettings.builder],REVIEWER:CLI[roleSettings.reviewer]};
   const a={...DEFAULT_ASSIGN},prov=(status&&status.providers)||{};
@@ -58,26 +60,36 @@ function assignment(){
   return a;
 }
 function isLiveNow(){const a=activity||{};return (a.working_now||[]).length>0||(a.missions||[]).some(m=>m.live);}
+let roleOpener=null;
+function closeRoleMenu(refocus){const menu=$('role-menu'),was=!menu.hidden;menu.hidden=true;
+  for(const l of document.querySelectorAll('.slot-label'))l.setAttribute('aria-expanded','false');
+  if(was&&refocus&&roleOpener&&roleOpener.isConnected)roleOpener.focus();roleOpener=null;}
 function openRoleMenu(label){
   const menu=$('role-menu'),slot=Number(label.dataset.slot),role=ROLES[slot];
-  if(!roleSettings||replay){return;}
-  if(!menu.hidden&&menu.dataset.slot===String(slot)){menu.hidden=true;return;}
+  if(replay)return;
+  if(!roleSettings){notice(T('역할 정보를 아직 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.'));return;}
+  if(!menu.hidden&&menu.dataset.slot===String(slot)){closeRoleMenu(true);return;}
+  closeRoleMenu();roleOpener=label;label.setAttribute('aria-expanded','true');
   menu.dataset.slot=String(slot);menu.replaceChildren(el('p',T('{0} 를 맡을 AI',ROLE_KO[role])+(isLiveNow()?T(' · 진행 중인 작업은 그대로, 다음 작업부터 적용'):'')));
   const key=role.toLowerCase();
   for(const p of ['ANTHROPIC','GOOGLE','OPENAI']){
     const b=el('button',AI[p].name),cur=roleSettings[key]===CLI_OF[p],also=ROLES.filter(r=>r!==role&&roleSettings[r.toLowerCase()]===CLI_OF[p]);
     b.type='button';b.setAttribute('role','menuitem');b.style.setProperty('--c',AI[p].css);b.classList.toggle('on',cur);
     b.append(el('small',cur?T('현재'):also.length?T('{0}도 담당',also.join(', ')):''));
-    b.onclick=async()=>{if(cur){menu.hidden=true;return;}
+    b.onclick=async()=>{if(cur){closeRoleMenu(true);return;}
       const next={...roleSettings};next[key]=CLI_OF[p];
       for(const x of menu.querySelectorAll('button'))x.disabled=true;
       try{const res=await fetch('/ops/roles',{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken},body:JSON.stringify(next)}),out=await res.json();
         if(!res.ok)throw Error(out.error||T('저장 실패'));roleSettings=out.roles;notice(T('역할을 바꿨습니다 · ')+ROLE_KO[role]+' = '+AI[p].name+T(' (다음 작업부터 적용)'));}
       catch(e){notice(T('역할 변경 실패 · ')+e.message);}
-      menu.hidden=true;repaint();};
+      closeRoleMenu(true);repaint();};
     menu.append(b);}
   const r=label.getBoundingClientRect(),c=$('stage-center').getBoundingClientRect();
   menu.hidden=false;
+  menu.onkeydown=e=>{const items=[...menu.querySelectorAll('button')],i=items.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();items[(i+(e.key==='ArrowDown'?1:items.length-1))%items.length].focus();}
+    else if(e.key==='Tab'){e.preventDefault();closeRoleMenu(true);}};
+  (menu.querySelector('button.on')||menu.querySelector('button')).focus();
   menu.style.transform='translate('+Math.max(4,Math.min(r.left-c.left,c.width-menu.offsetWidth-4)).toFixed(0)+'px,'+(r.bottom-c.top+6+menu.offsetHeight>c.height?Math.max(4,r.top-c.top-menu.offsetHeight-6):r.bottom-c.top+6).toFixed(0)+'px)';   // no room below: open above the label
 }
 function phaseOf(working,verifying,live){
@@ -118,13 +130,13 @@ function sentence(m){
   if(m.phase==='BETWEEN')return ['',T('다음 AI 호출을 준비하고 있습니다')];
   return ['',T('세 AI가 지시를 기다리고 있습니다')];
 }
-function setSentence(node,m){const [who,rest]=sentence(m);node.replaceChildren();if(who)node.append(el('em',who));node.append(rest);}
+function setSentence(node,m){const [who,rest]=sentence(m);if(node.textContent===who+rest)return;node.replaceChildren();if(who)node.append(el('em',who));node.append(rest);}
 function paintNow(m){
   document.body.dataset.phase=m.phase;
   document.documentElement.style.setProperty('--actor',actorColor(m));
   setSentence($('now-headline'),m);setSentence($('caption'),m);
   const ms=m.mission,step=ms&&ms.steps.length?ms.steps[ms.steps.length-1].index:0;
-  $('now-sub').textContent=m.phase==='IDLE'?(ms?T('마지막 미션 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
+  $('now-sub').textContent=m.phase==='IDLE'?(ms?(m.mode==='replay'?T('다시보기 끝 · ')+(MISSION_BADGE[ms.status]||[ms.status])[0]:T('마지막 미션 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
     :(ms&&(ms.live||m.mode==='replay')?T('미션 {0}/{1}단계 · {2}',step,ms.max,ms.project):PHASE[m.phase].sub);
   $('now-stage').textContent=m.w?ROLE_KO[m.w.role]||m.w.role:PHASE[m.phase].word;
   timerBase=m.w?{at:m.w.at,fixed:m.mode==='replay'?m.w.elapsed:null,estimate:m.mode==='live'?m.w.estimate:null}:null;tickTimer();
@@ -154,11 +166,12 @@ function paintMission(m){
   const ms=m.mission,badge=$('mission-badge'),steps=$('mission-steps');
   if(!ms){badge.textContent='—';badge.className='badge';$('mission-goal').textContent=T('아직 미션 기록이 없습니다. 지시를 보내면 여기에 단계별 진행이 표시됩니다.');steps.replaceChildren();$('mission-meta').textContent='';return;}
   const running=ms.status==='RUNNING',b=running?(ms.live?[T('진행 중'),'run']:[T('중단됨 · 재개 대기'),'warn']):(MISSION_BADGE[ms.status]||[ms.status,'']);
-  badge.textContent=b[0];badge.className='badge '+b[1];$('mission-goal').textContent=ms.goal;
+  badge.textContent=b[0];badge.className='badge '+b[1];$('mission-goal').textContent=ms.goal;$('mission-goal').title=ms.goal;
   while(steps.children.length>ms.max)steps.lastChild.remove();
   while(steps.children.length<ms.max)steps.append(el('span',String(steps.children.length+1)));
   for(let i=0;i<ms.max;i++){const s=ms.steps.find(x=>x.index===i+1),chip=steps.children[i];
-    chip.className=s?(STEP_CLASS[s.state]||'run'):'todo';chip.title=s?T('{0}단계 · {1}',i+1,STATE_KO[s.state]||T('진행 중')):T('남은 단계 예산');}
+    chip.className=s?(STEP_CLASS[s.state]||'run'):'todo';chip.title=s?T('{0}단계 · {1}',i+1,STATE_KO[s.state]||T('진행 중')):T('남은 단계 예산');
+    const mark=STEP_MARK[chip.className]+(i+1);if(chip.textContent!==mark)chip.textContent=mark;chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);}
   const last=[...ms.steps].reverse().find(s=>s.tests);
   $('mission-meta').textContent=T('{0}개 단계 통과 · {1}/{2}단계 사용',ms.passed,ms.steps.length,ms.max)+(last?T(' · 테스트 {0}/{1}',last.tests.passed,last.tests.total):'');
   paintDelivery(m);
@@ -171,35 +184,42 @@ function paintMission(m){
 const APPLY_KO={applied:[T('원본에 적용됨'),'ok'],blocked:[T('적용 보류 · 충돌/조건'),'warn'],pending:[T('적용 대기'),'warn'],discarded:[T('폐기됨'),''],rolled_back:[T('적용 실패 · 복구됨'),'bad'],busy:[T('적용 진행 중'),'run'],error:[T('적용 오류'),'bad']};
 let deliveryBusy=false;
 async function decideMission(id,action,extra){
-  if(deliveryBusy)return;deliveryBusy=true;
+  if(deliveryBusy)return;deliveryBusy=true;if(lastModel)paintDelivery(lastModel);
   try{const body=new URLSearchParams({mission_id:id,action,...(extra||{})});
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
+    if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
     const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+((out.blocks||[]).join('; ')||'').slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('미션을 이어서 진행합니다 (단계 예산 {0})',out.max_steps),busy:T('다른 작업이 진행 중입니다')}[out.status]||(out.status+' '+(out.error||out.reason||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);}
   catch(e){notice(T('요청 실패 · ')+e.message);}
-  finally{deliveryBusy=false;pollActivity();}
+  finally{deliveryBusy=false;if(lastModel)paintDelivery(lastModel);pollActivity();}
 }
 function paintDelivery(m){
   let box=$('mission-delivery');
   if(!box){box=el('div','','delivery');box.id='mission-delivery';$('mission-card').append(box);}
-  box.replaceChildren();const ms=m.mission;
-  if(!ms||m.mode!=='live'||!ms.deliverable||ms.status==='RUNNING'){return;}
-  const state=(ms.applied&&ms.applied.status)||ms.applyState||'pending',[label,cls]=APPLY_KO[state]||[state,''];
+  const ms=m.mission,shown=!!(ms&&m.mode==='live'&&ms.deliverable&&ms.status!=='RUNNING');
+  const state=shown?((ms.applied&&ms.applied.status)||ms.applyState||'pending'):'',[label,cls]=APPLY_KO[state]||[state,''];
+  const sig=JSON.stringify(shown?[ms.id,state,ms.applied&&ms.applied.files,ms.applied&&ms.applied.blocks,ms.source,deliveryBusy]:[]);
+  if(box.dataset.sig===sig)return;box.dataset.sig=sig;      // rebuilt only when something changed: a click or the focus is never lost to a poll
+  const held=box.contains(document.activeElement)?document.activeElement.dataset.act:null;
+  box.replaceChildren();if(!shown)return;
   const head=el('div','','delivery-head');head.append(el('span',(ms.source==='bridge'||ms.source==='solomon'?T('외부 지시 · '):ms.source==='cli'?T('CLI 지시 · '):'')+T('결과물'),'kicker'),el('span',label,'badge '+cls));box.append(head);
   if(ms.applied&&ms.applied.files)box.append(el('small',ms.applied.files.slice(0,6).join(', ')+(ms.applied.files.length>6?T(' 외 {0}개',ms.applied.files.length-6):''),'ai-sub'));
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',ms.applied.blocks.join('; ').slice(0,220),'ai-sub'));
   if(state!=='applied'&&state!=='discarded'){
     const row=el('div','','delivery-actions');
-    const apply=el('button',T('원본에 적용'));apply.type='button';apply.onclick=()=>decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block'});
-    const more=el('button',T('이어서 진행'));more.type='button';more.onclick=()=>decideMission(ms.id,'extend');
-    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.onclick=()=>{if(confirm(T('이 미션의 작업본을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard');};
+    const apply=el('button',deliveryBusy?T('처리 중…'):T('원본에 적용'));apply.type='button';apply.dataset.act='apply';
+    apply.onclick=()=>{if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',ms.project||'—'):T('이 미션의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',ms.project||'—')))decideMission(ms.id,'apply',{on_conflict:state==='blocked'?'skip':'block'});};
+    const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=()=>decideMission(ms.id,'extend');
+    const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';drop.onclick=()=>{if(confirm(T('이 미션의 작업본을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard');};
+    for(const b of [apply,more,drop])b.disabled=deliveryBusy;
     row.append(apply,more,drop);box.append(row);
+    if(held){const again=row.querySelector('[data-act="'+held+'"]');if(again&&!again.disabled)again.focus();}
     if(state==='blocked')box.append(el('small',T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'),'ai-sub'));
   }
 }
 function paintWork(m){
-  for(const b of $('win-tabs').children){b.classList.toggle('on',b.dataset.win===win&&m.mode==='live');b.disabled=m.mode!=='live'||!m.windows[b.dataset.win];}
+  for(const b of $('win-tabs').children){b.classList.toggle('on',b.dataset.win===win&&m.mode==='live');b.setAttribute('aria-pressed',String(b.dataset.win===win&&m.mode==='live'));b.disabled=m.mode!=='live'||!m.windows[b.dataset.win];}
   const u=m.usage,total=u.total||{},approx=(total.exact_tokens||0)<(total.tokens||0);
   countTo($('total-tokens'),total.tokens||0,v=>(approx?'~':'')+tok(v));
   $('total-sub').textContent=T('호출 {0}회 · CLI {1}',total.calls||0,span(total.seconds))+(total.failed?T(' · 실패 {0}',total.failed):'');
@@ -273,7 +293,7 @@ function paintCall(){
     :!shown.length?(callFilter==='error'?T('오류가 난 도구 호출이 없습니다.'):callFilter==='tool'?T('도구를 쓰지 않은 호출입니다.'):T('기록된 활동이 없습니다.'))
     :d.total>d.events.length?T('최근 {0}건만 표시합니다 (전체 {1}건).',d.events.length,d.total):'';
 }
-function openCall(id){callOpener=document.activeElement;openId=id;callRetry=5;openData=liveCall&&liveCall.id===id?liveCall:null;$('call-panel').hidden=false;paintCall();pollCall();$('cp-close').focus();}
+function openCall(id){if(!$('ai-panel').hidden)setAIPanel(false,true);callOpener=document.activeElement;openId=id;callRetry=5;openData=liveCall&&liveCall.id===id?liveCall:null;$('call-panel').hidden=false;paintCall();pollCall();$('cp-close').focus();}
 function closeCall(){openId=null;openData=null;$('call-panel').hidden=true;
   const back=callOpener&&callOpener.dataset.key?document.querySelector('[data-key="'+callOpener.dataset.key+'"]'):callOpener;callOpener=null;if(back&&back.isConnected)back.focus();}
 async function pollCall(){
@@ -418,11 +438,12 @@ function paintLimitAlert(){
     return T('{0} {1} {2}% (임계치 {3}%)',(AI[p]||{name:a.cli}).name+(a.group?' '+a.group:''),a.window==='weekly'?T('주간'):T('5시간'),Math.round(a.used_percent),a.threshold)
       +(left>0?' · '+T('{0} 뒤 초기화',left>=86400?T('{0}일 {1}시간',Math.floor(left/86400),Math.floor(left%86400/3600)):span(left)):'');}).join('  /  ');
 }
+let aiFails=0;
 async function pollAI(force){
   if(aiBusy&&!force)return;aiBusy=true;const epoch=aiEpoch;
   try{const d=await getJSON('/ops/ai');
-    if(d&&d.settings&&epoch===aiEpoch){ai=d;aiAt=Date.now();paintAI(force);paintLimitAlert();if(lastModel)paintScene(lastModel);}}   // an answer from before a save is dropped
-  catch(e){/* keep the last known values */}
+    if(d&&d.settings&&epoch===aiEpoch){aiFails=0;ai=d;aiAt=Date.now();paintAI(force);paintLimitAlert();if(lastModel)paintScene(lastModel);}}   // an answer from before a save is dropped
+  catch(e){if(++aiFails===3)notice(T('AI 설정·한도 정보를 새로 받지 못하고 있습니다. 보이는 값은 마지막으로 받은 값입니다.'));}
   finally{aiBusy=false;}
 }
 function saveAI(change){          // one save at a time, each built on the result of the one before
@@ -437,20 +458,24 @@ function saveAI(change){          // one save at a time, each built on the resul
 }
 
 // ------------------------------------------------------------------ live polling
-async function pollActivity(){try{activity=await getJSON('/ops/activity');if(activity.error)throw Error(activity.error);$('shell-error').hidden=true;repaint();}
-  catch(e){const s=$('shell-error');s.hidden=false;s.textContent=T('작업 현황 연결을 확인하고 있습니다 · ')+e.message;}}
-async function pollStatus(){try{status=await getJSON('/status');
+const pollActivity=guarded(async()=>{
+  try{const a=await getJSON('/ops/activity');if(a.error)throw Error(a.error);activity=a;$('shell-error').hidden=true;repaint();}
+  catch(e){const s=$('shell-error');s.hidden=false;s.textContent=T('작업 현황 연결을 확인하고 있습니다 · ')+e.message;}});
+const pollStatus=guarded(async()=>{try{status=await getJSON('/status');
   const pending=status.pending_result_count||0,need=status.human_required_count||0,badge=$('pending-badge');
   badge.hidden=!pending;badge.textContent=pending>99?'99+':String(pending);
   $('attention').hidden=!need||document.body.dataset.view==='workshop';$('attention-text').textContent=T('확인이 필요한 작업이 {0}건 있습니다.',need);
-  repaint();}catch(e){/* the activity poll reports connection trouble */}}
+  repaint();}catch(e){/* the activity poll reports connection trouble */}});
 
 // ------------------------------------------------------------------ replay (real ledger of a finished mission)
+let replayLoading=false;
 async function startReplay(){
   if(replay){if(attract)return;return stopReplay();}
-  let data;try{data=await getJSON('/ops/replay');}catch(e){data={calls:[]};}
+  if(replayLoading)return;replayLoading=true;
+  let data,failed=false;try{data=await getJSON('/ops/replay');}catch(e){data={calls:[]};failed=true;}finally{replayLoading=false;}
+  if(replay)return;
   const calls=(data.calls||[]).filter(c=>ROLES.includes(c.role)&&AI[c.provider]).map(c=>({...c,t0:utc(c.started_at)/1000,dur:Math.max(1,c.seconds||1)}));
-  if(!calls.length){const s=$('shell-error');s.hidden=false;s.textContent=T('다시 볼 미션 기록이 아직 없습니다.');setTimeout(()=>{s.hidden=true;},3500);return;}
+  if(!calls.length){notice(failed?T('다시보기 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'):T('다시 볼 미션 기록이 아직 없습니다.'));return;}
   let v=0,prevEnd=calls[0].t0,real=0;const gaps=[];
   calls.forEach((c,i)=>{const gap=Math.max(0,c.t0-prevEnd),vg=Math.min(gap,40);
     if(vg>6&&i&&calls[i-1].role==='BUILDER')gaps.push([v,v+vg]);                       // Director ran the tests between build and review
@@ -460,11 +485,11 @@ async function startReplay(){
   replay={data,calls,gaps,total:v,real,speed:v/72,started:performance.now(),stepOf,lastCall,done:new Set(),events:[],finished:false};
   $('replay-bar').hidden=false;document.body.classList.add('replaying');
   $('replay-text').textContent=T('{0} 미션 · 실제 기록 {1} → {2}배속',data.project,span(real),Math.round(replay.speed));
-  $('btn-replay').classList.add('on');seenFeed.event.clear();seenFeed.call.clear();
+  $('btn-replay').classList.add('on');$('btn-replay').setAttribute('aria-pressed','true');closeRoleMenu();seenFeed.event.clear();seenFeed.call.clear();
   replay.timer=setInterval(replayTick,120);replayTick();
 }
 function stopReplay(){
-  if(!replay)return;clearInterval(replay.timer);replay=null;$('replay-bar').hidden=true;document.body.classList.remove('replaying');$('btn-replay').classList.remove('on');
+  if(!replay)return;clearInterval(replay.timer);replay=null;$('replay-bar').hidden=true;document.body.classList.remove('replaying');$('btn-replay').classList.remove('on');$('btn-replay').setAttribute('aria-pressed','false');
   seenFeed.event.clear();seenFeed.call.clear();firstPaint=true;repaint();
 }
 function replayTick(){
@@ -497,17 +522,18 @@ function replayTick(){
 }
 
 // ------------------------------------------------------------------ chat with HEAD
-let lastMsg=0,sending=false;
-async function pollChat(){
+let lastMsg=0,sending=false,chatFails=0;
+const pollChat=guarded(async()=>{
   try{const data=await getJSON('/chat/messages?after_id='+lastMsg),log=$('chat-log'),stick=log.scrollTop+log.clientHeight>=log.scrollHeight-40;
-    for(const msg of data.messages||[]){lastMsg=Math.max(lastMsg,msg.id);const role=['USER','HEAD','SYSTEM'].includes(msg.role)?msg.role:'SYSTEM';
+    chatFails=0;
+    for(const msg of data.messages||[]){if(msg.id<=lastMsg)continue;lastMsg=msg.id;const role=['USER','HEAD','SYSTEM'].includes(msg.role)?msg.role:'SYSTEM';
       const node=el('div','','chat-msg '+role);if(role!=='SYSTEM')node.append(el('small',role==='USER'?T('나'):'HEAD'));const body=String(msg.content||'');node.append(role==='SYSTEM'&&body.length>260?body.slice(0,260)+'…':body);log.append(node);
       $('peek-role').textContent=role==='USER'?T('나'):role;$('peek-role').dataset.role=role;$('peek-text').textContent=String(msg.content||'').replace(/\s+/g,' ').slice(0,200);}
     while(log.children.length>80)log.firstChild.remove();
     if(stick)log.scrollTop=log.scrollHeight;
     if(!lastMsg)$('peek-text').textContent=T('아직 대화가 없습니다. 오른쪽에 지시를 입력해 보세요.');
-  }catch(e){/* next poll retries */}
-}
+  }catch(e){if(++chatFails>=2&&!lastMsg)$('peek-text').textContent=T('대화 기록을 불러오지 못했습니다. 다시 시도하는 중입니다.');}
+});
 async function send(text){
   if(sending||!text.trim())return;sending=true;const btn=$('chat-send');btn.disabled=true;btn.textContent=T('전송 중…');
   try{
@@ -515,42 +541,49 @@ async function send(text){
     const pending=fetch('/chat',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     $('chat-text').value='';grow();setTimeout(pollChat,600);
     const res=await pending,out=await res.json().catch(()=>({}));
-    if(out.status==='busy')notice(T('HEAD가 이전 요청을 처리하고 있습니다. 잠시 뒤 다시 보내 주세요.'));
-    else if(out.status==='error')notice(T('전송 실패 · ')+(out.error||res.status));
-  }catch(e){notice(T('전송 실패 · ')+e.message);}
+    if(out.status==='busy'){restore(text);notice(T('HEAD가 이전 요청을 처리하고 있습니다. 잠시 뒤 다시 보내 주세요.'));}
+    else if(out.status==='error'||!res.ok)notice(T('HEAD가 응답하지 못했습니다 · ')+(out.error||res.status)+T(' · 보낸 내용은 대화 기록에 남아 있습니다'));
+  }catch(e){restore(text);notice(T('전송 실패 · ')+e.message+T(' · 대화 기록에 이미 들어갔는지 확인한 뒤 다시 보내 주세요'));}
   finally{sending=false;btn.disabled=false;btn.textContent=T('보내기');pollChat();pollActivity();}
 }
-function notice(text){const s=$('shell-error');s.hidden=false;s.textContent=text;setTimeout(()=>{s.hidden=true;},5000);}
-function grow(){const t=$('chat-text');t.style.height='48px';t.style.height=Math.min(160,Math.max(48,t.scrollHeight+2))+'px';}
+let noticeTimer=0;
+function notice(text){const s=$('toast');s.hidden=false;s.textContent=text;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>{s.hidden=true;},6000);}
+function restore(text){const t=$('chat-text');if(!t.value){t.value=text;grow();}}   // a message that was not accepted goes back into the box
+function grow(){const t=$('chat-text');t.style.height='48px';const h=t.scrollHeight+2;t.style.height=Math.min(160,Math.max(48,h))+'px';t.style.overflowY=h>160?'auto':'hidden';}
 
 // ------------------------------------------------------------------ views
+function setAIPanel(open,quiet){const p=$('ai-panel');p.hidden=!open;$('btn-ai').setAttribute('aria-expanded',String(open));
+  if(open){if(openId!=null)closeCall();paintAI(true);pollAI();$('ai-close').focus();}else if(!quiet)$('btn-ai').focus();
+  paintLimitAlert();}
+function setChatLog(open){const log=$('chat-log');log.hidden=!open;$('chat-peek').setAttribute('aria-expanded',String(open));if(open)log.scrollTop=log.scrollHeight;}
 function setView(view){
   document.body.dataset.view=view;const work=view==='workshop',frame=$('workspace');
   $('workshop').hidden=!work;$('tab-stage').classList.toggle('on',!work);$('tab-workshop').classList.toggle('on',work);
   $('tab-stage').setAttribute('aria-pressed',String(!work));$('tab-workshop').setAttribute('aria-pressed',String(work));
   if(work&&!frame.getAttribute('src'))frame.src='/classic';
-  if(work){$('attention').hidden=true;setBroadcast(false);}
+  if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openId!=null)closeCall();if(!$('ai-panel').hidden)setAIPanel(false,true);}
 }
 function setBroadcast(on){
-  document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('방송 모드 끝내기'):T('방송 모드');
+  document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('방송 모드 끝내기'):T('방송 모드');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on)closeRoleMenu();
   try{if(on&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){/* fullscreen is optional */}
 }
 function start(){
   Trinity.init($('trinity-canvas'),{onFrame});
-  if(params.get('broadcast')==='1'||attract)document.body.classList.add('broadcast');   // e.g. an OBS browser source: /?attract=1
+  if(params.get('broadcast')==='1'||attract){document.body.classList.add('broadcast');$('btn-broadcast').textContent=T('방송 모드 끝내기');$('btn-broadcast').setAttribute('aria-pressed','true');}   // e.g. an OBS browser source: /?attract=1
   $('tab-stage').onclick=()=>setView('stage');$('tab-workshop').onclick=()=>setView('workshop');$('attention-go').onclick=()=>setView('workshop');
-  $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled||replay)return;b.disabled=true;
+  $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled||replay)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');
     try{const r=await chooseProjectFolder();if(r)notice(r.ok?T('작업 폴더를 바꿨습니다 · ')+r.path:T('선택할 수 없는 폴더입니다 · ')+r.message);}
     catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (작업실 탭에서 경로를 직접 입력할 수 있습니다)'));}
-    finally{b.disabled=false;pollStatus();pollChat();}};
-  for(const label of document.querySelectorAll('.slot-label')){label.title=T('이 역할을 맡을 AI 바꾸기');label.onclick=e=>{e.stopPropagation();openRoleMenu(label);};}
-  document.addEventListener('click',e=>{if(!e.target.closest('#role-menu'))$('role-menu').hidden=true;});
+    finally{b.disabled=false;if(lastModel)paintNow(lastModel);pollStatus();pollChat();}};
+  for(const label of document.querySelectorAll('.slot-label')){label.title=T('이 역할을 맡을 AI 바꾸기');label.tabIndex=0;label.setAttribute('role','button');label.setAttribute('aria-haspopup','menu');label.setAttribute('aria-expanded','false');
+    label.onclick=e=>{e.stopPropagation();openRoleMenu(label);};label.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRoleMenu(label);}};}
+  document.addEventListener('click',e=>{if(!e.target.closest('#role-menu'))closeRoleMenu();});
   $('btn-replay').onclick=startReplay;$('replay-stop').onclick=stopReplay;
   $('btn-broadcast').onclick=()=>setBroadcast(!document.body.classList.contains('broadcast'));
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&document.body.classList.contains('broadcast'))setBroadcast(false);});
   for(const b of $('win-tabs').children)b.onclick=()=>{win=b.dataset.win;winAuto=false;repaint();};
   $('now-doing').onclick=()=>{if(liveCall)openCall(liveCall.id);};$('cp-close').onclick=closeCall;
-  $('btn-ai').onclick=()=>{const p=$('ai-panel');p.hidden=!p.hidden;if(!p.hidden){paintAI(true);pollAI();$('ai-close').focus();}paintLimitAlert();};$('ai-close').onclick=()=>{$('ai-panel').hidden=true;$('btn-ai').focus();paintLimitAlert();};
+  $('btn-ai').onclick=()=>setAIPanel($('ai-panel').hidden);$('ai-close').onclick=()=>setAIPanel(false);
   $('limit-alert').onclick=()=>{if($('ai-panel').hidden)$('btn-ai').click();};
   $('ai-interval').onchange=()=>saveAI(s=>{s.usage_poll_minutes=Number($('ai-interval').value);});
   $('ai-health').onclick=async()=>{const b=$('ai-health');b.disabled=true;
@@ -564,14 +597,16 @@ function start(){
     try{const res=await fetch('/ops/ai/refresh',{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken},body:'{}'});if(!res.ok)throw Error(String(res.status));
       await pollAI(true);setTimeout(()=>pollAI(true),6000);notice(T('세 CLI에 다시 묻는 중입니다. 잠시 뒤 값이 바뀝니다.'));}
     catch(e){notice(T('조회 요청 실패 · ')+e.message);}finally{b.disabled=false;}};
-  for(const b of $('cp-filters').children)b.onclick=()=>{callFilter=b.dataset.f;for(const o of $('cp-filters').children)o.classList.toggle('on',o===b);paintCall();};
-  $('chat-peek').onclick=()=>{const log=$('chat-log');log.hidden=!log.hidden;$('chat-peek').setAttribute('aria-expanded',String(!log.hidden));if(!log.hidden)log.scrollTop=log.scrollHeight;};
+  for(const b of $('cp-filters').children)b.onclick=()=>{callFilter=b.dataset.f;for(const o of $('cp-filters').children){o.classList.toggle('on',o===b);o.setAttribute('aria-pressed',String(o===b));}paintCall();};
+  $('chat-peek').onclick=()=>setChatLog($('chat-log').hidden);
   $('chat-form').addEventListener('submit',e=>{e.preventDefault();send($('chat-text').value);});
   $('chat-text').addEventListener('input',grow);
-  $('chat-text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send($('chat-text').value);}});
+  $('chat-text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();send($('chat-text').value);}});
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){$('chat-log').hidden=true;$('role-menu').hidden=true;if(!$('ai-panel').hidden){$('ai-panel').hidden=true;paintLimitAlert();return;}if(openId!=null){closeCall();return;}if(replay)stopReplay();return;}
-    if(e.target.closest('textarea,input,[contenteditable]')||e.ctrlKey||e.metaKey||e.altKey||document.body.dataset.view!=='stage')return;
+    if(e.key==='Escape'){   // one layer per press, the topmost first
+      if(!$('role-menu').hidden)closeRoleMenu(true);else if(!$('chat-log').hidden){setChatLog(false);if(e.target.id!=='chat-text')$('chat-peek').focus();}
+      else if(!$('ai-panel').hidden)setAIPanel(false);else if(openId!=null)closeCall();else if(replay)stopReplay();return;}
+    if(e.target.closest('textarea,input,select,[contenteditable]')||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.repeat||document.body.dataset.view!=='stage')return;
     if(e.key==='b'||e.key==='B'||e.key==='ㅠ')setBroadcast(!document.body.classList.contains('broadcast'));
     if(e.key==='r'||e.key==='R'||e.key==='ㄱ')startReplay();});
   setInterval(()=>{const d=new Date();$('top-clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');if(!replay)tickTimer();},1000);

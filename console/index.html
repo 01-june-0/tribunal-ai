@@ -32,9 +32,9 @@
 </header>
 
 <main id="stage">
-  <aside id="panel-now" class="glass" aria-live="polite">
+  <aside id="panel-now" class="glass" aria-label="지금 하는 일">
     <span class="kicker">지금</span>
-    <h2 id="now-headline">연결 중…</h2>
+    <h2 id="now-headline" aria-live="polite">연결 중…</h2>
     <p id="now-sub">작업 기록을 읽고 있습니다.</p>
     <div class="now-timer"><b id="now-elapsed">00:00</b><span id="now-stage">대기</span></div>
     <div id="now-eta" hidden><div class="eta-bar" aria-hidden="true"><i></i></div><small></small></div>
@@ -74,7 +74,7 @@
     </div>
   </section>
 
-  <aside id="panel-work" class="glass">
+  <aside id="panel-work" class="glass" aria-label="AI별 작업량">
     <div class="card-head">
       <span class="kicker">AI별 작업량</span>
       <div class="seg" id="win-tabs"><button type="button" data-win="mission">미션</button><button type="button" data-win="today">오늘</button><button type="button" data-win="all">전체</button></div>
@@ -119,5 +119,6 @@
   </div>
   <div id="ai-cards"></div>
 </section>
+<div id="toast" role="status" hidden></div>
 <div id="shell-error" role="alert" hidden></div>
 </body></html>
