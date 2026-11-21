@@ -166,3 +166,13 @@ def test_console_side():
     for part in ("function accountBox(p,key)", "accountPost('/ops/ai/account/reveal',{cli:key})", "},20000)", "if(act==='logout'&&!confirm(", "if(act==='switch'&&!confirm("):
         assert part in js, part
     assert "localStorage" not in js[js.index("const revealed={}"):js.index("function paintAI(force){")]     # an address is never kept
+
+
+def test_account_details_are_folded_away_until_asked_for():
+    js = (ROOT / "console" / "stage.js").read_text(encoding="utf-8")
+    css = (ROOT / "console" / "stage.css").read_text(encoding="utf-8")
+    assert "const open=!!accountOpen[key]||!!a.pending" in js and "wrap.append(tog);if(!open)return wrap;" in js   # closed: only the button
+    assert "tog.setAttribute('aria-expanded',String(open))" in js
+    assert "if(open&&revealed[key]){clearTimeout(revealed[key].timer);delete revealed[key];}" in js              # folding hides a revealed address
+    assert "accountOpen" not in js.replace("const revealed={},accountOpen={};", "").split("function accountBox")[0]   # nothing opens it but the user
+    assert ".ai-card-head{display:flex;flex-wrap:nowrap;" in css                                                   # the plan select stays on the first row

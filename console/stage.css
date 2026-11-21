@@ -271,12 +271,13 @@ body.broadcast #now-eta{display:none}
 #ai-close:hover{color:var(--text)}
 #ai-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .ai-card{--c:#fff;display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.035);border-top:2px solid var(--c)}
-.ai-card-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 8px}
+.ai-card-head{display:flex;flex-wrap:nowrap;align-items:center;gap:6px 8px;min-width:0}
+.ai-card-head>*{flex:none}.ai-card-head>strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
 .ai-card-head strong{font:600 15px var(--body);color:var(--c)}
 .ai-health{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap;margin-left:auto}
 .ai-health.ok{color:var(--ok);border-color:rgba(94,242,176,.4)}.ai-health.warn{color:var(--warn);border-color:rgba(255,196,107,.45)}.ai-health.bad{color:var(--bad);border-color:rgba(255,107,122,.5)}
 .ai-card-head .badge{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
-.ai-plan{height:26px;max-width:60%;min-width:0;flex:0 1 auto;padding:0 6px;border-radius:999px;border:1px dashed var(--line2);background:#0b1020;color:var(--muted);font:inherit;font-size:12px}
+.ai-plan{height:26px;max-width:150px;min-width:64px;flex:1 1 64px!important;text-overflow:ellipsis;padding:0 6px;border-radius:999px;border:1px dashed var(--line2);background:#0b1020;color:var(--muted);font:inherit;font-size:12px}
 .ai-limit-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-bottom:5px}
 .ai-limit-top span:last-child{text-align:right;color:#c6d2e8}
 .ai-bar{height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
@@ -288,8 +289,12 @@ body.broadcast #now-eta{display:none}
 .ai-check{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted);line-height:1.4}
 .ai-note{font-size:12px;color:var(--faint);margin:0}
 /* ---------- account: who is signed in, and the CLI's own sign-in / switch / sign-out */
-.ai-account{display:flex;flex-direction:column;gap:5px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.ai-account-k{font-size:12px;color:var(--muted)}
+.ai-account{display:flex;flex-direction:column;gap:8px}
+.ai-account-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:transparent;font-size:12px;color:var(--muted);text-align:left}
+.ai-account-toggle:hover,.ai-account.open .ai-account-toggle{color:var(--text);border-color:var(--line2)}
+.ai-account-toggle.need{color:var(--warn);border-color:rgba(255,196,107,.45)}
+.ai-account-toggle i{font-style:normal;opacity:.7}
+.ai-account-body{display:flex;flex-direction:column;gap:5px;padding:2px 2px 4px}
 .ai-account-line{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;color:#c6d2e8}
 .ai-account-who{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-variant-numeric:tabular-nums}
 .ai-eye{flex:none;height:24px;padding:0 8px;border-radius:7px;border:1px solid var(--line2);background:transparent;font-size:12px;color:var(--muted)}

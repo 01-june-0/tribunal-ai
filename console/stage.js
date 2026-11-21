@@ -392,7 +392,7 @@ function choiceRow(label,key,field,items,fixed){
 // ---- accounts: who each CLI is signed in as, and its own sign-in / switch / sign-out (core/cli_accounts.py)
 const ACC_METHOD={subscription:T('구독 로그인'),api_console:T('API 과금 로그인'),api_key:T('API 키 로그인'),other:T('로그인됨')};
 const ACC_ACTION={login:T('로그인'),switch:T('계정 변경'),logout:T('로그아웃'),open:T('터미널에서 열기')};
-const revealed={};let accountBusy=false;
+const revealed={},accountOpen={};let accountBusy=false;
 async function accountPost(path,body){
   const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken},body:JSON.stringify(body)}),out=await res.json().catch(()=>({}));
   if(!res.ok)throw Error(out.error||out.message||(T('서버 응답 ')+res.status));return out;}
@@ -423,7 +423,13 @@ async function accountAction(p,key,act){
 }
 function accountBox(p,key){
   const a=(ai.accounts||{})[key];if(!a)return null;
-  const box=el('div','','ai-account'),line=el('div','','ai-account-line');box.append(el('span',T('계정'),'ai-account-k'),line);
+  // folded away until asked for: one quiet button per card. It opens by itself only while a sign-in is under way.
+  const open=!!accountOpen[key]||!!a.pending,wrap=el('div','','ai-account'+(open?' open':'')),box=el('div','','ai-account-body'),line=el('div','','ai-account-line');
+  const need=a.installed!==false&&a.signed_in===false,tog=el('button','','ai-account-toggle'+(need?' need':''));tog.type='button';tog.dataset.k=key+':acct';tog.setAttribute('aria-expanded',String(open));
+  tog.append(el('span',T('계정')+(a.pending?T(' · 로그인 진행 중'):need?T(' · 로그인 필요'):'')),el('i',open?'▴':'▾'));
+  tog.onclick=()=>{accountOpen[key]=!open;if(open&&revealed[key]){clearTimeout(revealed[key].timer);delete revealed[key];}paintAI(true);};
+  wrap.append(tog);if(!open)return wrap;
+  wrap.append(box);box.append(line);
   if(a.loading)line.append(el('span',T('계정을 확인하는 중…')));
   else if(a.installed===false)line.append(el('span',T('CLI가 설치되어 있지 않습니다.')));
   else if(a.signed_in===false)line.append(el('span',T('로그인되어 있지 않습니다.')));
@@ -440,7 +446,7 @@ function accountBox(p,key){
     if(act==='logout')b.className='danger';if(act==='login')b.className='primary';
     b.onclick=()=>accountAction(p,key,act);row.append(b);}
   if(row.children.length)box.append(row);
-  return box;
+  return wrap;
 }
 function paintAI(force){
   const box=$('ai-cards');if($('ai-panel').hidden)return;

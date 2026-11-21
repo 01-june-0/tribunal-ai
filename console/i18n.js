@@ -324,6 +324,8 @@ const EN={
   " (+기록 전 ": " (+before records ",
   "회)": ")",
   "AI 작업 현황 · 5초마다 갱신": "AI work status · refreshed every 5 s",
+  " · 로그인 진행 중": " · signing in",
+  " · 로그인 필요": " · sign-in needed",
   "계정을 확인하는 중…": "Checking the account…",
   "{0} 로그아웃 명령이 실패했습니다. 터미널에서 직접 확인해 주세요.": "The {0} sign-out command failed. Check it in a terminal.",
   "AI가 일하는 중이라 지금은 할 수 없습니다. 작업이 끝난 뒤 다시 시도해 주세요.": "An AI is working, so this cannot be done now. Try again when the work is finished.",
