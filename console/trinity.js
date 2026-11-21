@@ -1,5 +1,5 @@
 'use strict';
-/* TRINITY stage: three AI cores feeding one fused core. Pure WebGL2, no libraries, no external assets (CSP: self).
+/* TRINITY stage: three glass orbs (the AIs) feeding one larger orb (the fused core). Pure WebGL2, no libraries, no external assets (CSP: self).
    Nothing here is decorative-random: every speed, brightness and colour is driven through Trinity.set() by the
    live work ledger (/ops/activity). Slots are roles: 0 ARCHITECT (top), 1 MAKER (left), 2 INSPECTOR (right). */
 window.Trinity=(function(){
@@ -28,43 +28,36 @@ void main(){
   vec3 col=uColor[o];float act=pick(uAct,o);float t=uTime;
   vec3 p=vec3(0.);float size=.014;float alpha=1.;
   float energy=clamp(uCore+uPulse*.6,0.,1.4);
-  if(kind<.5){                                   // 0 fused core: one orbital ribbon per AI, intertwined
-    float th=TAU*aSeed.x+uPhC*(.6+.8*aSeed.w);
+  if(kind<.5){                                   // 0 fused core: one comet per AI circling the core, with a long tail
     float w=aSeed.y-.5;
-    float tw=th*1.5+t*.2+float(o)*2.1;
-    float R=.47+.03*(aSeed.z-.5)+.028*sin(th*5.+t*1.7+float(o)*2.)*(.3+energy);
-    float W=.105*(1.+.6*energy);
-    vec3 l=vec3(cos(th)*(R+w*W*cos(tw)),w*W*sin(tw),sin(th)*(R+w*W*cos(tw)));
+    float head=fract(uPhC*.09+float(o)/3.),back=fract(head-aSeed.x);
+    float th=TAU*aSeed.x;float R=.47+.012*(aSeed.z-.5)*(1.+6.*back);
+    vec3 l=vec3(cos(th)*R,w*.02*back,sin(th)*R);
     p=rotY(rotX(l,1.18),float(o)*TAU/3.+t*.07);
-    size=.009+.012*aSeed.z;alpha=.34+.36*min(energy,1.);
-    col=mix(col,vec3(1.),(.04+.22*min(energy,1.))*aSeed.z*aSeed.z);
+    alpha=exp(-back*6.5)*(.45+.55*min(energy,1.))+.025;size=.007+.016*exp(-back*14.);
+    col=mix(col,vec3(1.),.6*exp(-back*22.));
   }else if(kind<1.5){                            // 1 stream: an AI pours its work into the core
     float u=fract(aSeed.x+pick(uPhS,o)*(.6+.8*aSeed.y));
     vec3 a=uSlot[o];float e=u*u*(3.-2.*u);
     vec3 base=a*(1.-e);
     vec3 dir=normalize(-a);vec3 n1=normalize(cross(dir,vec3(0.,0.,1.)));vec3 n2=cross(dir,n1);
     float ang=aSeed.z*TAU+u*7.+t*.5;
-    float rad=(.012+.12*aSeed.w*aSeed.w)*sin(3.14159*u)*(.65+.7*act);
+    float rad=(.005+.050*aSeed.w*aSeed.w)*sin(3.14159*u)*(.65+.7*act);   // a slim thread: the orb it leaves stays visible
     p=base+(n1*cos(ang)+n2*sin(ang))*rad;
     float vis=step(aSeed.w,.2+.8*act);          // idle: only a thin thread stays lit
     alpha=vis*(.16+.84*act)*smoothstep(0.,.07,u)*(1.-.6*smoothstep(.82,1.,u));
-    size=(.010+.017*aSeed.w)*(.8+.5*act);
+    size=(.007+.012*aSeed.w)*(.8+.5*act);
     col=mix(col,vec3(1.),e*e*.35*uCore);
-  }else if(kind<2.5){                            // 2 AI node: dense body + orbit ring
+  }else if(kind<2.5){                            // 2 AI node: a glass orb — bright rim, a highlight, slow waves on its surface
     vec3 c=uSlot[o];
-    if(aSeed.z<.72){
-      vec3 d=sph(aSeed.x,aSeed.y);
-      float rr=(.085+.055*aSeed.w)*(1.+.32*act+.06*sin(t*2.2+aSeed.w*TAU)*(.4+act));
-      d=rotY(rotX(d,t*.3+float(o)),t*.45);
-      p=c+d*rr;col=mix(col,vec3(1.),.28*(1.-aSeed.w));
-      alpha=.30+.5*act;size=.011+.013*aSeed.w;
-    }else{
-      float th=TAU*aSeed.x+pick(uPhN,o)*(.8+.4*aSeed.y);
-      float rr=.19+.022*(aSeed.w-.5)+.03*act;
-      vec3 l=vec3(cos(th)*rr,(aSeed.y-.5)*.014,sin(th)*rr);
-      p=c+rotZ(rotX(l,1.2),float(o)*2.1+t*.1);
-      alpha=(.22+.78*act)*(.4+.6*pow(aSeed.x,3.));size=.010;
-    }
+    vec3 d=sph(aSeed.x,aSeed.y);d=rotY(rotX(d,float(o)*1.7+t*.15),t*.22);
+    float wave=.05*sin(d.x*5.+t*1.8+float(o))*sin(d.y*6.-t*1.3)+.03*sin(d.z*9.+t*2.4);
+    float inner=step(aSeed.z,.16);                // a sixth of the points glow inside the shell
+    float rr=.214*(1.+.14*act)*(1.+wave*(.6+act))*mix(1.,.5*aSeed.w,inner);
+    p=c+d*rr;
+    float rim=1.-abs(d.z);rim*=rim;float spec=pow(max(0.,dot(d,normalize(vec3(-.4,.55,.75)))),26.);
+    alpha=mix((.06+.55*rim)*(.5+.6*act)+spec*.9,.16+.42*act,inner);size=.009+.004*aSeed.w+spec*.012;
+    col=mix(col,vec3(1.),.12+.55*spec+.22*rim*aSeed.w);
   }else if(kind<3.5){                            // 3 depth dust
     p=(aSeed.xyz*2.-1.)*vec3(3.8,2.3,2.8);p=rotY(p,t*.012);p.y+=sin(t*.07+aSeed.w*TAU)*.08;
     alpha=.09+.22*pow(.5+.5*sin(t*(.3+aSeed.w)+aSeed.x*40.),3.);
@@ -77,12 +70,15 @@ void main(){
     float band=pow(.5+.5*sin(aSeed.x*TAU*4.),4.);
     alpha=(.045+.95*edge)*(.25+.75*band)*smoothstep(0.,.06,u)*smoothstep(1.,.94,u);
     col=mix(uColor[o],uColor[n],u);size=.009+.016*aSeed.w*(.3+edge);
-  }else if(kind<5.5){                            // 5 nucleus: where the three become one
+  }else if(kind<5.5){                            // 5 nucleus: where the three become one — a large breathing glass orb with a glowing heart
     vec3 d=sph(aSeed.x,aSeed.y);
-    float rr=(.035+.115*pow(aSeed.z,1.5))*(1.+.26*uPulse+.10*sin(t*1.6+aSeed.w*TAU)*(.3+uCore));
-    d=rotY(rotZ(d,t*.21+aSeed.w),uPhC*.5);p=d*rr;
-    col=mix(col,vec3(1.,.96,.9),.3+.62*uCore*(1.-aSeed.z));
-    alpha=.22+.5*uCore;size=.010+.017*(1.-aSeed.z);
+    vec3 q=rotY(rotX(d,t*.11),uPhC*.2);
+    float wave=.07*sin(q.x*4.+t*1.4)*sin(q.y*5.-t*1.1)+.04*sin(q.z*8.+t*2.);
+    float inner=step(aSeed.z,.30);
+    float rr=.215*(1.+.10*uCore+.22*uPulse)*(1.+wave*(.5+uCore))*mix(1.,.45*aSeed.w,inner);p=q*rr;
+    float rim=1.-abs(q.z);rim*=rim;float spec=pow(max(0.,dot(q,normalize(vec3(-.4,.55,.75)))),30.);
+    alpha=mix((.05+.5*rim)*(.5+.7*uCore)+spec,.20+.55*uCore,inner);size=.009+.005*aSeed.w+spec*.014;
+    col=mix(col,vec3(1.,.97,.92),inner>.5?.45+.4*uCore:.10+.6*spec+.2*rim);
   }else if(kind<6.5){                            // 6 verification scanner (Director running tests)
     float sgn=aSeed.y<.5?1.:-1.;
     float th=TAU*aSeed.x+t*1.3*sgn;float rr=.70+.016*(aSeed.w-.5);

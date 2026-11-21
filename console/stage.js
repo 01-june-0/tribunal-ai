@@ -365,7 +365,7 @@ function onFrame(f){
   $('stage-center').classList.toggle('compact',u<185);              // small scene: labels drop their stat line
   placeIntro(f);
   labels.forEach((n,i)=>{const [x,y]=f.slots[i],w=n.offsetWidth,h=n.offsetHeight;
-    let lx=i===0?x+u*.27:x-w/2,ly=i===0?y-h+4:y+u*.27;                 // ARCHITECT: above-right; MAKER/INSPECTOR: centred below
+    let lx=i===0?x+u*.31:x-w/2,ly=i===0?y-h/2:y+u*.31;                 // ARCHITECT: above-right; MAKER/INSPECTOR: centred below
     lx=Math.min(Math.max(lx-center.left,2),center.width-w-2);ly=Math.max(ly-center.top,2);
     n.style.transform='translate('+lx.toFixed(1)+'px,'+ly.toFixed(1)+'px)';});
 }
