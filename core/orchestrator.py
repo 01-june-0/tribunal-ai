@@ -854,11 +854,13 @@ class Orchestrator:
                 except Exception as exc:              # the extra check must never take a finished review down with it
                     logger.error(f"[Inspector tests] could not be run: {exc}")
                     self.sm.log_audit(run_id, "ORCHESTRATOR", "INSPECTOR_TESTS_ERROR", str(exc)[:500])
+                    self._save_json(run_id, "inspector_tests.json", {"proposed": 1, "files": [], "rejected": [], "ran": False,
+                                                                    "passed": None, "skipped": "could not be run"})
                 self._save_json(run_id, "review.json", review)
             else:
                 review.tests = []
                 if self._load_json(run_id, "inspector_tests.json") is not None:      # a failure of an earlier round is no longer current
-                    self._save_json(run_id, "inspector_tests.json", {"proposed": 0, "files": [], "rejected": [], "ran": False, "passed": None})
+                    self._save_json(run_id, "inspector_tests.json", {"proposed": 0, "files": [], "rejected": [], "ran": False, "passed": None, "not_asked": True})
         return review, stop
 
     def _review_with_failover(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],

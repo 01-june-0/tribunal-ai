@@ -26,6 +26,22 @@ const STAGE_LABEL={PLANNING:T('설계'),ORDER_READY:T('제작 준비'),BUILDING:
 const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료')};
 const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
 const MISSION_BADGE={DONE:[T('완료'),'ok'],INCOMPLETE:[T('예산 소진'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
+// The inspector's own tests in one step (server: inspector_tests.summary) → what to show, or null when there is no record.
+const ITEST_REASON={'no acceptable test file':T('받아들일 수 있는 테스트 파일이 없습니다'),'no test command is configured':T('테스트 명령이 설정되어 있지 않습니다'),"the project's own tests do not pass yet":T('프로젝트 자체 테스트가 아직 통과하지 못했습니다'),'the worktree is too large to copy':T('작업 폴더가 너무 커서 복사하지 않았습니다'),'the run record is inside the worktree':T('실행 기록이 작업 폴더 안에 있습니다'),'the work folder is missing':T('작업 폴더를 찾지 못했습니다'),'could not be run':T('실행하는 중에 오류가 났습니다'),
+  'path and content must be text':T('경로와 내용이 글자가 아닙니다'),'must be a repo-relative path with forward slashes':T('프로젝트 기준 상대 경로가 아닙니다'),'must be a plain relative path inside a test directory':T('테스트 폴더 안의 단순한 상대 경로가 아닙니다'),'file name must mark it as an inspector test (e.g. test_inspector_<topic>.py)':T('파일 이름이 감리 테스트 형식이 아닙니다'),'must be inside a test directory (tests/, test/, __tests__/, spec/)':T('테스트 폴더 안이 아닙니다'),'protected path':T('보호된 경로입니다'),'its directory does not exist in the project':T('프로젝트에 없는 폴더입니다'),'a file with this name already exists':T('같은 이름의 파일이 이미 있습니다'),'outside the worktree':T('작업 폴더 밖입니다'),'listed twice':T('두 번 적혀 있습니다'),'contains code that could move real money':T('실제 돈을 움직일 수 있는 코드가 들어 있습니다')};
+function itestReason(r){return ITEST_REASON[r]||(/^larger than /.test(r)?T('파일이 너무 큽니다'):/^more than /.test(r)?T('파일 수가 한도를 넘었습니다'):r);}
+function inspectorTests(t){
+  if(!t||!t.status)return null;
+  const files=t.files||[],n=files.length,tip=[];
+  const label=t.status==='passed'?T('감리 테스트 통과 · 파일 {0}개',n):t.status==='failed'?T('감리 테스트 실패 · 파일 {0}개',n):t.status==='skipped'?T('감리 테스트 건너뜀'):T('감리 테스트 제안 없음');
+  if(t.status==='none')tip.push(T('INSPECTOR가 추가 테스트를 제안하지 않았습니다. 기존 테스트가 기준을 충분히 확인한다고 본 경우입니다.'));
+  if(n)tip.push(T('INSPECTOR가 쓴 테스트를 TRIBUNAL이 버리는 복사본에서 실행했습니다: {0}',files.join(', ')));
+  if(n&&t.counts&&t.counts.total!=null)tip.push(T('함께 실행한 전체 테스트 {0}/{1} 통과',t.counts.passed,t.counts.total));
+  if(t.status==='failed')tip.push(T('실패는 수정 요청으로 처리됩니다.'));
+  if(t.reason)tip.push(T('건너뛴 이유: {0}',itestReason(t.reason)));
+  for(const r of t.rejected||[])tip.push(T('받지 않은 파일: {0} ({1})',r.path,itestReason(r.reason)));
+  return {label,cls:t.status==='passed'?'ok':t.status==='failed'?'bad':t.status==='skipped'?'warn':'none',tip};
+}
 const PULSE={ok:[.35,1,.7],bad:[1,.32,.4],warn:[1,.78,.4],done:[1,.93,.75]};
 
 let activity=null,status=null,win=null,winAuto=true,replay=null,lastModel=null,center=null,timerBase=null;
@@ -114,7 +130,7 @@ function liveModel(){
   for(const p of Object.keys(AI))stats[p]=today[p]?T('오늘 {0}회 · {1} 토큰',today[p].calls,(today[p].exact_tokens<today[p].tokens?'~':'')+tok(today[p].tokens)):T('오늘 호출 없음');
   return {mode:'live',working,assign:assignment(),...phaseOf(working,verifying,!!(focus&&focus.live)),
     mission:focus&&{goal:focus.goal,project:focus.project,status:focus.status,live:focus.live,max:Math.max(focus.max_steps||0,focus.steps.length),
-      steps:focus.steps.map(s=>({index:s.index,state:s.state,tests:s.tests})),passed:focus.passed_steps,updated:utc(focus.updated_at),id:focus.mission_id,
+      steps:focus.steps.map(s=>({index:s.index,state:s.state,tests:s.tests,itests:s.inspector_tests})),passed:focus.passed_steps,updated:utc(focus.updated_at),id:focus.mission_id,
       deliverable:focus.deliverable,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
     usage:usage[win]||{by_role:{},by_provider:{},total:{calls:0,seconds:0,tokens:0,exact_tokens:0}},windows:{mission:!!usage.mission,today:!!usage.today,all:!!usage.all},
     calls:(a.recent_calls||[]).slice(0,6).map(c=>({id:c.id,key:c.at+c.role+c.provider,role:c.role,provider:c.provider,seconds:c.seconds,tokens:c.tokens,exact:c.exact,status:c.status,at:utc(c.at)})),
@@ -164,7 +180,7 @@ function tickTimer(){
 }
 function paintMission(m){
   const ms=m.mission,badge=$('mission-badge'),steps=$('mission-steps');
-  if(!ms){badge.textContent='—';badge.className='badge';$('mission-goal').textContent=T('아직 미션 기록이 없습니다. 지시를 보내면 여기에 단계별 진행이 표시됩니다.');steps.replaceChildren();$('mission-meta').textContent='';return;}
+  if(!ms){badge.textContent='—';badge.className='badge';$('mission-goal').textContent=T('아직 미션 기록이 없습니다. 지시를 보내면 여기에 단계별 진행이 표시됩니다.');steps.replaceChildren();$('mission-meta').textContent='';delete $('mission-meta').dataset.sig;return;}
   const running=ms.status==='RUNNING',b=running?(ms.live?[T('진행 중'),'run']:[T('중단됨 · 재개 대기'),'warn']):(MISSION_BADGE[ms.status]||[ms.status,'']);
   badge.textContent=b[0];badge.className='badge '+b[1];$('mission-goal').textContent=ms.goal;$('mission-goal').title=ms.goal;
   while(steps.children.length>ms.max)steps.lastChild.remove();
@@ -173,7 +189,10 @@ function paintMission(m){
     chip.className=s?(STEP_CLASS[s.state]||'run'):'todo';chip.title=s?T('{0}단계 · {1}',i+1,STATE_KO[s.state]||T('진행 중')):T('남은 단계 예산');
     const mark=STEP_MARK[chip.className]+(i+1);if(chip.textContent!==mark)chip.textContent=mark;chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);}
   const last=[...ms.steps].reverse().find(s=>s.tests);
-  $('mission-meta').textContent=T('{0}개 단계 통과 · {1}/{2}단계 사용',ms.passed,ms.steps.length,ms.max)+(last?T(' · 테스트 {0}/{1}',last.tests.passed,last.tests.total):'');
+  const meta=$('mission-meta'),text=T('{0}개 단계 통과 · {1}/{2}단계 사용',ms.passed,ms.steps.length,ms.max)+(last?T(' · 테스트 {0}/{1}',last.tests.passed,last.tests.total):'');
+  const it=inspectorTests((ms.steps[ms.steps.length-1]||{}).itests),sig=text+'|'+(it?it.cls+it.label+it.tip.join('|'):'');      // the newest step only: an older step's outcome would read as the current one
+  if(meta.dataset.sig!==sig){meta.dataset.sig=sig;const open=!!meta.querySelector('details[open]');meta.replaceChildren(text);
+    if(it){const box=el('details','','itest '+it.cls);box.open=open&&it.tip.length>0;box.append(el('summary',it.label));for(const line of it.tip)box.append(el('p',line));meta.append(box);}}
   paintDelivery(m);
   if(m.mode!=='live')return;
   for(const s of ms.steps){const key=ms.id+':'+s.index,prev=seenSteps.get(key);seenSteps.set(key,s.state);
@@ -583,7 +602,7 @@ function replayTick(){
   }
   for(const c of r.calls)if(c.v0<=vt&&!c.announced){c.announced=true;r.events.unshift({key:'c'+c.v0,color:AI[c.provider].css,label:T('{0} 시작',(ROLE_KO[c.role]||c.role).split(' · ')[1]),sub:AI[c.provider].name,when:T('기록')});}
   const steps=(r.data.steps||[]).filter(s=>{const first=r.calls.find(c=>c.run_id===s.run_id);return first&&first.v0<=vt;})
-    .map(s=>{const last=r.lastCall.get(s.run_id);return {index:s.index,state:last&&last.v1<=vt?s.state:null,tests:last&&last.v1<=vt?s.tests:null};});
+    .map(s=>{const last=r.lastCall.get(s.run_id);return {index:s.index,state:last&&last.v1<=vt?s.state:null,tests:last&&last.v1<=vt?s.tests:null,itests:last&&last.v1<=vt?s.inspector_tests:null};});
   const verifying=!working.length&&r.gaps.some(g=>g[0]<=vt&&vt<g[1]),stats={};
   for(const p of Object.keys(AI)){const b=usage.by_provider[p];stats[p]=b?T('{0}회 · {1} 토큰',b.calls,tok(b.tokens)):'';}
   const finished=vt>=r.total;

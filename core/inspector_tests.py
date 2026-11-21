@@ -125,6 +125,8 @@ def run(orch, run_id: str, review, worktree_path: Optional[str], verification: O
     out_dir = orch._get_run_dir(run_id) / "inspector_tests"
     shutil.rmtree(out_dir, ignore_errors=True)     # also clears a copy left behind by an interrupted run
     if not tests or not worktree_path or not Path(worktree_path).is_dir():
+        if tests:
+            record["skipped"] = "the work folder is missing"
         orch._save_json(run_id, "inspector_tests.json", record)
         return
     accepted, record["rejected"] = select(tests, worktree_path)
@@ -177,3 +179,28 @@ def previous_failure(orch, run_id: str) -> Optional[str]:
     if not isinstance(record, dict) or record.get("passed") is not False:
         return None
     return "files: " + ", ".join(record.get("files") or []) + "\noutput tail:\n" + str(record.get("output_tail") or "")[-1400:]
+
+
+def summary(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """What the console shows about a run's inspector tests, from its run record. None when there is no record (the
+    check was off, or the run never reached a review). Read-only: nothing is created."""
+    try:
+        record = json.loads((Path(run_dir) / "inspector_tests.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record.get("not_asked"):       # the inspector was not asked in the last round
+        return None
+    listed = lambda key: record.get(key) if isinstance(record.get(key), list) else []
+    files = [f[:200] for f in listed("files") if isinstance(f, str)][:MAX_FILES]
+    rejected = [{"path": str(r.get("path"))[:200], "reason": str(r.get("reason"))[:120]}
+                for r in listed("rejected") if isinstance(r, dict)][:10]
+    counts = record.get("test_counts") if isinstance(record.get("test_counts"), dict) else None
+    if not record.get("proposed"):
+        status = "none"                             # the inspector proposed nothing: the existing tests were enough
+    elif record.get("ran"):
+        status = "passed" if record.get("passed") else "failed"
+    else:
+        status = "skipped"                          # proposed, but nothing could be run
+    return {"status": status, "files": files, "rejected": rejected,
+            "counts": {k: counts.get(k) for k in ("passed", "failed", "total")} if counts else None,
+            "reason": (str(record.get("skipped"))[:120] if record.get("skipped") else None) if status == "skipped" else None}

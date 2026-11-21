@@ -778,11 +778,20 @@ def build_replay_payload(mission_id: str = "") -> dict:
         steps = [{"index": s["index"], "run_id": s.get("run_id"),
                   "state": (s.get("result") or {}).get("final_state"),
                   "goal": (s.get("order") or {}).get("goal", "")[:160],
-                  "tests": (s.get("result") or {}).get("tests")} for s in m.get("steps", [])]
+                  "tests": (s.get("result") or {}).get("tests"),
+                  "inspector_tests": _inspector_tests(s.get("run_id"))} for s in m.get("steps", [])]
         return {"mission_id": m["mission_id"], "goal": m.get("goal", "")[:400], "status": m.get("status"),
                 "project": Path(m.get("project_path", "")).name, "max_steps": m.get("max_steps"),
                 "steps": steps, "calls": calls}
     return {"mission_id": None, "calls": [], "steps": []}
+
+
+def _inspector_tests(run_id) -> Optional[dict]:
+    """The outcome of the inspector's own tests in one run, for the console (core/inspector_tests.py)."""
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", run_id) or ".." in run_id:
+        return None
+    from core import inspector_tests
+    return inspector_tests.summary(DIRECTOR_ROOT / "runs" / run_id)
 
 
 def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
@@ -797,6 +806,7 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
         return {"index": step["index"], "goal": (step.get("order") or {}).get("goal", "")[:220],
                 "run_id": step.get("run_id"), "state": state, "state_ko": STAGE_KO.get(state, state),
                 "tests": res.get("tests"), "review": res.get("review_verdict"), "repairs": res.get("repair_rounds"),
+                "inspector_tests": _inspector_tests(step.get("run_id")),
                 "builds_on_failed_attempt": bool(step.get("builds_on_failed_attempt")),
                 "note": (res.get("stop_detail") or "")[:220] if state not in ("PASS", None) else ""}
     applied = m.get("applied") or None

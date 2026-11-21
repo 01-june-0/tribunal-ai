@@ -167,3 +167,83 @@ def test_the_pipeline_runs_them_after_the_review(project, tmp_path, monkeypatch)
     assert it.previous_failure(orch, "RUN-2") is None                       # an old failure is cleared when the check is off
     orch._review_with_failover = lambda *a: (None, {"final_state": "FAIL"})   # a review that stopped the run is passed through
     assert Orchestrator.run_inspector_with_failover(orch, "RUN-3", None, {"passed": True}, {}, str(project), LOG, []) == (None, {"final_state": "FAIL"})
+
+
+# ---- what the console shows -----------------------------------------------------------------------------------------
+def _summary(tmp_path, record):
+    (tmp_path / "inspector_tests.json").write_text(json.dumps(record), encoding="utf-8")
+    return it.summary(tmp_path)
+
+
+def test_summary_tells_the_four_outcomes_apart(tmp_path):
+    assert it.summary(tmp_path) is None                                      # no record: the screen shows nothing
+    assert _summary(tmp_path, {"proposed": 0, "files": [], "rejected": [], "ran": False, "passed": None})["status"] == "none"
+    ok = _summary(tmp_path, {"proposed": 1, "files": ["tests/test_inspector_a.py"], "rejected": [], "ran": True, "passed": True,
+                             "test_counts": {"passed": 9, "failed": 0, "total": 9, "extra": 1}, "output_tail": "x" * 4000})
+    assert ok["status"] == "passed" and ok["files"] == ["tests/test_inspector_a.py"] and ok["counts"] == {"passed": 9, "failed": 0, "total": 9}
+    assert "output_tail" not in ok                                           # test output is not sent to the page
+    bad = _summary(tmp_path, {"proposed": 1, "files": ["tests/test_inspector_a.py"], "rejected": [], "ran": True, "passed": False})
+    assert bad["status"] == "failed" and bad["counts"] is None
+    skipped = _summary(tmp_path, {"proposed": 2, "files": [], "ran": False, "passed": None, "skipped": "no acceptable test file",
+                                  "rejected": [{"path": "src/x.py", "reason": "must be inside a test directory"}]})
+    assert skipped["status"] == "skipped" and skipped["reason"] == "no acceptable test file" and skipped["rejected"][0]["path"] == "src/x.py"
+
+
+def test_summary_survives_a_damaged_record(tmp_path):
+    (tmp_path / "inspector_tests.json").write_text("{not json", encoding="utf-8")
+    assert it.summary(tmp_path) is None
+    assert _summary(tmp_path, ["a list"]) is None
+    odd = _summary(tmp_path, {"proposed": 1, "files": "nope", "rejected": "nope", "ran": True, "passed": True, "test_counts": 3})
+    assert odd["status"] == "passed" and odd["files"] == [] and odd["rejected"] == [] and odd["counts"] is None
+
+
+def test_the_mission_view_carries_it_per_step_and_only_for_plain_run_ids(tmp_path, monkeypatch):
+    import dashboard_server as d
+    monkeypatch.setattr(d, "DIRECTOR_ROOT", tmp_path)
+    run = tmp_path / "runs" / "RUN-1"
+    run.mkdir(parents=True)
+    (run / "inspector_tests.json").write_text(json.dumps({"proposed": 1, "files": ["tests/test_inspector_a.py"], "ran": True, "passed": True}), encoding="utf-8")
+    assert d._inspector_tests("RUN-1")["status"] == "passed"
+    for bad in (None, "", "../RUN-1", "RUN-1/..", "a/b", "..", 7):
+        assert d._inspector_tests(bad) is None, bad
+    assert d._inspector_tests("RUN-2") is None and not (tmp_path / "runs" / "RUN-2").exists()      # reading creates nothing
+
+
+def test_both_screens_show_the_outcome():
+    console = Path(__file__).resolve().parents[1] / "console"
+    stage, workshop = (console / "stage.js").read_text(encoding="utf-8"), (console / "console.js").read_text(encoding="utf-8")
+    assert "itests:s.inspector_tests" in stage and "inspectorTests(" in stage and "itestLabel(s.inspector_tests)" in workshop
+    for text in ("감리 테스트 통과 · 파일 {0}개", "감리 테스트 실패 · 파일 {0}개", "감리 테스트 건너뜀", "감리 테스트 제안 없음"):
+        assert text in stage and text in workshop, text
+
+
+def test_a_round_that_did_not_ask_shows_nothing_and_a_crash_shows_as_skipped(tmp_path):
+    assert _summary(tmp_path, {"proposed": 0, "files": [], "rejected": [], "ran": False, "passed": None, "not_asked": True}) is None
+    assert _summary(tmp_path, {"proposed": 1, "files": [], "rejected": [], "ran": False, "passed": None, "skipped": "could not be run"})["reason"] == "could not be run"
+    source = (Path(__file__).resolve().parents[1] / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert '"not_asked": True' in source and '"skipped": "could not be run"' in source
+
+
+def test_proposed_tests_without_a_work_folder_say_why(tmp_path):
+    orch = FakeOrch(tmp_path)
+    rv = ReviewResultSchema(verdict="pass", p0=[], p1=[], p2=[], summary="ok", tests=[{"path": "tests/test_inspector_a.py", "content": GOOD}])
+    it.run(orch, "RUN", rv, str(tmp_path / "gone"), {"passed": True}, LOG)
+    assert orch.saved["inspector_tests.json"]["skipped"] == "the work folder is missing"
+
+
+def test_every_fixed_reason_has_a_korean_text_on_the_stage():
+    stage = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "core" / "inspector_tests.py").read_text(encoding="utf-8")
+    import re
+    rejecting = source[source.index("def _reject"):source.index("def select")]
+    reasons = set(re.findall(r'return "([^"{\n]+)"', rejecting)) | set(re.findall(r'reason = "([^"{\n]+)"', source)) | {
+        "no acceptable test file", "no test command is configured", "the project's own tests do not pass yet",
+        "the worktree is too large to copy", "the run record is inside the worktree", "the work folder is missing", "could not be run"}
+    assert len(reasons) >= 16
+    for reason in reasons:
+        assert ("'" + reason + "':") in stage or ('"' + reason + '":') in stage, reason
+
+
+def test_the_replay_carries_it_too():
+    source = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
+    assert source.count('"inspector_tests": _inspector_tests(') == 2

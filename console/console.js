@@ -54,6 +54,8 @@ function setupRoles(){
 // ---------------------------------------------------------------- AI work visibility (missions, who works now, workload)
 const PROVIDER={ANTHROPIC:'Claude',OPENAI:'Codex',GOOGLE:'Antigravity'},ROLE={ARCHITECT:T('ARCHITECT · 설계'),MAKER:T('MAKER · 제작'),INSPECTOR:T('INSPECTOR · 감리'),OTHER:T('기타')};
 const STEP_CLASS={PASS:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
+function itestLabel(t){if(!t||!t.status)return '';const n=(t.files||[]).length;
+ return ' · '+(t.status==='passed'?T('감리 테스트 통과 · 파일 {0}개',n):t.status==='failed'?T('감리 테스트 실패 · 파일 {0}개',n):t.status==='skipped'?T('감리 테스트 건너뜀'):T('감리 테스트 제안 없음'));}
 const MISSION_STATUS={DONE:T('완료'),INCOMPLETE:T('예산 소진'),BLOCKED:T('사용자 결정 필요'),FAILED:T('실패')};
 let activityBusy=false,usageWindow='mission';
 function fmtTime(sec){sec=Math.round(sec||0);if(sec<60)return sec+T('초');const m=Math.floor(sec/60);if(m<60)return m+T('분')+(m<10&&sec%60?' '+(sec%60)+T('초'):'');return Math.floor(m/60)+T('시간 ')+(m%60)+T('분');}
@@ -93,7 +95,7 @@ function paintMission(focus){
  for(let i=1;i<=Math.max(focus.max_steps||0,focus.steps.length);i++){const s=focus.steps.find(x=>x.index===i);const kind=s?(STEP_CLASS[s.state]||'run'):'todo',chip=el('span',STEP_MARK[kind]+i,'chip '+kind);chip.title=s?(T('{0}단계 · ',i)+((s.state_ko&&T(s.state_ko))||T('진행 중'))+' · '+s.goal):T('남은 단계 예산');chip.setAttribute('role','img');chip.setAttribute('aria-label',chip.title);bar.append(chip);}
  m.append(bar,el('small',focus.passed_steps+T('개 단계 통과 · ')+focus.steps.length+'/'+focus.max_steps+T('단계 사용 · 갱신 ')+ago(focus.updated_at),'ai-sub'));
  const list=el('details');list.append(el('summary',T('단계별 결과')));
- for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?(T(' · 테스트 ')+s.tests.passed+'/'+s.tests.total):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 리뷰 ')+s.review:'')+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}
+ for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?(T(' · 테스트 ')+s.tests.passed+'/'+s.tests.total):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 리뷰 ')+s.review:'')+itestLabel(s.inspector_tests)+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}
  m.append(list);
  if(focus.summary){const sm=el('details');sm.append(el('summary',T('ARCHITECT 요약')),el('p',focus.summary));m.append(sm);}
  if(focus.blocked_reason){m.append(el('small',T('멈춘 이유: ')+focus.blocked_reason,'ai-sub'));}
