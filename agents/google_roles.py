@@ -35,10 +35,12 @@ class GoogleInspector(GoogleArchitect):
     usage_role = 'INSPECTOR'
 
     def review(self, order, git_diff, verification, project_context=None, worktree_path=None):
+        from core import inspector_tests
         prompt = ('Independently review the ORDER against the code diff and test evidence. '
                   'Never claim tests were run by you. Identify concrete defects and requirement violations. '
                   'File-count and diff-size limits are enforced by the Director: never report them. '
-                  'Return only JSON: {"verdict":"pass or changes_required","p0":[],"p1":[],"p2":[],"summary":"..."}.\n'
+                  'Return only JSON: {"verdict":"pass or changes_required","p0":[],"p1":[],"p2":[],"summary":"...","tests":[]}.\n'
+                  + inspector_tests.prompt_section(verification)
                   + json.dumps({'order':order.model_dump(), 'diff':git_diff,
-                                'verification':{k:v for k,v in verification.items() if k != 'git_diff'}}, ensure_ascii=False))
+                                'verification':{k:v for k,v in verification.items() if k not in ('git_diff', 'inspector_tests')}}, ensure_ascii=False))
         return ReviewResultSchema(**self._extract_json(self._invoke_cli(prompt)))

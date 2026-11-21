@@ -126,6 +126,7 @@ class ClaudeInspector:
 
         from core import usage
         usage.set_context(role="INSPECTOR")
+        from core import inspector_tests
         review_prompt = (
             "You are an expert read-only code inspector evaluating code modifications in a repository.\n"
             "Review the git diff and test evidence against the work ORDER.\n\n"
@@ -143,6 +144,7 @@ class ClaudeInspector:
             f"TEST COUNTS (Director's own run): {json.dumps(verification.get('test_counts'))}\n"
             f"TEST OUTPUT TAIL: {((verification.get('test') or {}).get('output') or '')[-1500:]}\n\n"
             f"GIT DIFF:\n```diff\n{git_diff}\n```\n\n"
+            f"{inspector_tests.prompt_section(verification)}"
             "FORMATTING MANDATE:\n"
             "Your output MUST contain ONLY a JSON code block formatted as:\n"
             "```json\n"
@@ -151,7 +153,8 @@ class ClaudeInspector:
             '  "p0": string[],\n'
             '  "p1": string[],\n'
             '  "p2": string[],\n'
-            '  "summary": string\n'
+            '  "summary": string,\n'
+            '  "tests": [{"path": string, "content": string}]   (optional, see INDEPENDENT TESTS; default [])\n'
             "}\n"
             "```"
         )

@@ -67,6 +67,9 @@ autonomy:
   # real credentials/accounts and irreversible external actions stop for a human decision.
   architect_proxy: true
   maker_attempts: 3          # retry with feedback; the last attempt moves to another provider
+  # The inspector may propose new test files; the Director runs them and removes them again (evidence only,
+  # never part of the deliverable). A failure is a P1 finding. See core/inspector_tests.py.
+  inspector_tests: true
   max_steps: 6                 # milestones per mission
   max_consecutive_failures: 3
   resume_on_start: true        # a companion restart continues interrupted (RUNNING) missions; STOPPED ones stay stopped
@@ -75,7 +78,7 @@ autonomy:
   # Apply never overwrites a file the operator changed meanwhile (conflict -> blocked, worktree kept) and never deletes.
   auto_apply: on_pass
   profiles:                    # budgets per request size; gates and Scope Guard are the same in every profile
-    quick:    {max_steps: 2, max_repairs: 1, maker_attempts: 2}
+    quick:    {max_steps: 2, max_repairs: 1, maker_attempts: 2, inspector_tests: false}
     standard: {max_steps: 6, max_repairs: 3, maker_attempts: 3}
     deep:     {max_steps: 12, max_repairs: 3, maker_attempts: 3}
 

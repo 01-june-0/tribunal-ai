@@ -34,7 +34,7 @@ def setting(config: Optional[dict], key: str, default):
 # Execution profiles: how much process a request gets. "quick" is for small, well-understood changes (one or two
 # milestones, one correction round); "deep" is for ambitious goals. A profile only changes budgets, never the gates.
 PROFILE_DEFAULTS = {
-    "quick": {"max_steps": 2, "max_repairs": 1, "maker_attempts": 2, "max_consecutive_failures": 2},
+    "quick": {"max_steps": 2, "max_repairs": 1, "maker_attempts": 2, "max_consecutive_failures": 2, "inspector_tests": False},
     "standard": {"max_steps": 6, "max_repairs": 3, "maker_attempts": 3, "max_consecutive_failures": 3},
     "deep": {"max_steps": 12, "max_repairs": 3, "maker_attempts": 3, "max_consecutive_failures": 4},
 }
@@ -47,7 +47,7 @@ def profile_overrides(config: Optional[dict], name: Optional[str]) -> dict:
         return {}
     merged = dict(PROFILE_DEFAULTS.get(name, {}))
     merged.update((setting(config, "profiles", {}) or {}).get(name) or {})
-    return {k: v for k, v in merged.items() if k in ("max_steps", "max_repairs", "maker_attempts", "max_consecutive_failures")}
+    return {k: v for k, v in merged.items() if k in ("max_steps", "max_repairs", "maker_attempts", "max_consecutive_failures", "inspector_tests")}
 
 
 def split_profile_tag(text: str):

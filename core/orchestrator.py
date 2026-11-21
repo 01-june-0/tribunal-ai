@@ -669,6 +669,12 @@ class Orchestrator:
         before = self._dirty_state(worktree_path) if self._proxy() else None
         result = Verifier.verify(worktree_path=worktree_path, build_cmd=build_cmd, test_cmd=test_cmd, lint_cmd=lint_cmd)
         if before is not None:
+            self._settle_verification_artifacts(run_id, worktree_path, before)
+        return result
+
+    def _settle_verification_artifacts(self, run_id: str, worktree_path: str, before: Dict[str, Any]) -> None:
+        """After a test run: files it created are moved into the run record, files it changed are recorded."""
+        if True:
             after = self._dirty_state(worktree_path)
             changed = {p for p, sig in after.items() if before.get(p, "absent") != sig and not SafetyPolicy.is_runtime_artifact(p)}
             # Files the test run CREATED are moved out of the worktree into the run record: otherwise the next
@@ -698,7 +704,6 @@ class Orchestrator:
                 known = set(self._load_json(run_id, "verification_artifacts.json") or [])
                 self._save_json(run_id, "verification_artifacts.json", sorted(known | remaining))
                 self.sm.log_audit(run_id, "ORCHESTRATOR", "VERIFICATION_ARTIFACTS", ", ".join(sorted(remaining))[:1000])
-        return result
 
     @staticmethod
     def _control_plane_fs_hits(worktree_path: str) -> list:
@@ -833,6 +838,32 @@ class Orchestrator:
     def run_inspector_with_failover(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
                                    project_context: Dict[str, Any], worktree_path: str, logger: logging.Logger,
                                    provenance_records: list):
+        """The review, plus the inspector's own independent tests when that is switched on (core/inspector_tests.py):
+        the inspector proposes them as text, the Director runs them, a failure becomes a P1 finding."""
+        from core import inspector_tests
+        wanted = (isinstance(verification, dict) and bool(verification.get("passed")) and bool(self._verification_cmds()[1])
+                  and inspector_tests.enabled(self.config))
+        if isinstance(verification, dict):
+            verification = dict(verification)
+            verification["inspector_tests"] = {"wanted": wanted, "previous": inspector_tests.previous_failure(self, run_id) if wanted else None}
+        review, stop = self._review_with_failover(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
+        if review is not None and not stop:
+            if wanted:
+                try:
+                    inspector_tests.run(self, run_id, review, worktree_path, verification, logger)
+                except Exception as exc:              # the extra check must never take a finished review down with it
+                    logger.error(f"[Inspector tests] could not be run: {exc}")
+                    self.sm.log_audit(run_id, "ORCHESTRATOR", "INSPECTOR_TESTS_ERROR", str(exc)[:500])
+                self._save_json(run_id, "review.json", review)
+            else:
+                review.tests = []
+                if self._load_json(run_id, "inspector_tests.json") is not None:      # a failure of an earlier round is no longer current
+                    self._save_json(run_id, "inspector_tests.json", {"proposed": 0, "files": [], "rejected": [], "ran": False, "passed": None})
+        return review, stop
+
+    def _review_with_failover(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
+                              project_context: Dict[str, Any], worktree_path: str, logger: logging.Logger,
+                              provenance_records: list):
         """Trial claim -> review (exceptions recorded, never left uncaught) -> unparseable/CLI-failure handling ->
         provider failover -> provenance. Returns (review_result, stop)."""
         if self._proxy():
@@ -913,7 +944,7 @@ class Orchestrator:
                 return review_result, self._stop(run_id, State.FAIL, fail_msg, logger, provenance_records)
 
         self._save_json(run_id, "review.json", review_result)
-        self.sm.log_audit(run_id, getattr(self, "current_inspector_name", "CODEX"), "CODE_REVIEW", json.dumps(review_result.model_dump()))
+        self.sm.log_audit(run_id, getattr(self, "current_inspector_name", "CODEX"), "CODE_REVIEW", json.dumps(review_result.model_dump(exclude={"tests"})))
         if rev_exception is None:
             self._inspector_provenance(0 if review_result.verdict == "pass" else 1, provenance_records)
         return review_result, None
@@ -988,7 +1019,7 @@ class Orchestrator:
                     else:
                         self._record_provider_success(self.inspector)
                         self._save_json(run_id, "review.json", review)
-                        self.sm.log_audit(run_id, getattr(self, "current_inspector_name", domain), "CODE_REVIEW", json.dumps(review.model_dump()))
+                        self.sm.log_audit(run_id, getattr(self, "current_inspector_name", domain), "CODE_REVIEW", json.dumps(review.model_dump(exclude={"tests"})))
                         self._inspector_provenance(0 if review.verdict == "pass" else 1, provenance_records)
                         return review, None
                 except Exception as e:
