@@ -156,6 +156,11 @@ def test_e_reject_keeps_terminal_and_never_builds(approval_env, server, monkeypa
         assert MAKER_CALLS == []
         st = _get_json(server, "/status")[1]
         assert st["approval"]["required"] is False and st["approval"]["rejected"] is True and st["approval"]["headline"] == "REJECTED BY HUMAN"
+        # on screen the rejected run is a closed task, not an open request (the record itself stays HUMAN_REQUIRED)
+        assert st["run"]["state"] == "REJECTED" and st["run"]["human_required"] == "NO" and st["human_required_count"] == 0
+        assert st["stage_sentence"] == "거절한 작업입니다 · 실행되지 않았습니다" and st["approval"]["state"] == "HUMAN_REQUIRED"
+        page = render_html()
+        assert 'class="alert a-ok"' in page and "거절한 작업" in page and 'class="alert a-red"' not in page
         # approving after a reject is refused
         code, j2 = _post(server, "/run/approve", {"run_id": run_id, "request_id": "ap-after-reject"})
         assert code == 400 and j2["status"] == "not_applicable" and MAKER_CALLS == []

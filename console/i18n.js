@@ -276,6 +276,7 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "거절한 작업": "Rejected task",
   " (자세히 탭에서 경로를 직접 입력할 수 있습니다)": " (you can type the path in the Details tab)",
   "역할은 한눈에 탭의 역할 메뉴에서 지정합니다. 변경은 다음 대화/작업부터 적용되고, 진행 중인 실행은 그대로 유지됩니다.": "Roles are set in the role menu on the Overview tab. A change applies from the next conversation or task; a run in progress keeps its roles.",
   "자세히 탭에서 확인": "Check in the Details tab",

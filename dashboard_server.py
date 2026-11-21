@@ -1280,6 +1280,11 @@ def build_status_payload() -> dict:
             pass
     if recovered:
         last_details = ('수동 복구 기록 있음 · 전체 파이프라인 재검증 미완료. ' + str(recovered.get('summary') or ''))[:300]
+    approval = approval_info(current_run['run_id'], raw_state, last_details) if current_run else {"required": False}
+    if raw_state == State.HUMAN_REQUIRED and approval.get("rejected") and not approval.get("required") and not approval.get("inflight"):
+        # The user said no. The run record stays HUMAN_REQUIRED (it is the audit trail), but nothing waits for anyone:
+        # on screen it is a closed, rejected task, not an open request.
+        state = "REJECTED"
     preview = _effective_mode_preview()
     cm = ChatManager()
     sid = active_session_id()
@@ -1325,7 +1330,7 @@ def build_status_payload() -> dict:
         "system_mode_sentence": I18N.mode_sentence(preview["mode"].value, preview.get("statuses", {})),
         "stage_sentence": I18N.stage_sentence(state, {d: prov_out[d]["role"] for d in prov_out}),
         "next_step": I18N.NEXT_STEP.get(state, ""),
-        "approval": approval_info(current_run['run_id'], raw_state, last_details) if current_run else {"required": False},
+        "approval": approval,
         "pending": pending_actions(),
         "result": result_info(current_run['run_id']) if current_run and raw_state == State.PASS else {"is_pass": False},
         "results": [dict(r, in_mission=_run_in_mission(r.get("run_id"))) for r in _result_manager().pending_results()],
@@ -1555,7 +1560,7 @@ DASHBOARD_JS = r"""
   function scheduleMessages(ms) { if (pollMsgTimer) clearTimeout(pollMsgTimer); pollMsgTimer = setTimeout(function () { if (unseen()) { scheduleMessages(2000); return; } pollMessages(); }, ms); }
   var STAGES = ['ARCHITECT', 'BUILD', 'VERIFY', 'REVIEW', 'DECIDE'];
   var STATE_INDEX = { PLANNING: 0, ORDER_READY: 0, BUILDING: 1, VERIFYING: 2, REVIEWING: 3, DECIDING: 4 };
-  var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1 };
+  var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1, REJECTED: 1 };
   var EVENT_LABELS = [
     [/\[(?:작업|미션) \d+\/\d+\] 실행 시작/, 'STEP STARTED', 'ev-info'], [/\[(?:작업|미션) \d+\/\d+\] 결과 PASS/, 'STEP PASS', 'ev-ok'], [/\[(?:작업|미션) \d+\/\d+\] 결과 /, 'STEP NOT PASSED', 'ev-bad'],
     [/\[(?:작업|미션) \d+\/\d+\] 사용자 확인 요청/, 'ARCHITECT REVIEW', 'ev-info'], [/\[(?:작업|미션) \d+\/\d+\] (?:ARCHITECT|HEAD) 계획/, 'ARCHITECT PLAN', 'ev-info'], [/^(?:작업|미션) 시작/, 'MISSION STARTED', 'ev-info'],
@@ -1642,7 +1647,7 @@ DASHBOARD_JS = r"""
       else if (terminal) {
         var stop = (stopAt === undefined || stopAt === null) ? -1 : stopAt;
         if (i < stop) { mark = '\u2713'; cls = 'done'; }
-        else if (i === stop) { mark = state === 'HUMAN_REQUIRED' ? '\u26a0' : '\u2717'; cls = state === 'HUMAN_REQUIRED' ? 'warn' : 'failed'; }
+        else if (i === stop) { mark = state === 'HUMAN_REQUIRED' ? '\u26a0' : (state === 'REJECTED' ? '\u2014' : '\u2717'); cls = state === 'HUMAN_REQUIRED' ? 'warn' : (state === 'REJECTED' ? 'todo' : 'failed'); }   // rejected: stopped here by the user, nothing failed
         else { mark = '\u25cb'; cls = 'todo'; }
       }
       else if (cur === undefined) { mark = '\u25cb'; cls = 'todo'; }
@@ -1652,10 +1657,10 @@ DASHBOARD_JS = r"""
     }
     var pb = document.getElementById('pipeline-badge');
     if (pb) {
-      var t = (state === 'PASS' || state === 'RECOVERED') ? ko(I18N.state, state) : (state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : (state === 'FAIL' || state === 'TIMEOUT' ? ko(I18N.state, state) : (cur !== undefined ? '진행 중' : '')));
+      var t = (state === 'PASS' || state === 'RECOVERED' || state === 'REJECTED') ? ko(I18N.state, state) : (state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : (state === 'FAIL' || state === 'TIMEOUT' ? ko(I18N.state, state) : (cur !== undefined ? '진행 중' : '')));
       pb.setAttribute('data-raw', state);
       if (pb.textContent !== t) pb.textContent = t;
-      pb.className = 'badge ' + (state === 'PASS' ? 'b-green' : (terminal ? 'b-red' : (cur !== undefined ? 'b-blue' : 'b-muted')));
+      pb.className = 'badge ' + (state === 'PASS' ? 'b-green' : (state === 'REJECTED' ? 'b-muted' : (terminal ? 'b-red' : (cur !== undefined ? 'b-blue' : 'b-muted'))));
       pb.style.display = t ? '' : 'none';
     }
   }
@@ -2272,6 +2277,7 @@ DASHBOARD_CSS = r"""
            display: grid; grid-template-rows: 48px auto minmax(0, 1fr) 38px; height: 100vh; }
     .mono { font-family: Consolas, "Cascadia Mono", monospace; }
     .status-HEALTHY, .status-NORMAL, .status-PASS, .status-RECOVERED { color: var(--green); font-weight: 600; }
+    .status-REJECTED { color: var(--muted); font-weight: 600; }      /* closed by the user: nothing to act on */
     .status-DEGRADED, .status-RECOVERING, .status-QUOTA_LOW, .status-UNKNOWN { color: var(--amber); font-weight: 600; }
     .status-STOP, .status-FAIL, .status-HUMAN_REQUIRED, .status-TIMEOUT, .status-QUOTA_EXHAUSTED, .status-AUTH_FAILED, .status-UNAVAILABLE, .status-CONFIG_ERROR { color: var(--red); font-weight: 600; }
     .status-PLANNING, .status-ORDER_READY, .status-BUILDING, .status-VERIFYING, .status-REVIEWING, .status-DECIDING, .status-IDLE { color: var(--blue); font-weight: 600; }
@@ -2478,10 +2484,10 @@ DASHBOARD_CSS = r"""
     li.pend.res { border-left-color: var(--blue); } li.pend .ptitle2.blue { color: var(--blue); }
     /* approval */
     .approval { border: 1px solid var(--amber); border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: rgba(226,179,74,0.07); font-size: 12px; }
-    .approval.ap-rejected { border-color: var(--red); background: rgba(239,91,91,0.06); }
+    .approval.ap-rejected { border-color: var(--border); background: transparent; }   /* decided and closed: not an alarm */
     .approval.ap-done { border-color: var(--green); background: rgba(79,195,122,0.06); }
     .approval .ah { font-weight: 700; letter-spacing: 0.6px; color: var(--amber); font-size: 12px; }
-    .approval.ap-rejected .ah { color: var(--red); } .approval.ap-done .ah { color: var(--green); }
+    .approval.ap-rejected .ah { color: var(--muted); } .approval.ap-done .ah { color: var(--green); }
     .approval .an { color: var(--text); margin: 2px 0 6px 0; }
     .approval .ak { color: var(--muted); }
     .approval .abtns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
@@ -2534,7 +2540,7 @@ def _event_kind(text: str) -> str:
 def _elapsed_label(run: dict) -> str:
     try:
         t0 = datetime.fromisoformat(run.get("created_at") or "")
-        t1 = datetime.fromisoformat(run.get("updated_at") or "") if run.get("state") in (TERMINAL_STATES | {"RECOVERED"}) else datetime.utcnow()
+        t1 = datetime.fromisoformat(run.get("updated_at") or "") if run.get("state") in (TERMINAL_STATES | {"RECOVERED", "REJECTED"}) else datetime.utcnow()
         sec = max(0, int((t1 - t0).total_seconds()))
         return f"{sec}s" if sec < 60 else f"{sec // 60}m{sec % 60}s"
     except Exception:
