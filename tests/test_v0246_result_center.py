@@ -29,21 +29,21 @@ def _git(args, cwd):
 HDR = "import sys, os; sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))"
 
 
-def _builder(b, o, w):
+def _maker(b, o, w):
     (Path(w) / "src" / "n.py").write_text("def n():\n    return 1\n", encoding="utf-8")
     (Path(w) / "tests" / "test_n.py").write_text(HDR + "\nfrom n import n\ndef test_n():\n    assert n() == 1\n", encoding="utf-8")
     (Path(w) / "src" / "calc.py").write_text("def add(a, b): return a + b\ndef mul(a, b): return a * b\n", encoding="utf-8")
     return ["src/n.py", "tests/test_n.py", "src/calc.py"]
 
 
-def _pass_run(proj, builder=_builder, test_cmd="python -m pytest -q tests/"):
+def _pass_run(proj, maker=_maker, test_cmd="python -m pytest -q tests/"):
     (Path(proj) / "tests").mkdir(exist_ok=True)
     (Path(proj) / "src" / "calc.py").write_text("def add(a, b): return a + b\n", encoding="utf-8")
     (Path(proj) / "tests" / "test_calc.py").write_text(HDR + "\nfrom calc import add\ndef test_add():\n    assert add(1, 2) == 3\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=str(proj), check=True, capture_output=True)
     subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=str(proj), check=True, capture_output=True)
     orch = _mock_orch(verification={"test_command": test_cmd})
-    summary = orch.run(str(proj), "add n", builder_fn=builder, order=OrderSchema(goal="add n", allowed_paths=["src/", "tests/"], protected_paths=[".git/"]))
+    summary = orch.run(str(proj), "add n", maker_fn=maker, order=OrderSchema(goal="add n", allowed_paths=["src/", "tests/"], protected_paths=[".git/"]))
     assert summary["final_state"] == "PASS", summary
     return summary["run_id"], orch
 
@@ -66,7 +66,7 @@ def test_abc_result_ready_view_and_tests(rm, server):
         assert s["counts"] == {"A": 2, "M": 1, "D": 0} and s["control_plane"] == []
         assert "def mul" in s["file_diffs"]["src/calc.py"] and ("new file" in s["file_diffs"]["src/n.py"] and "def n" in s["file_diffs"]["src/n.py"])
         t = s["tests"]
-        assert t["baseline"]["passed"] == 1 and t["post"]["passed"] == 2 and t["regression"] == "PASS" and t["canonical"] == "PASS" and t["reviewer"] == "pass" and t["final_gate"] == "PASS"
+        assert t["baseline"]["passed"] == 1 and t["post"]["passed"] == 2 and t["regression"] == "PASS" and t["canonical"] == "PASS" and t["inspector"] == "pass" and t["final_gate"] == "PASS"
         st = _get_json(server, "/status")[1]
         assert st["result"]["is_pass"] and st["result"]["changed_count"] == 3 and st["results"][0]["run_id"] == run_id
         html = render_html()

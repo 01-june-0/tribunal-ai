@@ -14,7 +14,7 @@ from dashboard_server import (render_html, active_session_id, new_chat_session, 
                               DashboardServer, _mode_hint)
 from core.state_machine import StateMachine
 from core.chat_manager import ChatManager
-from tests.test_v0238_dashboard_ux import env, server, _get_json, _post, SlowHead  # noqa: F401 (fixtures)
+from tests.test_v0238_dashboard_ux import env, server, _get_json, _post, SlowArchitect  # noqa: F401 (fixtures)
 
 
 KOREAN = "calc.py에 multiply(a, b) 함수를 추가하고 테스트도 추가해서 통과시켜줘. — ✓ 한글/emoji 😀"
@@ -24,7 +24,7 @@ KOREAN = "calc.py에 multiply(a, b) 함수를 추가하고 테스트도 추가�
 
 def test_new_chat_keeps_history_and_project(server, env, monkeypatch):
     env.add_message(GLOBAL_SESSION_ID, "USER", "old question")
-    env.add_message(GLOBAL_SESSION_ID, "HEAD", "old answer")
+    env.add_message(GLOBAL_SESSION_ID, "ARCHITECT", "old answer")
     env.set_project(GLOBAL_SESSION_ID, "C:/proj/x")
     before = env.get_messages(GLOBAL_SESSION_ID)
     assert active_session_id() == GLOBAL_SESSION_ID
@@ -44,16 +44,16 @@ def test_new_chat_keeps_history_and_project(server, env, monkeypatch):
     # project preserved in the new session; new messages go to the new session
     assert (env.get_session(new_id) or {}).get("project_path") == "C:/proj/x"
     assert _get_json(server, "/status")[1]["project_path"] == "C:/proj/x"
-    monkeypatch.setattr(dashboard_server, "handle_chat_message", SlowHead(env, delay=0.0))
-    # SlowHead writes to GLOBAL_SESSION_ID directly; the real handler resolves active_session_id() -> check via set_project path
+    monkeypatch.setattr(dashboard_server, "handle_chat_message", SlowArchitect(env, delay=0.0))
+    # SlowArchitect writes to GLOBAL_SESSION_ID directly; the real handler resolves active_session_id() -> check via set_project path
     dashboard_server.set_project("C:/definitely/not/a/repo")
     msgs = env.get_messages(new_id)
     assert any("PROJECT_SELECTION_REJECTED" in m["content"] for m in msgs)
     assert env.get_messages(GLOBAL_SESSION_ID) == before                       # old session never written again
 
 
-def test_new_chat_refused_while_head_busy(server, env, monkeypatch):
-    slow = SlowHead(env, delay=1.2); monkeypatch.setattr(dashboard_server, "handle_chat_message", slow)
+def test_new_chat_refused_while_architect_busy(server, env, monkeypatch):
+    slow = SlowArchitect(env, delay=1.2); monkeypatch.setattr(dashboard_server, "handle_chat_message", slow)
     t = threading.Thread(target=lambda: _post(server, "/chat", {"message": "work", "request_id": "nc-1"})); t.start()
     import time; time.sleep(0.3)
     code, j = _post(server, "/chat/new", {})
@@ -66,19 +66,19 @@ def test_handle_chat_message_writes_active_session(env, monkeypatch):
     from core.provider_manager import ProviderManager
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
 
-    class Head:
+    class Architect:
         provider = "openai"
         last_execution_info = {"exit_code": 0, "execution_duration_sec": 0.1}
         def chat(self, msg, ctx, hist):
             return {"type": "QUESTION", "message": "answer: " + msg}
         def get_provenance(self, exit_code=0):
-            return {"agent": "HEAD", "provider": "openai", "observed_fields": []}
+            return {"agent": "ARCHITECT", "provider": "openai", "observed_fields": []}
     from core.orchestrator import Orchestrator
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: Head())
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: Architect())
     new_id = new_chat_session()["session_id"]
     dashboard_server.handle_chat_message(KOREAN)
     roles = [(m["role"], m["content"]) for m in env.get_messages(new_id)]
-    assert ("USER", KOREAN) in roles and ("HEAD", "answer: " + KOREAN) in roles
+    assert ("USER", KOREAN) in roles and ("ARCHITECT", "answer: " + KOREAN) in roles
     assert env.get_provenance(new_id) and not env.get_provenance(GLOBAL_SESSION_ID)
     assert all(m["role"] != "USER" for m in env.get_messages(GLOBAL_SESSION_ID))
 
@@ -86,7 +86,7 @@ def test_handle_chat_message_writes_active_session(env, monkeypatch):
 # ------------------------------------------------------------------ UTF-8 end-to-end
 
 def test_utf8_round_trip_form_json_html(server, env, monkeypatch):
-    monkeypatch.setattr(dashboard_server, "handle_chat_message", SlowHead(env, delay=0.0))
+    monkeypatch.setattr(dashboard_server, "handle_chat_message", SlowArchitect(env, delay=0.0))
     code, j = _post(server, "/chat", {"message": KOREAN, "request_id": "utf8-1"})
     assert code == 200 and j["status"] == "accepted"
     stored = [m["content"] for m in env.get_messages(GLOBAL_SESSION_ID) if m["role"] == "USER"]

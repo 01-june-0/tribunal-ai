@@ -22,12 +22,14 @@ class ChatManager:
 
     def _init_db(self) -> None:
         with self._get_conn() as conn:
+            from core.role_names import migrate_db
+            migrate_db(conn)                    # a database from before the role rename (see core/role_names.py)
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS chat_sessions (
                     id TEXT PRIMARY KEY,
                     project_path TEXT NOT NULL,
-                    head_provider TEXT NOT NULL,
+                    architect_provider TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -70,15 +72,15 @@ class ChatManager:
                     cursor.execute(f"ALTER TABLE chat_provenance ADD COLUMN {col} {ddl}")
             conn.commit()
 
-    def create_session(self, session_id: str, project_path: str, head_provider: str) -> None:
+    def create_session(self, session_id: str, project_path: str, architect_provider: str) -> None:
         now = datetime.utcnow().isoformat()
         with self._get_conn() as conn:
             conn.execute(
                 """
-                INSERT INTO chat_sessions (id, project_path, head_provider, created_at, updated_at)
+                INSERT INTO chat_sessions (id, project_path, architect_provider, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (session_id, project_path, head_provider, now, now)
+                (session_id, project_path, architect_provider, now, now)
             )
             conn.commit()
 
@@ -114,7 +116,7 @@ class ChatManager:
             )
             return [dict(row) for row in cur.fetchall()]
 
-    def set_project(self, session_id: str, project_path: str, head_provider: str = "OPENAI") -> None:
+    def set_project(self, session_id: str, project_path: str, architect_provider: str = "OPENAI") -> None:
         """Explicitly selects the target project for a chat session (creates the session if missing)."""
         now = datetime.utcnow().isoformat()
         with self._get_conn() as conn:
@@ -123,14 +125,14 @@ class ChatManager:
                              (project_path, now, session_id))
             else:
                 conn.execute(
-                    "INSERT INTO chat_sessions (id, project_path, head_provider, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                    (session_id, project_path, head_provider, now, now)
+                    "INSERT INTO chat_sessions (id, project_path, architect_provider, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (session_id, project_path, architect_provider, now, now)
                 )
             conn.commit()
 
     def add_provenance(self, session_id: str, record: Dict[str, Any], run_id: Optional[str] = None,
                        outcome: Optional[str] = None) -> None:
-        """Stores the execution provenance of a HEAD chat() call.
+        """Stores the execution provenance of a ARCHITECT chat() call.
         Observed columns (executable/version/exit_code/duration/invocation) come from the real process;
         `authentication` stays NULL on purpose: auth mode is a DECLARED policy value (authentication_mode)."""
         import json as _json
@@ -152,7 +154,7 @@ class ChatManager:
                 """,
                 (
                     session_id,
-                    record.get("agent", "HEAD"),
+                    record.get("agent", "ARCHITECT"),
                     record.get("provider", "unknown"),
                     record.get("runtime"),
                     record.get("model"),

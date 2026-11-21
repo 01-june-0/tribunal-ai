@@ -20,7 +20,7 @@ def test_dashboard_logic(isolate_provider_db, monkeypatch):
         CREATE TABLE IF NOT EXISTS chat_sessions (
             id TEXT PRIMARY KEY,
             project_path TEXT NOT NULL,
-            head_provider TEXT NOT NULL,
+            architect_provider TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )

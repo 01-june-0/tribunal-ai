@@ -14,7 +14,7 @@ from schemas.order import OrderSchema
 from tests.test_v0233_codex_fixes import _make_link
 from tests.test_v0231_chat_stabilization import make_git_project
 from tests.test_v0234_resume_parity import _stuck_run
-from tests.test_v0236_evidence_isolation import _orch_pass_head
+from tests.test_v0236_evidence_isolation import _orch_pass_architect
 
 
 def _order(protected=None, allowed=None):
@@ -101,7 +101,7 @@ def test_final_gate_passes_with_glob_protected_paths(isolate_provider_db):
     with make_git_project() as proj:
         order = OrderSchema(goal="g", allowed_paths=["src/calc.py", "tests/test_calc.py"],
                             protected_paths=[".pytest_cache/**", "src/__pycache__/**", "tests/__pycache__/**"])
-        orch = _orch_pass_head()
+        orch = _orch_pass_architect()
         run_id, wt, sm = _stuck_run(proj, "DECIDING", order)
         (Path(wt) / ".pytest_cache").mkdir(exist_ok=True)
         orch._save_json(run_id, "baseline_verification.json", {"passed": True, "test_counts": {"passed": 1}})

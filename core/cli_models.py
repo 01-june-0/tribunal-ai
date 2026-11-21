@@ -29,10 +29,10 @@ _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]{0,99}$")
 
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
-# HEAD and REVIEWER only read: the Director itself applies changes and runs the tests. Order matters less than
+# ARCHITECT and INSPECTOR only read: the Director itself applies changes and runs the tests. Order matters less than
 # the combination: limiting --tools WITHOUT --strict-mcp-config makes the CLI inline every MCP tool schema
 # (measured 409k input tokens for a one-word prompt), so these three always travel together.
-# The reviewer judges a diff against an order; the operator's personal Codex plugins (skills), memories, hooks and
+# The inspector judges a diff against an order; the operator's personal Codex plugins (skills), memories, hooks and
 # connected apps only add context and extra tool calls to that. Measured on one review-shaped prompt: 51,852 -> 7,232.
 # Personal skill folders are switched off separately (see _skills_off_arg).
 CODEX_LIGHT_FEATURES = ("plugins", "memories", "hooks", "apps", "skill_search")

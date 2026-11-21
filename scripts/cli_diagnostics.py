@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from core.env_utils import resolve_cli, probe_version
-from agents.codex_head import CodexHead
-from agents.claude_head import ClaudeHead
+from agents.codex_architect import CodexArchitect
+from agents.claude_architect import ClaudeArchitect
 
 PROJECT = Path(os.environ.get('DIRECTOR_SMOKE_PROJECT', ROOT.parent / 'director_smoke'))
 REPORT = ROOT / 'data/cli_diagnostics.json'
@@ -28,11 +28,11 @@ def main():
             'Reject booleans, negative or non-finite numbers, and nonnumeric values with ValueError. '
             'Add tests/test_profit.py including zero and unknown. Preserve all existing tests. '
             'Only these two paths may change. No external dependencies or network.')
-    for domain, cls in [('OPENAI', CodexHead), ('ANTHROPIC', ClaudeHead)]:
+    for domain, cls in [('OPENAI', CodexArchitect), ('ANTHROPIC', ClaudeArchitect)]:
         try:
             agent = cls(timeout=180, no_progress_timeout=120)
             order = agent.create_order(goal, {'project_path': str(PROJECT), 'existing_files': ['README.md', 'tests/test_baseline.py']})
-            report['providers'][domain].update(state='HEAD_VERIFIED', summary='실제 CLI로 작업 명세 JSON 생성·스키마 검증 완료. 구현·검토 역할은 별도 E2E 결과로 판정.',
+            report['providers'][domain].update(state='ARCHITECT_VERIFIED', summary='실제 CLI로 작업 명세 JSON 생성·스키마 검증 완료. 구현·검토 역할은 별도 E2E 결과로 판정.',
                 evidence={'order': order.model_dump(), 'execution': agent.last_execution_info})
         except Exception as exc:
             report['providers'][domain].update(state='FAILED', summary=str(exc)[-800:])

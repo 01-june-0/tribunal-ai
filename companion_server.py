@@ -229,10 +229,10 @@ class CompanionHandler(d.DashboardHandler):
                     raise ValueError('Invalid role request')
                 roles = save(json.loads(self.rfile.read(size)))
                 try:
-                    # Make the provider cards show the new HEAD/BUILDER/REVIEWER labels right away instead of
+                    # Make the provider cards show the new ARCHITECT/MAKER/INSPECTOR labels right away instead of
                     # after the next run (resolve_roles rewrites provider_health.current_role; can_proceed is ignored here).
                     from core.provider_manager import ProviderManager
-                    ProviderManager().resolve_roles(roles['head'], roles['builder'], roles['reviewer'], strict=True)
+                    ProviderManager().resolve_roles(roles['architect'], roles['maker'], roles['inspector'], strict=True)
                     d.invalidate_status_cache()
                 except Exception as exc:  # bookkeeping only; the saved file is already the source of truth
                     logging.getLogger('director.companion').warning('role bookkeeping refresh failed: %s', exc)

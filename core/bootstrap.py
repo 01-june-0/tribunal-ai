@@ -92,7 +92,7 @@ def test_existing_python_source_parses():
 def configure_runtime(config, project):
     import copy
     updated = copy.deepcopy(config)
-    # Per-project verification lives in the Director's own config (never in the project, where a Builder could
+    # Per-project verification lives in the Director's own config (never in the project, where a Maker could
     # weaken it), keyed by the project path.
     for key, override in (updated.get('projects') or {}).items():
         try:

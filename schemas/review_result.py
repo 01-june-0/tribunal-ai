@@ -2,7 +2,7 @@ from typing import List, Literal
 from pydantic import BaseModel, Field
 
 class ReviewResultSchema(BaseModel):
-    """Result report produced by CODEX REVIEWER."""
+    """Result report produced by CODEX INSPECTOR."""
     verdict: Literal["pass", "changes_required"] = Field(
         ...,
         description="Review verdict: pass or changes_required"

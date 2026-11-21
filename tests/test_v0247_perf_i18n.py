@@ -26,11 +26,11 @@ from tests.test_v0238_dashboard_ux import env, server, _get_json, _post  # noqa:
 def test_1_status_and_state_mapping():
     assert I18N.status_ko("HEALTHY") == "정상" and I18N.status_ko("RECOVERING") == "복구 중"
     assert I18N.status_ko("DEGRADED") == "일부 기능 제한" and I18N.status_ko("STOP") == "실행 중지"
-    assert I18N.state_ko("BUILDING") == "코드 작성 중" and I18N.state_ko("VERIFYING") == "테스트·검증 중"
-    assert I18N.state_ko("REVIEWING") == "코드 검토 중" and I18N.state_ko("DECIDING") == "최종 판단 중"
+    assert I18N.state_ko("BUILDING") == "제작 중" and I18N.state_ko("VERIFYING") == "테스트·검증 중"
+    assert I18N.state_ko("REVIEWING") == "감리 중" and I18N.state_ko("DECIDING") == "최종 판단 중"
     assert I18N.state_ko("PASS") == "완료" and I18N.state_ko("HUMAN_REQUIRED") == "사용자 확인 필요"
     assert I18N.result_ko("APPLIED") == "적용 완료" and I18N.result_ko("DISCARDED") == "폐기됨" and I18N.result_ko("READY") == "적용 대기"   # v0.2.4.8 terminology pass
-    assert I18N.role_ko("HEAD, REVIEWER") == "HEAD · REVIEWER (지휘 · 검수)"
+    assert I18N.role_ko("ARCHITECT, INSPECTOR") == "ARCHITECT · INSPECTOR (설계 · 감리)"
     assert I18N.status_ko("SOMETHING_NEW") == "SOMETHING_NEW"                 # unknown enum passes through unchanged
 
 
@@ -41,7 +41,7 @@ def test_2_reason_mapping():
     assert "작업 폴더 밖" in I18N.reason_ko("CANONICAL_CONTAINMENT")[1]
     assert "나빠져" in I18N.reason_ko("REGRESSION")[1]
     assert "작업 사본" in I18N.reason_ko("WORKTREE_EVIDENCE_MISSING")[1]
-    assert "신뢰할 수 없어" in I18N.reason_ko("REVIEWER_FAIL_CLOSED")[1]
+    assert "신뢰할 수 없어" in I18N.reason_ko("INSPECTOR_FAIL_CLOSED")[1]
     assert "보호 설정 파일" in I18N.reason_ko("CONTROL_PLANE_MODIFIED")[1]
     assert "Git 내부" in I18N.reason_ko("GIT_INTERNALS_IN_SCOPE")[1]
     e = I18N.explain_reason("Scope violation: Dependency configuration modified: requirements.txt")
@@ -75,13 +75,13 @@ def _run(rid, chain, details="x", project="C:/p"):
 
 
 def test_4_provider_status_display(server, env):
-    _set("OPENAI", "HEALTHY", "HEAD, REVIEWER"); _set("ANTHROPIC", "RECOVERING", "BACKUP"); _set("GOOGLE", "HEALTHY", "BUILDER")
+    _set("OPENAI", "HEALTHY", "ARCHITECT, INSPECTOR"); _set("ANTHROPIC", "RECOVERING", "BACKUP"); _set("GOOGLE", "HEALTHY", "MAKER")
     html = render_html()
     assert 'id="prov-OPENAI-status" data-raw="HEALTHY">정상</td>' in html
     assert 'id="prov-ANTHROPIC-status" data-raw="RECOVERING">복구 중</td>' in html
     assert 'id="system-mode" data-raw="DEGRADED">일부 기능 제한</span>' in html
     assert "Claude 백업 AI가 복구 중입니다." in html and "정상 사용 가능합니다." in html
-    assert "HEAD · REVIEWER (지휘 · 검수)" in html and "BACKUP (예비 AI)" in html
+    assert "ARCHITECT · INSPECTOR (설계 · 감리)" in html and "BACKUP (예비 AI)" in html
     assert "OpenAI" in html and "Google" in html and "Anthropic" in html                 # vendor labels kept
     st = _get_json(server, "/status")[1]
     assert st["system_mode_sentence"].startswith("Claude 백업 AI가 복구 중입니다.")
@@ -93,13 +93,13 @@ def test_4_provider_status_display(server, env):
 
 
 def test_5_6_building_and_reviewing_sentences(server, env):
-    _set("OPENAI", "HEALTHY", "HEAD, REVIEWER"); _set("GOOGLE", "HEALTHY", "BUILDER"); _set("ANTHROPIC", "RECOVERING", "BACKUP")
+    _set("OPENAI", "HEALTHY", "ARCHITECT, INSPECTOR"); _set("GOOGLE", "HEALTHY", "MAKER"); _set("ANTHROPIC", "RECOVERING", "BACKUP")
     _run("RUN-KO-1", [State.PLANNING, State.ORDER_READY, State.BUILDING])
     st = _get_json(server, "/status")[1]
     assert st["stage_sentence"] == "Antigravity가 코드를 작성하고 있습니다" and st["next_step"] == "테스트 및 안전 검증"
     html = render_html()
     assert "Antigravity가 코드를 작성하고 있습니다" in html and "다음 단계: 테스트 및 안전 검증" in html
-    assert 'id="run-state" data-raw="BUILDING">코드 작성 중</span>' in html and 'id="core-stage" data-raw="ORCHESTRATING · BUILDER">지휘 중 · 코드 작성' in html
+    assert 'id="run-state" data-raw="BUILDING">제작 중</span>' in html and 'id="core-stage" data-raw="ORCHESTRATING · MAKER">지휘 중 · 제작' in html
     sm = StateMachine(); sm.transition_to("RUN-KO-1", State.VERIFYING); sm.transition_to("RUN-KO-1", State.REVIEWING)
     st = _get_json(server, "/status")[1]
     assert st["stage_sentence"] == "Codex가 변경 내용을 검토하고 있습니다" and st["next_step"] == "최종 판단"
@@ -126,19 +126,19 @@ def test_7_human_required_display(server, env):
 
 
 def test_8_9_pass_and_result_ready(server, env):
-    _set("OPENAI", "HEALTHY", "HEAD, REVIEWER"); _set("GOOGLE", "HEALTHY", "BUILDER"); _set("ANTHROPIC", "RECOVERING", "BACKUP")
+    _set("OPENAI", "HEALTHY", "ARCHITECT, INSPECTOR"); _set("GOOGLE", "HEALTHY", "MAKER"); _set("ANTHROPIC", "RECOVERING", "BACKUP")
     sm = _run("RUN-KO-4", [State.PLANNING, State.ORDER_READY, State.BUILDING, State.VERIFYING, State.REVIEWING, State.DECIDING, State.PASS])
     d = Path("runs/RUN-KO-4"); d.mkdir(parents=True, exist_ok=True)
-    (d / "final_evidence.json").write_text(json.dumps({"reasons": [], "reviewer_verdict": "pass", "regression": "PASS", "canonical_containment": "PASS"}), encoding="utf-8")
+    (d / "final_evidence.json").write_text(json.dumps({"reasons": [], "inspector_verdict": "pass", "regression": "PASS", "canonical_containment": "PASS"}), encoding="utf-8")
     (d / "verification.json").write_text(json.dumps({"passed": True, "test_counts": {"passed": 3}}), encoding="utf-8")
-    sm.upsert_result_state("RUN-KO-4", state="READY", changed_count=3, counts_json={"A": 1, "M": 2, "D": 0}, tests_state="PASS", reviewer_state="PASS", safety_state="PASS", worktree_state="PRESENT")
+    sm.upsert_result_state("RUN-KO-4", state="READY", changed_count=3, counts_json={"A": 1, "M": 2, "D": 0}, tests_state="PASS", inspector_state="PASS", safety_state="PASS", worktree_state="PRESENT")
     with sqlite3.connect(str(get_db_path())) as c:
         c.execute("UPDATE runs SET worktree_path=? WHERE run_id=?", (str(Path("runs").resolve()), "RUN-KO-4")); c.commit()
     st = _get_json(server, "/status")[1]
     assert st["stage_sentence"] == "작업이 완료되었습니다" and st["result"]["is_pass"] and st["result"]["changed_count"] == 3
     html = render_html()
     assert "결과물이 준비되었습니다." in html and 'data-raw="RESULT READY"' in html
-    assert "변경 파일 3개" in html and "테스트 통과" in html and "코드 검토 통과" in html and "안전 검사 통과" in html
+    assert "변경 파일 3개" in html and "테스트 통과" in html and "감리 통과" in html and "안전 검사 통과" in html
     assert "프로젝트에 적용하고 검증" in html and "결과 폐기" in html and "변경사항 보기" in html and "테스트 결과" in html and "작업 결과 폴더 열기" in html
     assert 'data-raw="PASS">완료' in html and "작업이 완료되었습니다 · 결과물이 준비되었습니다" in html
     assert "결과물 1건" in html and 'data-raw="RESULTS (1)"' in html
@@ -164,7 +164,7 @@ def test_12_13_utf8_and_no_replacement_chars(server, env):
         raw = r.read()
         assert "charset=utf-8" in r.headers.get("Content-type", "").lower()
     html = raw.decode("utf-8")
-    assert "\ufffd" not in html and "시스템 상태" in html and "HEAD 대화" in html
+    assert "\ufffd" not in html and "시스템 상태" in html and "ARCHITECT 대화" in html
     with urllib.request.urlopen(f"http://127.0.0.1:{server}/status", timeout=5) as r:
         st = json.loads(r.read().decode("utf-8"))
     assert "\ufffd" not in json.dumps(st, ensure_ascii=False)
@@ -193,7 +193,7 @@ def big_db(env):
             sm.transition_to(rid, st)
         with sqlite3.connect(str(get_db_path())) as c:
             c.execute("UPDATE runs SET worktree_path=? WHERE run_id=?", (str(wt), rid)); c.commit()
-        sm.upsert_result_state(rid, state="READY", changed_count=2, counts_json={"A": 1, "M": 1, "D": 0}, tests_state="PASS", reviewer_state="PASS", safety_state="PASS", worktree_state="PRESENT")
+        sm.upsert_result_state(rid, state="READY", changed_count=2, counts_json={"A": 1, "M": 1, "D": 0}, tests_state="PASS", inspector_state="PASS", safety_state="PASS", worktree_state="PRESENT")
     for i in range(6):
         rid = f"RUN-BIGHR-{i}"
         sm.create_run(rid, str(Path.cwd()), "g")

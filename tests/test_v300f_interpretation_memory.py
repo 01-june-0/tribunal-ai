@@ -122,7 +122,7 @@ def _ready(tmp_path: Path, calls: Calls, cycle_budget=8):
     orchestrator.rsm.transition_cycle(cycle["cycle_id"], ResearchState.EXPERIMENT_BUILDING, "test")
     result = {
         "run_id": "NORMAL-1", "final_state": "FAIL", "scope_violations": 0,
-        "builder": {"status": "COMPLETED"},
+        "maker": {"status": "COMPLETED"},
         "verification": {"passed": False, "summary": "Test: FAIL"},
     }
     orchestrator.rsm.record_experiment_result(

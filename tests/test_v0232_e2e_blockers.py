@@ -28,7 +28,7 @@ from core.orchestrator import Orchestrator
 from core.file_lock import FileLock, LockBusy
 from core.db_path import get_lock_dir
 from schemas.order import OrderSchema
-from tests.test_v0231_chat_stabilization import make_git_project, inline_threads, HeadStub, _order
+from tests.test_v0231_chat_stabilization import make_git_project, inline_threads, ArchitectStub, _order
 
 
 def _pm_with_probe_ok(monkeypatch):
@@ -94,14 +94,14 @@ def test_b_recovering_real_success_promotes_to_healthy(isolate_provider_db, monk
     assert "OPENAI" not in pm2.usable_domains()
 
     # the orchestrator hook promotes only on a real exit-0 execution
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}})
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}})
     orch.pm = pm
 
-    class RealLookingHead:
+    class RealLookingArchitect:
         provider = "openai"
         last_execution_info = {"exit_code": 0, "execution_duration_sec": 2.0}
 
-    orch._record_provider_success(RealLookingHead())
+    orch._record_provider_success(RealLookingArchitect())
     assert pm.get_status("OPENAI") == ProviderStatus.HEALTHY
     assert pm._health_row("OPENAI").get("trial_started_at") is None
 
@@ -153,7 +153,7 @@ def test_c_recovering_trial_quota_failure_returns_to_quota_exhausted(isolate_pro
 
 
 def test_c2_dashboard_chat_records_real_outcome(isolate_provider_db, monkeypatch):
-    """A RECOVERING HEAD provider gets one trial via chat; success promotes, failure records the real state."""
+    """A RECOVERING ARCHITECT provider gets one trial via chat; success promotes, failure records the real state."""
     StateMachine(); cm = ChatManager()
     pm = _pm_with_probe_ok(monkeypatch)
     pm.set_status("OPENAI", ProviderStatus.RECOVERING, "probe ok")
@@ -162,9 +162,9 @@ def test_c2_dashboard_chat_records_real_outcome(isolate_provider_db, monkeypatch
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
     dashboard_server._ACTIVE_PROJECTS.clear()
 
-    head = HeadStub(_order(), exit_code=0)
-    head.chat = lambda msg, ctx, hist: {"type": "QUESTION", "message": "fine"}
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: head)
+    architect = ArchitectStub(_order(), exit_code=0)
+    architect.chat = lambda msg, ctx, hist: {"type": "QUESTION", "message": "fine"}
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: architect)
 
     handle_chat_message("hello?")
     assert ProviderManager().get_status("OPENAI") == ProviderStatus.HEALTHY
@@ -177,7 +177,7 @@ def test_c2_dashboard_chat_records_real_outcome(isolate_provider_db, monkeypatch
 
     def boom(msg, ctx, hist):
         raise RuntimeError("Codex CLI execution failed (exit 1): You've hit your usage limit")
-    head.chat = boom
+    architect.chat = boom
     handle_chat_message("again?")
     assert ProviderManager().get_status("OPENAI") == ProviderStatus.QUOTA_EXHAUSTED
 
@@ -185,7 +185,7 @@ def test_c2_dashboard_chat_records_real_outcome(isolate_provider_db, monkeypatch
 # ------------------------------------------------------------------ TEST D: run_id unique 1000 / 10000
 
 def test_d_run_id_unique_same_second(isolate_provider_db):
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}})
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}})
     ids = [orch.generate_run_id() for _ in range(1000)]
     assert len(set(ids)) == 1000
     assert all(len(i.split("-")[2]) == 32 for i in ids)     # v0.2.3.3: full uuid4 hex (128-bit)
@@ -257,11 +257,11 @@ def test_f_two_processes_compete_for_antigravity_lock(isolate_provider_db, tmp_p
     owner = mine.read_owner()
     assert owner and owner["pid"] == child.pid
 
-    # builder surfaces BUILDER_BUSY instead of touching the global settings file
-    from agents.antigravity_builder import AntigravityBuilder
-    b = AntigravityBuilder(executable=sys.executable)
+    # maker surfaces MAKER_BUSY instead of touching the global settings file
+    from agents.antigravity_maker import AntigravityMaker
+    b = AntigravityMaker(executable=sys.executable)
     res = b.run(OrderSchema(goal="g", allowed_paths=["src/"]), str(tmp_path))
-    assert res.status == "FAILED" and res.error.startswith("BUILDER_BUSY")
+    assert res.status == "FAILED" and res.error.startswith("MAKER_BUSY")
     assert str(child.pid) in res.error
 
     out, _ = child.communicate(timeout=15)
@@ -271,22 +271,22 @@ def test_f_two_processes_compete_for_antigravity_lock(isolate_provider_db, tmp_p
     assert not lock_path.exists()
 
 
-def test_f2_orchestrator_builder_busy_ends_human_required(isolate_provider_db, tmp_path, monkeypatch):
-    from agents.mock_head import MockHead
-    from agents.codex_reviewer import CodexReviewer
-    from agents.antigravity_builder import AntigravityBuilder
+def test_f2_orchestrator_maker_busy_ends_human_required(isolate_provider_db, tmp_path, monkeypatch):
+    from agents.mock_architect import MockArchitect
+    from agents.codex_inspector import CodexInspector
+    from agents.antigravity_maker import AntigravityMaker
     lock_path = get_lock_dir() / "antigravity.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text(json.dumps({"pid": os.getpid(), "created_at": time.time(), "note": "other run"}), encoding="utf-8")
     try:
-        builder = AntigravityBuilder(executable=sys.executable)
-        orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                            head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"), builder_agent=builder)
+        maker = AntigravityMaker(executable=sys.executable)
+        orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                            architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"), maker_agent=maker)
         with make_git_project() as proj:
             summary = orch.run(proj, "g")
         assert summary["final_state"] == State.HUMAN_REQUIRED
         details = [t["details"] for t in orch.sm.get_transitions(summary["run_id"])]
-        assert any("BUILDER_BUSY" in (d or "") for d in details)
+        assert any("MAKER_BUSY" in (d or "") for d in details)
     finally:
         lock_path.unlink(missing_ok=True)
 

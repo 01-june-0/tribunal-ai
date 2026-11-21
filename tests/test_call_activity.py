@@ -237,16 +237,16 @@ def _finished(argv0, role, stage, seconds, exit_code=0):
 
 
 def test_expected_duration_needs_enough_samples_and_prefers_the_same_ai():
-    assert usage.expected_duration("OPENAI", "REVIEWER", "REVIEWING") is None
-    _finished("codex", "REVIEWER", "REVIEWING", 10)
-    _finished("codex", "REVIEWER", "REVIEWING", 30)
-    _finished("codex", "REVIEWER", "REVIEWING", 999, exit_code=1)              # failures say nothing about a normal call
-    assert usage.expected_duration("OPENAI", "REVIEWER", "REVIEWING") is None  # two successes: not enough
-    _finished("claude", "REVIEWER", "REVIEWING", 50)
-    assert usage.expected_duration("OPENAI", "REVIEWER", "REVIEWING") == {"seconds": 30, "samples": 3, "basis": "any_ai"}
-    _finished("codex", "REVIEWER", "REVIEWING", 20)
-    assert usage.expected_duration("OPENAI", "REVIEWER", "REVIEWING") == {"seconds": 20, "samples": 3, "basis": "same_ai"}
-    assert usage.expected_duration("OPENAI", "REVIEWER", "DECIDING") is None   # another stage is another kind of call
+    assert usage.expected_duration("OPENAI", "INSPECTOR", "REVIEWING") is None
+    _finished("codex", "INSPECTOR", "REVIEWING", 10)
+    _finished("codex", "INSPECTOR", "REVIEWING", 30)
+    _finished("codex", "INSPECTOR", "REVIEWING", 999, exit_code=1)              # failures say nothing about a normal call
+    assert usage.expected_duration("OPENAI", "INSPECTOR", "REVIEWING") is None  # two successes: not enough
+    _finished("claude", "INSPECTOR", "REVIEWING", 50)
+    assert usage.expected_duration("OPENAI", "INSPECTOR", "REVIEWING") == {"seconds": 30, "samples": 3, "basis": "any_ai"}
+    _finished("codex", "INSPECTOR", "REVIEWING", 20)
+    assert usage.expected_duration("OPENAI", "INSPECTOR", "REVIEWING") == {"seconds": 20, "samples": 3, "basis": "same_ai"}
+    assert usage.expected_duration("OPENAI", "INSPECTOR", "DECIDING") is None   # another stage is another kind of call
     assert usage.expected_duration("OPENAI", None, None) is None
 
 
@@ -254,14 +254,14 @@ def test_overdue_rule_and_running_now_estimate():
     assert not usage.is_overdue(55, 30) and usage.is_overdue(61, 30)           # twice the median...
     assert not usage.is_overdue(15, 5) and usage.is_overdue(36, 5)             # ...and at least 30 s over it
     for seconds in (20, 20, 20):
-        _finished("agy", "BUILDER", "BUILDING", seconds)
-    usage.set_context(role="BUILDER", stage="BUILDING", run_id=None, mission_id=None)
+        _finished("agy", "MAKER", "BUILDING", seconds)
+    usage.set_context(role="MAKER", stage="BUILDING", run_id=None, mission_id=None)
     usage.call_started(["agy"], "p")
     now = usage.running_now()[0]
     assert now["estimate"] == {"seconds": 20, "samples": 3, "basis": "same_ai"} and now["overdue"] is False
-    usage.set_context(role="HEAD", stage="CHAT", run_id=None, mission_id=None)
+    usage.set_context(role="ARCHITECT", stage="CHAT", run_id=None, mission_id=None)
     usage.call_started(["claude"], "p")
-    assert [w["estimate"] for w in usage.running_now() if w["role"] == "HEAD"] == [None]
+    assert [w["estimate"] for w in usage.running_now() if w["role"] == "ARCHITECT"] == [None]
 
 
 def test_quiet_seconds_only_for_a_running_call(tmp_path, monkeypatch):

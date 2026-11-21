@@ -15,22 +15,22 @@ from core.orchestrator import Orchestrator
 from core.verifier import Verifier
 from core.git_manager import GitManager
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 from schemas.provenance import AgentProvenanceRecord
-from agents.head import BaseHead
-from agents.mock_head import MockHead
+from agents.architect import BaseArchitect
+from agents.mock_architect import MockArchitect
 
 
 # =====================================================================
-# TEST 1: NORMAL topology (GPT Head + Antigravity Builder + Codex Reviewer) -> PASS
+# TEST 1: NORMAL topology (GPT Architect + Antigravity Maker + Codex Inspector) -> PASS
 # =====================================================================
 
 def test_1_normal_topology_gpt_antigravity_codex_allows_pass():
     """
-    TEST 1: Normal topology (GPT Head + Antigravity Builder + Codex Reviewer)
-    must NOT be blocked from PASS simply because both Head and Reviewer are openai provider.
+    TEST 1: Normal topology (GPT Architect + Antigravity Maker + Codex Inspector)
+    must NOT be blocked from PASS simply because both Architect and Inspector are openai provider.
     Review independence is judged on runtime/role.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -47,7 +47,7 @@ def test_1_normal_topology_gpt_antigravity_codex_allows_pass():
         subprocess.run(["git", "add", "."], cwd=str(proj_dir), check=True, capture_output=True)
         subprocess.run(["git", "commit", "-m", "Initial"], cwd=str(proj_dir), check=True, capture_output=True)
 
-        class MockGPTHead(BaseHead):
+        class MockGPTArchitect(BaseArchitect):
             provider = "openai"
             agent_family = "gpt"
             def create_order(self, goal, context, **kwargs):
@@ -65,12 +65,12 @@ def test_1_normal_topology_gpt_antigravity_codex_allows_pass():
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="HEAD", provider="openai", runtime="codex-cli", model="gpt-4o",
+                    agent="ARCHITECT", provider="openai", runtime="codex-cli", model="gpt-4o",
                     executable="codex", invocation_command="codex", version="1.0.0",
                     exit_code=exit_code, timestamp=datetime.utcnow().isoformat()
                 )
 
-        class MockCodexReviewer:
+        class MockCodexInspector:
             provider = "openai"
             agent_family = "codex"
             def review(self, order, diff, verif, context=None, worktree_path=None):
@@ -79,30 +79,30 @@ def test_1_normal_topology_gpt_antigravity_codex_allows_pass():
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="REVIEWER", provider="openai", runtime="codex-cli", model="codex-cli",
+                    agent="INSPECTOR", provider="openai", runtime="codex-cli", model="codex-cli",
                     executable="codex", invocation_command="codex", version="1.0.0",
                     exit_code=exit_code, timestamp=datetime.utcnow().isoformat()
                 )
 
         cfg = {
-            "head": {"provider": "openai"},
-            "builder": {"provider": "antigravity"},
-            "reviewer": {"provider": "codex"},
+            "architect": {"provider": "openai"},
+            "maker": {"provider": "antigravity"},
+            "inspector": {"provider": "codex"},
             "verification": {"test_command": "python -m pytest tests/test_calc.py"}
         }
 
         orch = Orchestrator(
             config=cfg,
-            head_agent=MockGPTHead(),
-            reviewer_agent=MockCodexReviewer()
+            architect_agent=MockGPTArchitect(),
+            inspector_agent=MockCodexInspector()
         )
 
-        def custom_builder(builder, order, wt_path):
+        def custom_maker(maker, order, wt_path):
             (Path(wt_path) / "src" / "calc.py").write_text("def add(a, b): return a + b\ndef sub(a, b): return a - b\n")
             (Path(wt_path) / "tests" / "test_calc.py").write_text("from src.calc import add, sub\ndef test_add(): assert add(1, 2) == 3\ndef test_sub(): assert sub(3, 1) == 2\n")
             return ["src/calc.py", "tests/test_calc.py"]
 
-        summary = orch.run(str(proj_dir), "Add sub", builder_fn=custom_builder)
+        summary = orch.run(str(proj_dir), "Add sub", maker_fn=custom_maker)
 
         assert summary["failover_mode"] == FailoverMode.NORMAL
         assert summary["final_state"] == State.PASS
@@ -110,12 +110,12 @@ def test_1_normal_topology_gpt_antigravity_codex_allows_pass():
 
 
 # =====================================================================
-# TEST 2: DEGRADED failover (Claude Head + Claude Reviewer) -> HUMAN_REQUIRED
+# TEST 2: DEGRADED failover (Claude Architect + Claude Inspector) -> HUMAN_REQUIRED
 # =====================================================================
 
 def test_2_degraded_failover_same_family_claude_demoted_to_human_required():
     """
-    TEST 2: When DEGRADED failover assigns Claude to both HEAD and REVIEWER,
+    TEST 2: When DEGRADED failover assigns Claude to both ARCHITECT and INSPECTOR,
     automated PASS is forbidden -> demote to HUMAN_REQUIRED.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -132,7 +132,7 @@ def test_2_degraded_failover_same_family_claude_demoted_to_human_required():
         subprocess.run(["git", "add", "."], cwd=str(proj_dir), check=True, capture_output=True)
         subprocess.run(["git", "commit", "-m", "Initial"], cwd=str(proj_dir), check=True, capture_output=True)
 
-        class MockClaudeHead(BaseHead):
+        class MockClaudeArchitect(BaseArchitect):
             provider = "anthropic"
             agent_family = "claude"
             def create_order(self, goal, context, **kwargs):
@@ -145,17 +145,17 @@ def test_2_degraded_failover_same_family_claude_demoted_to_human_required():
                     max_diff_lines=100
                 )
             def decide(self, *args, **kwargs):
-                return DecisionSchema(decision="PASS", rationale="Claude head approves", next_steps=[])
+                return DecisionSchema(decision="PASS", rationale="Claude architect approves", next_steps=[])
             def chat(self, user_msg, context=None):
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="HEAD", provider="anthropic", runtime="claude-code-cli", model="claude-code",
+                    agent="ARCHITECT", provider="anthropic", runtime="claude-code-cli", model="claude-code",
                     executable="claude", invocation_command="claude", version="1.0.0",
                     exit_code=exit_code, timestamp=datetime.utcnow().isoformat()
                 )
 
-        class MockClaudeReviewer:
+        class MockClaudeInspector:
             provider = "anthropic"
             agent_family = "claude"
             def review(self, order, diff, verif, context=None, worktree_path=None):
@@ -164,30 +164,30 @@ def test_2_degraded_failover_same_family_claude_demoted_to_human_required():
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="REVIEWER", provider="anthropic", runtime="claude-code-cli", model="claude-code",
+                    agent="INSPECTOR", provider="anthropic", runtime="claude-code-cli", model="claude-code",
                     executable="claude", invocation_command="claude", version="1.0.0",
                     exit_code=exit_code, timestamp=datetime.utcnow().isoformat()
                 )
 
         cfg = {
-            "head": {"provider": "anthropic"},
-            "builder": {"provider": "antigravity"},
-            "reviewer": {"provider": "anthropic"},
+            "architect": {"provider": "anthropic"},
+            "maker": {"provider": "antigravity"},
+            "inspector": {"provider": "anthropic"},
             "verification": {"test_command": "python -m pytest tests/test_calc.py"}
         }
 
         orch = Orchestrator(
             config=cfg,
-            head_agent=MockClaudeHead(),
-            reviewer_agent=MockClaudeReviewer()
+            architect_agent=MockClaudeArchitect(),
+            inspector_agent=MockClaudeInspector()
         )
 
-        def custom_builder(builder, order, wt_path):
+        def custom_maker(maker, order, wt_path):
             (Path(wt_path) / "src" / "calc.py").write_text("def add(a, b): return a + b\ndef sub(a, b): return a - b\n")
             (Path(wt_path) / "tests" / "test_calc.py").write_text("from src.calc import add, sub\ndef test_add(): assert add(1, 2) == 3\ndef test_sub(): assert sub(3, 1) == 2\n")
             return ["src/calc.py", "tests/test_calc.py"]
 
-        summary = orch.run(str(proj_dir), "Add sub", builder_fn=custom_builder)
+        summary = orch.run(str(proj_dir), "Add sub", maker_fn=custom_maker)
 
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert "Same-Provider Independence Guard" in summary["decision"]["rationale"]
@@ -197,9 +197,9 @@ def test_2_degraded_failover_same_family_claude_demoted_to_human_required():
 # TEST 3: Review critique text does NOT trigger provider down
 # =====================================================================
 
-def test_3_reviewer_critique_text_does_not_trigger_provider_down():
+def test_3_inspector_critique_text_does_not_trigger_provider_down():
     """
-    TEST 3: Reviewer critique text mentioning 'timeout handling is missing',
+    TEST 3: Inspector critique text mentioning 'timeout handling is missing',
     'auth validation bug exists', 'rate limit handling should be added'
     must NOT be classified as provider failure or mark provider down.
     """
@@ -224,7 +224,7 @@ def test_3_reviewer_critique_text_does_not_trigger_provider_down():
 # TEST 4: Real quota signal -> QUOTA_EXHAUSTED
 # =====================================================================
 
-def test_4_reviewer_cli_quota_exhausted():
+def test_4_inspector_cli_quota_exhausted():
     """
     TEST 4: Real quota signal in CLI stderr triggers QUOTA_EXHAUSTED.
     """

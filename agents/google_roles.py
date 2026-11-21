@@ -1,13 +1,13 @@
 """Antigravity planning/review using the shared isolated official CLI runner."""
 import json
 import tempfile
-from agents.claude_head import ClaudeHead
+from agents.claude_architect import ClaudeArchitect
 from core.bootstrap import prepare_project
 from core.env_utils import resolve_cli
 from core.research_runner import TriadResearchRunner
 from schemas.review_result import ReviewResultSchema
 
-class GoogleHead(ClaudeHead):
+class GoogleArchitect(ClaudeArchitect):
     agent_family = 'antigravity'
     def __init__(self, **kwargs):
         kwargs['executable'] = kwargs.get('executable') or resolve_cli('agy')
@@ -16,12 +16,12 @@ class GoogleHead(ClaudeHead):
 
     def _invoke_cli(self, prompt, cwd=None):
         from core import usage
-        usage.set_context(role=getattr(self, "usage_role", "HEAD"))
+        usage.set_context(role=getattr(self, "usage_role", "ARCHITECT"))
         runner = TriadResearchRunner(executables={'GOOGLE': self.executable}, timeout=self.timeout,
                                     no_output_timeout=self.no_progress_timeout)
         with tempfile.TemporaryDirectory(prefix='director-google-role-') as tmp:
             prepare_project(tmp)
-            result = runner.invoke('GOOGLE', 'Do not use tools. Use supplied evidence only.\n' + prompt, tmp, 'HEAD')
+            result = runner.invoke('GOOGLE', 'Do not use tools. Use supplied evidence only.\n' + prompt, tmp, 'ARCHITECT')
         self.last_execution_info = {'invocation_command': result['invocation'], 'exit_code': result['exit_code'],
                                     'execution_duration_sec': result['duration_sec']}
         return result['output']
@@ -29,10 +29,10 @@ class GoogleHead(ClaudeHead):
     def get_provenance(self, exit_code=0):
         return super().get_provenance(exit_code).model_copy(update={
             'provider': 'google', 'runtime': 'antigravity-cli',
-            'agent': 'REVIEWER' if isinstance(self, GoogleReviewer) else 'HEAD'})
+            'agent': 'INSPECTOR' if isinstance(self, GoogleInspector) else 'ARCHITECT'})
 
-class GoogleReviewer(GoogleHead):
-    usage_role = 'REVIEWER'
+class GoogleInspector(GoogleArchitect):
+    usage_role = 'INSPECTOR'
 
     def review(self, order, git_diff, verification, project_context=None, worktree_path=None):
         prompt = ('Independently review the ORDER against the code diff and test evidence. '

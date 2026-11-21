@@ -42,7 +42,7 @@ _ACTIVE_PROJECTS = {}
 
 BUSY_MESSAGE = "BUSY: A run is already active for this project."
 
-# v0.2.3.8: HEAD chat submissions are single-in-flight and idempotent (request_id). The page never reloads;
+# v0.2.3.8: ARCHITECT chat submissions are single-in-flight and idempotent (request_id). The page never reloads;
 # it polls read-only JSON (/status, /chat/messages) and appends new messages only.
 _CHAT_STATE_LOCK = threading.Lock()
 _CHAT_INFLIGHT = {"request_id": None, "started_at": None}
@@ -56,15 +56,15 @@ APPROVAL_REASONS = {
     "PROTECTED_PATH_IN_SCOPE": ("Protected path in scope", "allowed_paths overlaps a protected path; a human must confirm the scope."),
     "PROTECTED_PATH_INSIDE_ALLOWED": ("Protected path inside allowed scope", "A protected path lies under an allowed path; confirm the scope."),
     "AMBIGUOUS_SCOPE": ("Ambiguous scope", "allowed_paths is empty or whole-repo; a human must confirm the scope."),
-    "HIGH_RISK": ("High risk order", "HEAD rated this ORDER HIGH risk; a human must approve execution."),
+    "HIGH_RISK": ("High risk order", "ARCHITECT rated this ORDER HIGH risk; a human must approve execution."),
     "DESTRUCTIVE_CHANGE": ("Destructive change", "The ORDER allows deletions; a human must approve."),
-    "EXPLICIT_HUMAN_APPROVAL_REQUESTED": ("HEAD requested approval", "HEAD explicitly asked for human approval before executing."),
+    "EXPLICIT_HUMAN_APPROVAL_REQUESTED": ("ARCHITECT requested approval", "ARCHITECT explicitly asked for human approval before executing."),
     "GIT_INTERNALS_IN_SCOPE": ("Git internals in scope", ".git is inside allowed_paths; confirm or reject."),
     "INVALID_PATH": ("Invalid path in ORDER", "The ORDER contains a path that is not repo-relative; this is not approvable."),
     "CONTROL_PLANE_IN_SCOPE": ("Director control-plane path in scope", "Director-owned control files (.agents, .director_worktrees, GEMINI.md) are never approvable."),
-    "DEPENDENCY_CONFIGURATION_MODIFIED": ("Dependency configuration modified", "The builder changed a dependency file; a human must approve this specific file before verification continues."),
+    "DEPENDENCY_CONFIGURATION_MODIFIED": ("Dependency configuration modified", "The maker changed a dependency file; a human must approve this specific file before verification continues."),
 }
-HEAD_WORKING_MESSAGE = "HEAD is working..."
+ARCHITECT_WORKING_MESSAGE = "ARCHITECT is working..."
 # v0.2.4.7: /status is served from a short-TTL cache; every state-changing action invalidates it
 STATUS_CACHE_TTL_SEC = 2.0
 _STATUS_CACHE = {"at": 0.0, "payload": None}
@@ -176,7 +176,7 @@ def validate_project_path(path: str):
     return True, str(p)
 
 
-PROVIDER_LABELS = {"OPENAI": "Codex", "ANTHROPIC": "Claude backup", "GOOGLE": "Antigravity builder"}
+PROVIDER_LABELS = {"OPENAI": "Codex", "ANTHROPIC": "Claude backup", "GOOGLE": "Antigravity maker"}
 
 
 def active_session_id() -> str:
@@ -194,12 +194,12 @@ def new_chat_session() -> dict:
     invalidate_status_cache()
     """[New Chat]: start a fresh session that keeps the current project; nothing is deleted."""
     if chat_in_flight():
-        return {"status": "busy", "message": HEAD_WORKING_MESSAGE}
+        return {"status": "busy", "message": ARCHITECT_WORKING_MESSAGE}
     cm = ChatManager()
     prev = active_session_id()
     sess = cm.get_session(prev) or {}
     new_id = f"chat-{datetime.utcnow().strftime('%y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    cm.create_session(new_id, (sess.get("project_path") or "").strip(), sess.get("head_provider") or _configured_head_domain())
+    cm.create_session(new_id, (sess.get("project_path") or "").strip(), sess.get("architect_provider") or _configured_architect_domain())
     cm.add_message(new_id, "SYSTEM", f"NEW_CHAT: new session started (previous history kept in {prev})")
     return {"status": "ok", "session_id": new_id, "previous_session_id": prev}
 
@@ -231,14 +231,14 @@ def _node_activity(state: str, providers: dict) -> dict:
     ProviderManager.resolve_roles() recorded (current_role). No run in flight -> nothing is active."""
     def roles(dom):
         return [r.strip().upper() for r in str((providers.get(dom, {}) or {}).get("role", "") or "").replace("·", ",").split(",") if r.strip()]
-    stage = {"PLANNING": "HEAD", "ORDER_READY": "HEAD", "BUILDING": "BUILDER", "VERIFYING": "VERIFY",
-             "REVIEWING": "REVIEWER", "DECIDING": "HEAD"}.get(state)
+    stage = {"PLANNING": "ARCHITECT", "ORDER_READY": "ARCHITECT", "BUILDING": "MAKER", "VERIFYING": "VERIFY",
+             "REVIEWING": "INSPECTOR", "DECIDING": "ARCHITECT"}.get(state)
     out = {"director": state in ACTIVE_STATES, "stage": stage, "nodes": {}}
     for dom in ("OPENAI", "ANTHROPIC", "GOOGLE"):
         rs = roles(dom)
-        active = bool(stage) and ((stage == "HEAD" and "HEAD" in rs) or (stage == "REVIEWER" and "REVIEWER" in rs)
-                                  or (stage == "BUILDER" and "BUILDER" in rs))
-        working_roles = [r for r in rs if r in ("HEAD", "REVIEWER", "BUILDER")]
+        active = bool(stage) and ((stage == "ARCHITECT" and "ARCHITECT" in rs) or (stage == "INSPECTOR" and "INSPECTOR" in rs)
+                                  or (stage == "MAKER" and "MAKER" in rs))
+        working_roles = [r for r in rs if r in ("ARCHITECT", "INSPECTOR", "MAKER")]
         out["nodes"][dom] = {"active": active, "roles": rs, "backup": "BACKUP" in rs and not working_roles and not active}   # a down AI ("NONE") is not a spare
     return out
 
@@ -282,19 +282,19 @@ def set_project(path: str) -> str:
     return f"PROJECT_SELECTED: {info}"
 
 
-def _configured_head_domain() -> str:
-    """Domain of the HEAD provider the next chat will call (config.yaml head.provider; same mapping as the orchestrator)."""
+def _configured_architect_domain() -> str:
+    """Domain of the ARCHITECT provider the next chat will call (config.yaml architect.provider; same mapping as the orchestrator)."""
     try:
-        prov = (load_config().get("head", {}) or {}).get("provider", "openai")
+        prov = (load_config().get("architect", {}) or {}).get("provider", "openai")
     except Exception:
         prov = "openai"
     return ProviderManager.domain_for_provider(prov)
 
 
 def _effective_mode_preview() -> dict:
-    """Read-only mode preview for the page: identical policy to the chat gate (candidate = HEAD only)."""
-    head_domain = _configured_head_domain()
-    only = [head_domain] if head_domain not in ("MOCK", "UNKNOWN") else []
+    """Read-only mode preview for the page: identical policy to the chat gate (candidate = ARCHITECT only)."""
+    architect_domain = _configured_architect_domain()
+    only = [architect_domain] if architect_domain not in ("MOCK", "UNKNOWN") else []
     return ProviderManager().get_effective_mode_for_next_run(only=only)
 
 
@@ -309,7 +309,7 @@ def _recovery_trial_line(preview: dict, providers: dict) -> str:
         else:
             row = providers.get(dom, {}) or {}
             until = row.get("next_trial_at") or row.get("trial_started_at") or ""
-            parts.append(f"{dom} unavailable (cooldown/in-flight{' until ' + str(until) if until else ''}; not the HEAD provider or trial blocked)")
+            parts.append(f"{dom} unavailable (cooldown/in-flight{' until ' + str(until) if until else ''}; not the ARCHITECT provider or trial blocked)")
     return "; ".join(parts)
 
 
@@ -320,9 +320,9 @@ def chat_in_flight() -> bool:
 
 def submit_chat(msg: str, request_id: str = "") -> dict:
     invalidate_status_cache()
-    """Idempotent, single-in-flight HEAD chat submission used by POST /chat.
-    - same request_id seen before  -> {"status": "duplicate"} (no second HEAD call)
-    - another request in flight    -> {"status": "busy"}      (no second HEAD call)
+    """Idempotent, single-in-flight ARCHITECT chat submission used by POST /chat.
+    - same request_id seen before  -> {"status": "duplicate"} (no second ARCHITECT call)
+    - another request in flight    -> {"status": "busy"}      (no second ARCHITECT call)
     - otherwise                    -> runs handle_chat_message once -> {"status": "accepted"}"""
     if not msg or not msg.strip():
         return {"status": "empty"}
@@ -331,7 +331,7 @@ def submit_chat(msg: str, request_id: str = "") -> dict:
         if rid in _RECENT_CHAT_REQUESTS:
             return {"status": "duplicate", "request_id": rid, "message": "already submitted"}
         if _CHAT_INFLIGHT["request_id"] is not None:
-            return {"status": "busy", "request_id": rid, "message": HEAD_WORKING_MESSAGE}
+            return {"status": "busy", "request_id": rid, "message": ARCHITECT_WORKING_MESSAGE}
         _CHAT_INFLIGHT["request_id"] = rid
         _CHAT_INFLIGHT["started_at"] = datetime.utcnow().isoformat()
         _RECENT_CHAT_REQUESTS[rid] = "inflight"
@@ -414,7 +414,7 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
         else:
             text = str(b)
             gate, file = I18N.reason_code(text), ""
-        title, why = APPROVAL_REASONS.get(gate, ((gate.replace("_", " ").capitalize() if gate else "Blocked"), "This gate cannot be approved; it requires HEAD to replan."))
+        title, why = APPROVAL_REASONS.get(gate, ((gate.replace("_", " ").capitalize() if gate else "Blocked"), "This gate cannot be approved; it requires ARCHITECT to replan."))
         blocking.append({"code": gate, "file": file, "text": text, "title": title, "why": why, "approvable": False})
     with _APPROVAL_LOCK:
         inflight = run_id in _APPROVAL_INFLIGHT
@@ -424,9 +424,9 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
         "required": approvable, "state": state, "run_id": run_id, "reason_raw": details, "items": items,
         "blocking": blocking, "stage": stage,
         "stage_label": {"ENTRY": "ENTRY / before build", "POST_BUILD": "POST-BUILD / VERIFYING"}.get(stage, "runtime gate"),
-        "builder": "COMPLETED" if st.get("builder_ran") else "NOT RUN",
+        "maker": "COMPLETED" if st.get("maker_ran") else "NOT RUN",
         "rejected": bool(st.get("rejected")), "approved": bool(st.get("approved")),
-        "builder_ran": bool(st.get("builder_ran")), "inflight": inflight,
+        "maker_ran": bool(st.get("maker_ran")), "inflight": inflight,
         "headline": "HUMAN APPROVAL REQUIRED" if approvable else
                     ("REJECTED BY HUMAN" if st.get("rejected") else ("APPROVED · RESUMING" if inflight or st.get("approved") else "HUMAN REQUIRED (not approvable)")),
         "next": "Approval required before continuing" if approvable else "",
@@ -495,9 +495,9 @@ def inspect_run(run_id: str) -> dict:
     parsed = parse_approval_reason(last) if last.startswith("APPROVAL_REQUIRED") else {"items": []}
     files = [i["file"] for i in parsed["items"] if i.get("file")]
     ap = orch.approval_state(run_id)
-    builder = orch._load_json(run_id, "builder.json") or {}
+    maker = orch._load_json(run_id, "maker.json") or {}
     prov = (orch._load_json(run_id, "provenance.json") or {}).get("records", [])
-    bprov = next((p for p in prov if p.get("agent") == "BUILDER"), {})
+    bprov = next((p for p in prov if p.get("agent") == "MAKER"), {})
     verification = orch._load_json(run_id, "verification.json") or {}
     baseline = orch._load_json(run_id, "baseline_verification.json") or {}
     diff_stat, file_diffs, changed = [], {}, []
@@ -532,8 +532,8 @@ def inspect_run(run_id: str) -> dict:
         "approval": {"stage": ap.get("stage"), "approvable": ap.get("approvable"), "items": ap.get("items"), "blocking": ap.get("blocking"),
                      "decisions": [{"action": a.get("action"), "at": a.get("timestamp"), "payload": (a.get("payload") or "")[:300]} for a in ap.get("approvals_so_far") or []]},
         "changed_files": changed, "diff_stat": diff_stat, "file_diffs": file_diffs,
-        "builder": {"provider": bprov.get("provider"), "version": bprov.get("version"), "exit_code": bprov.get("exit_code"),
-                    "duration_sec": bprov.get("duration_sec"), "status": builder.get("status"), "files_modified": builder.get("files_modified")},
+        "maker": {"provider": bprov.get("provider"), "version": bprov.get("version"), "exit_code": bprov.get("exit_code"),
+                    "duration_sec": bprov.get("duration_sec"), "status": maker.get("status"), "files_modified": maker.get("files_modified")},
         "tests": {"baseline": baseline.get("test_counts"), "post": verification.get("test_counts"), "post_passed": verification.get("passed")},
         "scope_checks": [(t["details"] or "")[:300] for t in trans if (t["details"] or "").startswith("Scope violation")],
         "stages_upcoming": upcoming,
@@ -542,7 +542,7 @@ def inspect_run(run_id: str) -> dict:
         "approval_reason": last, "approval_items": parsed["items"], "related_files": files,
         "transitions": [{"from": t["from_state"], "to": t["to_state"], "at": t["timestamp"], "details": (t["details"] or "")[:300]} for t in trans],
         "audit": [{"agent": a["agent"], "action": a["action"], "at": a["timestamp"], "payload": (a["payload"] or "")[:300]} for a in sm.get_audit_logs(run_id)],
-        "builder_ran": orch._load_json(run_id, "builder.json") is not None or bool(run.get("worktree_path")),
+        "maker_ran": orch._load_json(run_id, "maker.json") is not None or bool(run.get("worktree_path")),
         "worktree_path": run.get("worktree_path"),
         "stages_executed": executed,
     }
@@ -625,7 +625,7 @@ def result_info(run_id: str) -> dict:
 
 
 def _record_human_required(orch: Orchestrator, project_path: str, goal: str, reason: str, order=None) -> str:
-    """Creates a run row that ends immediately in HUMAN_REQUIRED (never touches the Builder)."""
+    """Creates a run row that ends immediately in HUMAN_REQUIRED (never touches the Maker)."""
     run_id = orch._create_run_with_retry(None, project_path or "NONE", goal)
     if order is not None:
         orch._save_json(run_id, "order.json", order)
@@ -634,18 +634,18 @@ def _record_human_required(orch: Orchestrator, project_path: str, goal: str, rea
     return run_id
 
 
-def _head_provenance_record(head) -> dict:
-    """Actual execution provenance of the HEAD chat() call (exit code / duration from the real run)."""
-    if not hasattr(head, "get_provenance"):
+def _architect_provenance_record(architect) -> dict:
+    """Actual execution provenance of the ARCHITECT chat() call (exit code / duration from the real run)."""
+    if not hasattr(architect, "get_provenance"):
         return {}
-    info = getattr(head, "last_execution_info", {}) or {}
+    info = getattr(architect, "last_execution_info", {}) or {}
     executed = "exit_code" in info                      # a real process ran only if the agent recorded an exit code
     try:
-        rec = head.get_provenance(exit_code=info.get("exit_code") if executed else None)
+        rec = architect.get_provenance(exit_code=info.get("exit_code") if executed else None)
         rec = rec.model_dump() if hasattr(rec, "model_dump") else dict(rec)
     except Exception as e:
         # double exception: no measurement exists -> fail closed with NULLs and an explicit empty observed list
-        return {"agent": "HEAD", "provider": getattr(head, "provider", "unknown"), "error": str(e)[:300],
+        return {"agent": "ARCHITECT", "provider": getattr(architect, "provider", "unknown"), "error": str(e)[:300],
                 "executable": None, "version": None, "invocation_command": None,
                 "exit_code": None, "duration_sec": None, "observed_fields": [], "declared_fields": [],
                 "authentication_mode": None, "api_key_policy": "disabled", "api_key_used": False}
@@ -666,7 +666,7 @@ def _head_provenance_record(head) -> dict:
         rec["invocation_command"] = None
         observed = []
     rec["observed_fields"] = observed
-    rec["agent"] = "HEAD"
+    rec["agent"] = "ARCHITECT"
     rec["api_key_used"] = False
     return rec
 
@@ -716,15 +716,15 @@ def _start_mission(sid: str, orch: Orchestrator, project_path: str, goal: str, o
         _ACTIVE_PROJECTS[key] = mission["mission_id"]
     ChatManager().add_message(
         sid, "SYSTEM",
-        f"미션 시작 {mission['mission_id']}: HEAD가 목표 달성까지 단계별로 계획·판단합니다 (최대 {mission['max_steps']}단계). "
+        f"미션 시작 {mission['mission_id']}: ARCHITECT가 목표 달성까지 단계별로 계획·판단합니다 (최대 {mission['max_steps']}단계). "
         "결제·실계좌 주문·자격증명·외부 비가역 작업만 사용자에게 확인합니다.")
     _run_mission_thread(sid, mission["mission_id"], key)
     return mission["mission_id"]
 
 
 _USAGE_BACKFILLED = {"done": False}
-STAGE_KO = {"PLANNING": "계획", "ORDER_READY": "구현 준비", "BUILDING": "코드 작성", "VERIFYING": "테스트",
-            "REVIEWING": "독립 검토", "DECIDING": "HEAD 판단", "PASS": "통과", "FAIL": "실패",
+STAGE_KO = {"PLANNING": "설계", "ORDER_READY": "제작 준비", "BUILDING": "제작", "VERIFYING": "테스트",
+            "REVIEWING": "감리", "DECIDING": "판단", "PASS": "통과", "FAIL": "실패",
             "HUMAN_REQUIRED": "사용자 확인", "TIMEOUT": "시간 초과", "IDLE": "대기", "MISSION_PLANNING": "다음 단계 계획",
             "ENTRY_REVIEW": "오더 검토", "CHAT": "대화"}
 
@@ -815,14 +815,14 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
 
 def start_goal_mission(project_path: str, goal: str, profile: Optional[str] = None, source: str = "api",
                        request_id: Optional[str] = None, create_project: bool = False, auto_apply: Optional[str] = None) -> dict:
-    """Goal in, mission out: HEAD turns the goal into an ORDER, the proxy gate narrows it, and the mission runs in
+    """Goal in, mission out: ARCHITECT turns the goal into an ORDER, the proxy gate narrows it, and the mission runs in
     the background. Used by the bridge and the CLI. Returns {status: started|busy|question|escalated|
     rejected, ...}; nothing here bypasses the entry gate or the Scope Guard."""
     from core.bootstrap import prepare_project
     sid = active_session_id()
     cm = ChatManager()
     if not cm.get_session(sid):
-        cm.create_session(sid, "", _configured_head_domain())
+        cm.create_session(sid, "", _configured_architect_domain())
     tag_profile, goal = autopilot.split_profile_tag(goal)
     profile = profile or tag_profile or "standard"
     if profile not in autopilot.PROFILE_DEFAULTS and profile not in (autopilot.setting(load_config(), "profiles", {}) or {}):
@@ -848,24 +848,24 @@ def start_goal_mission(project_path: str, goal: str, profile: Optional[str] = No
             project_context["note"] = "Continuing from the latest mission deliverable (isolated worktree) of this project; the listed files already exist there."
         from core import usage
         usage.set_context(stage="CHAT", run_id=None, mission_id=None)
-        resp = orch.head.chat(goal, project_context, [])
+        resp = orch.architect.chat(goal, project_context, [])
     except Exception as e:
-        cm.add_message(sid, "SYSTEM", f"HEAD Error: {str(e)[:500]}")
-        return {"status": "rejected", "error": "HEAD unavailable: " + str(e)[:300]}
+        cm.add_message(sid, "SYSTEM", f"ARCHITECT Error: {str(e)[:500]}")
+        return {"status": "rejected", "error": "ARCHITECT unavailable: " + str(e)[:300]}
     if resp.get("type") == "QUESTION":
-        cm.add_message(sid, "HEAD", resp.get("message", ""))
+        cm.add_message(sid, "ARCHITECT", resp.get("message", ""))
         return {"status": "question", "message": resp.get("message", "")}
     if resp.get("type") != "DEV_TASK" or "order" not in resp:
-        return {"status": "rejected", "error": "HEAD did not produce a work order", "message": resp.get("message", "")}
+        return {"status": "rejected", "error": "ARCHITECT did not produce a work order", "message": resp.get("message", "")}
     try:
         order = OrderSchema(**resp["order"])
     except Exception as e:
         return {"status": "rejected", "error": f"order invalid: {str(e)[:300]}"}
-    cm.add_message(sid, "HEAD", resp.get("message", ""))
-    gate = autopilot.entry_gate(order, project_path, orch.head, cwd=project_path)
+    cm.add_message(sid, "ARCHITECT", resp.get("message", ""))
+    gate = autopilot.entry_gate(order, project_path, orch.architect, cwd=project_path)
     order = gate["order"]
     if gate["notes"]:
-        cm.add_message(sid, "SYSTEM", "HEAD 대리 처리: " + "; ".join(gate["notes"])[:1500])
+        cm.add_message(sid, "SYSTEM", "ARCHITECT 대리 처리: " + "; ".join(gate["notes"])[:1500])
     if gate["escalate"]:
         run_id = _record_human_required(orch, project_path, order.goal, gate["escalate"], order)
         cm.add_message(sid, "SYSTEM", f"HUMAN_REQUIRED: {gate['escalate']}", run_id=run_id)
@@ -882,7 +882,7 @@ STOP_INTENT = re.compile(r"(중단|중지|정지|멈춰|멈추|그만|스톱|\bs
 
 def is_stop_request(msg: str) -> bool:
     """A short chat message whose point is 'stop' (e.g. '즉시 작업 중단', '멈춰', 'stop everything').
-    Long messages that merely mention stopping are HEAD's business, not an operator command."""
+    Long messages that merely mention stopping are ARCHITECT's business, not an operator command."""
     text = (msg or "").strip()
     return 0 < len(text) <= 80 and bool(STOP_INTENT.search(text)) and not re.search(r"(하지\s*마|말고|않|않고|말아)", text)
 
@@ -906,7 +906,7 @@ def stop_missions(reason: str = "", mission_id: Optional[str] = None, by: str = 
 def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Optional[int] = None,
                    on_conflict: str = "block", by: str = "HUMAN") -> dict:
     """A decision about a finished mission: apply its deliverable, discard it, extend its budget and continue,
-    or send a blocked step back to HEAD planning. The stopped run itself is never approved by this."""
+    or send a blocked step back to ARCHITECT planning. The stopped run itself is never approved by this."""
     from core.mission import deliverable_run_id
     store = MissionStore()
     m = store.load(mission_id)
@@ -1005,12 +1005,12 @@ def handle_chat_message(msg: str):
 
     # Ensure session (project_path stays empty until the user selects one explicitly)
     if not cm.get_session(sid):
-        cm.create_session(sid, "", _configured_head_domain())
+        cm.create_session(sid, "", _configured_architect_domain())
 
     cm.add_message(sid, "USER", msg)
 
-    # "멈춰" is an operator command, not a conversation: stop the running mission(s) here instead of asking HEAD
-    # to talk about stopping (2026-11-02: HEAD acknowledged '즉시 작업 중단' in words while the mission kept building).
+    # "멈춰" is an operator command, not a conversation: stop the running mission(s) here instead of asking ARCHITECT
+    # to talk about stopping (2026-11-02: ARCHITECT acknowledged '즉시 작업 중단' in words while the mission kept building).
     if is_stop_request(msg):
         result = stop_missions(msg, by="사용자")
         if result["status"] == "idle":
@@ -1031,19 +1031,19 @@ def handle_chat_message(msg: str):
         cm.add_message(sid, "SYSTEM", f"Orchestrator init failed: {str(e)}")
         return
 
-    # Only the provider that this chat will actually call (the HEAD) may be a recovery-trial candidate.
-    head_domain = orch._get_agent_domain(orch.head)
-    pm.mark_trial_candidates(only=[head_domain] if head_domain not in ("MOCK", "UNKNOWN") else [])
+    # Only the provider that this chat will actually call (the ARCHITECT) may be a recovery-trial candidate.
+    architect_domain = orch._get_agent_domain(orch.architect)
+    pm.mark_trial_candidates(only=[architect_domain] if architect_domain not in ("MOCK", "UNKNOWN") else [])
     mode, down = pm.get_failover_mode()
     if mode == FailoverMode.STOP:
         cm.add_message(sid, "SYSTEM", f"SYSTEM STOP: insufficient healthy providers. Down: {', '.join(down)}")
         return
-    if head_domain in pm.trial_candidates:
+    if architect_domain in pm.trial_candidates:
         # claim exactly at the moment of use; atomic and cooldown-bound (a failed trial keeps its cooldown)
-        if pm.claim_trial(head_domain):
-            cm.add_message(sid, "SYSTEM", f"RECOVERY TRIAL: {head_domain} is RECOVERING; this request is its single verification call")
+        if pm.claim_trial(architect_domain):
+            cm.add_message(sid, "SYSTEM", f"RECOVERY TRIAL: {architect_domain} is RECOVERING; this request is its single verification call")
         else:
-            cm.add_message(sid, "SYSTEM", f"SYSTEM STOP: {head_domain} is RECOVERING and its trial is on cooldown or owned by another process")
+            cm.add_message(sid, "SYSTEM", f"SYSTEM STOP: {architect_domain} is RECOVERING and its trial is on cooldown or owned by another process")
             return
 
     hist = cm.get_messages(sid)
@@ -1059,49 +1059,49 @@ def handle_chat_message(msg: str):
             project_context = {"project_path": None, "existing_files": [], "note": "NO PROJECT SELECTED"}
         from core import usage
         usage.set_context(stage="CHAT", run_id=None, mission_id=None)
-        resp = orch.head.chat(msg, project_context, hist)
+        resp = orch.architect.chat(msg, project_context, hist)
     except Exception as e:
         # real call failed: record the real provider state (quota/auth/timeout) or leave it (config/unknown)
-        head_domain = orch._get_agent_domain(orch.head)
-        if head_domain not in ("MOCK", "UNKNOWN"):
+        architect_domain = orch._get_agent_domain(orch.architect)
+        if architect_domain not in ("MOCK", "UNKNOWN"):
             try:
-                pm.parse_cli_error(head_domain, str(e))
+                pm.parse_cli_error(architect_domain, str(e))
             except Exception:
                 pass
-        # provenance + audit of the failed HEAD call before terminating this request
+        # provenance + audit of the failed ARCHITECT call before terminating this request
         try:
-            failed_prov = _head_provenance_record(orch.head)
+            failed_prov = _architect_provenance_record(orch.architect)
             if failed_prov:
-                cm.add_provenance(sid, failed_prov, outcome="HEAD_EXCEPTION")
+                cm.add_provenance(sid, failed_prov, outcome="ARCHITECT_EXCEPTION")
         except Exception:
             pass
         try:
-            orch.sm.log_audit(f"CHAT:{sid}", "HEAD", "HEAD_EXCEPTION",
-                              json.dumps({"error": str(e)[:500], "provider": head_domain}))
+            orch.sm.log_audit(f"CHAT:{sid}", "ARCHITECT", "ARCHITECT_EXCEPTION",
+                              json.dumps({"error": str(e)[:500], "provider": architect_domain}))
         except Exception:
             pass
-        cm.add_message(sid, "SYSTEM", f"HEAD Error: {str(e)}")
+        cm.add_message(sid, "SYSTEM", f"ARCHITECT Error: {str(e)}")
         return
 
     # real call succeeded (exit 0): the only path that promotes RECOVERING/failed -> HEALTHY
     try:
-        orch._record_provider_success(orch.head)
+        orch._record_provider_success(orch.architect)
     except Exception:
         pass
 
-    head_prov = _head_provenance_record(orch.head)
-    if head_prov:
+    architect_prov = _architect_provenance_record(orch.architect)
+    if architect_prov:
         try:
-            cm.add_provenance(sid, head_prov, outcome="OK")
+            cm.add_provenance(sid, architect_prov, outcome="OK")
         except Exception:
             pass
 
     if resp.get("type") == "QUESTION":
-        cm.add_message(sid, "HEAD", resp.get("message", ""))
+        cm.add_message(sid, "ARCHITECT", resp.get("message", ""))
         return
 
     if resp.get("type") != "DEV_TASK":
-        cm.add_message(sid, "SYSTEM", "Error: Unknown response type from HEAD")
+        cm.add_message(sid, "SYSTEM", "Error: Unknown response type from ARCHITECT")
         return
 
     if "order" not in resp:
@@ -1115,20 +1115,20 @@ def handle_chat_message(msg: str):
         return
 
     # AUTO-RESOLVE FIRST: a chat-generated ORDER commonly gets path formatting wrong (drive-absolute
-    # instead of repo-relative, or protecting an out-of-project sibling that the Builder can't reach
+    # instead of repo-relative, or protecting an out-of-project sibling that the Maker can't reach
     # anyway). Fix that representational mistake here, once, before Scope Guard ever evaluates the
     # order - validate_order_paths()/assess_order_for_auto_run() below are completely unmodified and
     # still fail closed on any genuine attempt to read/write outside the project.
     if project_path:
         from core.entry_repair import repair_root_scope
         try:
-            order, repair_notes = repair_root_scope(order, project_path, orch.head)
+            order, repair_notes = repair_root_scope(order, project_path, orch.architect)
             if repair_notes:
                 cm.add_message(sid, 'SYSTEM', 'ORDER_PATH_REPAIR: ' + '; '.join(repair_notes))
         except Exception as exc:
             cm.add_message(sid, 'SYSTEM', 'ORDER_PATH_REPAIR_FAILED: ' + str(exc)[:250])
 
-    cm.add_message(sid, "HEAD", resp.get("message", ""))
+    cm.add_message(sid, "ARCHITECT", resp.get("message", ""))
 
     # 1. Project selection is mandatory for execution
     if not project_path:
@@ -1141,13 +1141,13 @@ def handle_chat_message(msg: str):
         cm.add_message(sid, "SYSTEM", f"HUMAN_REQUIRED: PROJECT_SELECTION_REQUIRED ({info})", run_id=run_id)
         return
 
-    # 2a. HEAD proxy (user-delegated): narrow/repair the ORDER, HEAD approves on the user's behalf, and the request
+    # 2a. ARCHITECT proxy (user-delegated): narrow/repair the ORDER, ARCHITECT approves on the user's behalf, and the request
     #     runs as a goal-driven MISSION. Only money / credentials / irreversible external actions reach the user.
     if autopilot.enabled(orch.config):
-        gate = autopilot.entry_gate(order, project_path, orch.head, cwd=project_path)
+        gate = autopilot.entry_gate(order, project_path, orch.architect, cwd=project_path)
         order = gate["order"]
         if gate["notes"]:
-            cm.add_message(sid, "SYSTEM", "HEAD 대리 처리: " + "; ".join(gate["notes"])[:1500])
+            cm.add_message(sid, "SYSTEM", "ARCHITECT 대리 처리: " + "; ".join(gate["notes"])[:1500])
         if gate["escalate"]:
             run_id = _record_human_required(orch, project_path, order.goal, gate["escalate"], order)
             cm.add_message(sid, "SYSTEM", f"HUMAN_REQUIRED: {gate['escalate']}", run_id=run_id)
@@ -1181,7 +1181,7 @@ def handle_chat_message(msg: str):
 
     def run_orch():
         try:
-            orch.run(project_path, order.goal, run_id=run_id, order=order, head_provenance=head_prov or None)
+            orch.run(project_path, order.goal, run_id=run_id, order=order, architect_provenance=architect_prov or None)
             final = (orch.sm.get_run(run_id) or {}).get("current_state", "UNKNOWN")
             cm.add_message(sid, "SYSTEM", f"Run {run_id} finished: {final}", run_id=run_id)
         except Exception as e:
@@ -1296,7 +1296,7 @@ def build_status_payload() -> dict:
         "stale_runs": [{"run_id": r['run_id'], "state": r['current_state'], "updated_at": r['updated_at']} for r in stale_runs],
         "project_path": (session.get("project_path") or "").strip(),
         "project_name": Path((session.get("project_path") or "").strip()).name if (session.get("project_path") or "").strip() else "",
-        "head_busy": chat_in_flight(),
+        "architect_busy": chat_in_flight(),
         "activity": _node_activity(state, prov_out),
         "system_mode_sentence": I18N.mode_sentence(preview["mode"].value, preview.get("statuses", {})),
         "stage_sentence": I18N.stage_sentence(state, {d: prov_out[d]["role"] for d in prov_out}),
@@ -1489,7 +1489,7 @@ def build_research_status_payload(session_id: Optional[str] = None) -> dict:
         "EXPERIMENT_PLANNING": "안전한 실험 ORDER를 작성합니다.",
         "EXPERIMENT_BUILDING": "NORMAL 안전 파이프라인으로 실험을 구현합니다.",
         "EXPERIMENT_VERIFYING": "실험 결과와 회귀를 검증합니다.",
-        "EXPERIMENT_REVIEW": "독립 Reviewer가 변경을 검토합니다.",
+        "EXPERIMENT_REVIEW": "독립 Inspector가 변경을 검토합니다.",
         "RESULT_INTERPRETATION": "세 연구자가 결과를 독립 해석합니다.",
         "NEXT_CYCLE": "학습 내용을 반영해 다음 사이클을 준비합니다.",
     }.get(stage, s.get("stopped_reason") or "")
@@ -1525,12 +1525,12 @@ DASHBOARD_JS = r"""
   var pollStatusTimer = null, pollMsgTimer = null, lastStatusMode = '';
   function scheduleStatus(ms) { if (pollStatusTimer) clearTimeout(pollStatusTimer); pollStatusTimer = setTimeout(function () { pollStatus(); }, ms); }
   function scheduleMessages(ms) { if (pollMsgTimer) clearTimeout(pollMsgTimer); pollMsgTimer = setTimeout(function () { pollMessages(); }, ms); }
-  var STAGES = ['HEAD', 'BUILD', 'VERIFY', 'REVIEW', 'DECIDE'];
+  var STAGES = ['ARCHITECT', 'BUILD', 'VERIFY', 'REVIEW', 'DECIDE'];
   var STATE_INDEX = { PLANNING: 0, ORDER_READY: 0, BUILDING: 1, VERIFYING: 2, REVIEWING: 3, DECIDING: 4 };
   var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1 };
   var EVENT_LABELS = [
     [/\[미션 \d+\/\d+\] 실행 시작/, 'STEP STARTED', 'ev-info'], [/\[미션 \d+\/\d+\] 결과 PASS/, 'STEP PASS', 'ev-ok'], [/\[미션 \d+\/\d+\] 결과 /, 'STEP NOT PASSED', 'ev-bad'],
-    [/\[미션 \d+\/\d+\] 사용자 확인 요청/, 'HEAD REVIEW', 'ev-info'], [/\[미션 \d+\/\d+\] HEAD 계획/, 'HEAD PLAN', 'ev-info'], [/^미션 시작/, 'MISSION STARTED', 'ev-info'],
+    [/\[미션 \d+\/\d+\] 사용자 확인 요청/, 'ARCHITECT REVIEW', 'ev-info'], [/\[미션 \d+\/\d+\] (?:ARCHITECT|HEAD) 계획/, 'ARCHITECT PLAN', 'ev-info'], [/^미션 시작/, 'MISSION STARTED', 'ev-info'],
     [/결과물을 프로젝트에 적용했습니다/, 'RESULT APPLIED', 'ev-ok'], [/결과물을 자동 적용하지 않았습니다/, 'NOT AUTO-APPLIED', 'ev-bad'],
     [/RESULT_APPLIED/, 'RESULT APPLIED', 'ev-ok'], [/RESULT_ROLLED_BACK|RESULT_BLOCKED/, 'APPLY BLOCKED', 'ev-bad'], [/RESULT_DISCARDED/, 'RESULT DISCARDED', 'ev-info'],
     [/finished: PASS/, 'RUN PASS', 'ev-ok'], [/finished: HUMAN_REQUIRED/, 'HUMAN REQUIRED', 'ev-bad'],
@@ -1538,7 +1538,7 @@ DASHBOARD_JS = r"""
     [/RECOVERY TRIAL/, 'RECOVERY TRIAL', 'ev-info'], [/SYSTEM STOP/, 'SYSTEM STOP', 'ev-bad'],
     [/PROJECT_SELECTED/, 'PROJECT SELECTED', 'ev-ok'], [/PROJECT_SELECTION_REJECTED|PROJECT_SELECTION_REQUIRED/, 'PROJECT REJECTED', 'ev-bad'],
     [/NEW_CHAT/, 'NEW CHAT', 'ev-ok'], [/HUMAN_REQUIRED|APPROVAL_REQUIRED/, 'HUMAN REQUIRED', 'ev-bad'],
-    [/BUSY/, 'BUSY', 'ev-bad'], [/HEAD Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])/, 'ERROR', 'ev-bad']
+    [/BUSY/, 'BUSY', 'ev-bad'], [/(?:ARCHITECT|HEAD) Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])/, 'ERROR', 'ev-bad']
   ];
   var chatBox = document.getElementById('chat-box');
   var form = document.getElementById('chat-form');
@@ -1591,17 +1591,17 @@ DASHBOARD_JS = r"""
     sendBtn.disabled = busy;
     var nb = document.getElementById('new-chat-btn'); if (nb) nb.disabled = busy;
     var badge = document.getElementById('chat-badge');
-    if (sending) { sendStatus.textContent = 'HEAD is working...'; sendStatus.setAttribute('data-ko', ko(I18N.ui, 'head_working')); }
-    else if (serverBusy) { sendStatus.textContent = 'BUSY: HEAD is working on another request...'; }
-    else if (sendStatus.textContent.indexOf('HEAD is working') === 0 || sendStatus.textContent.indexOf('BUSY') === 0) sendStatus.textContent = '';
+    if (sending) { sendStatus.textContent = 'ARCHITECT is working...'; sendStatus.setAttribute('data-ko', ko(I18N.ui, 'architect_working')); }
+    else if (serverBusy) { sendStatus.textContent = 'BUSY: ARCHITECT is working on another request...'; }
+    else if (sendStatus.textContent.indexOf('ARCHITECT is working') === 0 || sendStatus.textContent.indexOf('BUSY') === 0) sendStatus.textContent = '';
     if (badge) {
-      var txt = (sending || serverBusy) ? ko(I18N.ui, 'head_working') : (runInfo.state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : ko(I18N.ui, 'chat_ready'));
-      badge.setAttribute('data-raw', (sending || serverBusy) ? 'HEAD is working...' : (runInfo.state === 'HUMAN_REQUIRED' ? 'HUMAN_REQUIRED' : 'READY'));
+      var txt = (sending || serverBusy) ? ko(I18N.ui, 'architect_working') : (runInfo.state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : ko(I18N.ui, 'chat_ready'));
+      badge.setAttribute('data-raw', (sending || serverBusy) ? 'ARCHITECT is working...' : (runInfo.state === 'HUMAN_REQUIRED' ? 'HUMAN_REQUIRED' : 'READY'));
       if (badge.textContent !== txt) badge.textContent = txt;
       badge.className = 'badge ' + ((sending || serverBusy) ? 'b-busy' : (runInfo.state === 'HUMAN_REQUIRED' ? 'b-red' : 'b-green'));
     }
     var codex = document.getElementById('node-OPENAI');
-    if (codex) codex.classList.toggle('chat-active', !!(sending || serverBusy));   // HEAD chat call in flight = Codex working
+    if (codex) codex.classList.toggle('chat-active', !!(sending || serverBusy));   // ARCHITECT chat call in flight = Codex working
   }
   function renderPipeline(state, lastStage) {
     var cur = STATE_INDEX[state];
@@ -1746,7 +1746,7 @@ DASHBOARD_JS = r"""
     var t = res.tests || {};
     setText('result-files', ko(I18N.ui, 'changed_files') + ' ' + (res.changed_count === undefined ? '?' : res.changed_count) + '개  (추가 ' + ((res.counts || {}).A || 0) + ' / 수정 ' + ((res.counts || {}).M || 0) + ' / 삭제 ' + ((res.counts || {}).D || 0) + ')');
     var rf = document.getElementById('result-files'); if (rf) { rf.setAttribute('data-raw', 'Changed files: ' + res.changed_count); if ((res.builds_on || []).length) rf.textContent += chainNote(res, ' \u00b7 '); }
-    setText('result-tests', ko(I18N.ui, 'tests') + ' ' + (t.post_passed ? ko(I18N.ui, 'pass') : ko(I18N.ui, 'fail')) + '  \u00b7  ' + ko(I18N.ui, 'review') + ' ' + ((t.reviewer || '').toLowerCase() === 'pass' ? ko(I18N.ui, 'pass') : ko(I18N.ui, 'fail')) + '  \u00b7  ' + ko(I18N.ui, 'safety') + ' ' + (t.final_gate === 'PASS' ? ko(I18N.ui, 'pass') : (t.final_gate || '?')));
+    setText('result-tests', ko(I18N.ui, 'tests') + ' ' + (t.post_passed ? ko(I18N.ui, 'pass') : ko(I18N.ui, 'fail')) + '  \u00b7  ' + ko(I18N.ui, 'review') + ' ' + ((t.inspector || '').toLowerCase() === 'pass' ? ko(I18N.ui, 'pass') : ko(I18N.ui, 'fail')) + '  \u00b7  ' + ko(I18N.ui, 'safety') + ' ' + (t.final_gate === 'PASS' ? ko(I18N.ui, 'pass') : (t.final_gate || '?')));
     if (isCurrent) {
       var rrs = document.getElementById('run-result-state'); if (rrs) rrs.setAttribute('data-raw', 'RESULT: ' + (st === 'READY' && blocked ? 'APPLY BLOCKED' : st));
       setText('run-result-state', ko(I18N.ui, 'result_state') + ': ' + (st === 'READY' && blocked ? ko(I18N.ui, 'apply_blocked') : ko(I18N.result, st)));
@@ -1797,7 +1797,7 @@ DASHBOARD_JS = r"""
       var files = document.getElementById('rd-files'); while (files.firstChild) files.removeChild(files.firstChild);
       var diff = document.getElementById('rd-diff');
       var head = document.getElementById('rd-head');
-      head.textContent = 'Run ' + j.run_id + '\nRequest: ' + (j.goal || '') + '\nProject: ' + (j.project_path || '') + '\nBuilder: ' + ((j.builder || {}).provider || '') + ' ' + ((j.builder || {}).version || '') + ' exit=' + ((j.builder || {}).exit_code) + '\nReviewer: ' + ((j.reviewer || {}).verdict || '') + '\nApprovals: ' + (j.approvals || []).map(function (a) { return a.action; }).join(', ');
+      head.textContent = 'Run ' + j.run_id + '\nRequest: ' + (j.goal || '') + '\nProject: ' + (j.project_path || '') + '\nMaker: ' + ((j.maker || {}).provider || '') + ' ' + ((j.maker || {}).version || '') + ' exit=' + ((j.maker || {}).exit_code) + '\nInspector: ' + ((j.inspector || {}).verdict || '') + '\nApprovals: ' + (j.approvals || []).map(function (a) { return a.action; }).join(', ');
       if (tab === 'changes') {
         (j.changed_files || []).forEach(function (c) {
           var li = document.createElement('li'); li.textContent = c.type + ' ' + c.path; li.className = 'rdfile t-' + c.type;
@@ -1810,7 +1810,7 @@ DASHBOARD_JS = r"""
         setText('rd-evidence', 'Final evidence: ' + JSON.stringify(j.final_evidence || {}) + '\nPreconditions: ' + JSON.stringify((j.preconditions || {}).blocks || []));
       } else {
         var t = j.tests || {};
-        diff.textContent = 'TEST RESULTS\n\nBaseline:   ' + JSON.stringify(t.baseline) + '\nPost-build: ' + JSON.stringify(t.post) + '\nRegression: ' + (t.regression || '') + '\nScope: ' + (t.scope || '') + '\nCanonical containment: ' + (t.canonical || '') + '\nReviewer: ' + (t.reviewer || '') + '\nFinal Gate: ' + (t.final_gate || '') + '\n\nVerifier summary: ' + (t.verifier_summary || '') + '\n\n--- verifier output (tail) ---\n' + (t.verifier_output_tail || '');
+        diff.textContent = 'TEST RESULTS\n\nBaseline:   ' + JSON.stringify(t.baseline) + '\nPost-build: ' + JSON.stringify(t.post) + '\nRegression: ' + (t.regression || '') + '\nScope: ' + (t.scope || '') + '\nCanonical containment: ' + (t.canonical || '') + '\nInspector: ' + (t.inspector || '') + '\nFinal Gate: ' + (t.final_gate || '') + '\n\nVerifier summary: ' + (t.verifier_summary || '') + '\n\n--- verifier output (tail) ---\n' + (t.verifier_output_tail || '');
         setText('rd-evidence', 'Final evidence: ' + JSON.stringify(j.final_evidence || {}));
       }
     }).catch(function () {});
@@ -1885,7 +1885,7 @@ DASHBOARD_JS = r"""
     var ah = document.getElementById('approval-headline'); if (ah) ah.setAttribute('data-raw', ap.headline || '');
     setText('approval-headline', hl + (ap.run_id && ap.run_id !== runInfo.run_id ? ' \u00b7 ' + ap.run_id.slice(0, 22) : ''));
     setText('approval-stage', ap.stage === 'POST_BUILD' ? '코드 작성 후 검증 단계 (POST-BUILD / VERIFYING)' : (ap.stage === 'ENTRY' ? '작업 시작 전 (ENTRY)' : (ap.stage_label || '')));
-    setText('approval-builder', ap.builder === 'COMPLETED' ? '코드 작성 완료' : (ap.builder === 'NOT RUN' ? '아직 실행 안 됨' : (ap.builder || '')));
+    setText('approval-maker', ap.maker === 'COMPLETED' ? '코드 작성 완료' : (ap.maker === 'NOT RUN' ? '아직 실행 안 됨' : (ap.maker || '')));
     var an = document.getElementById('approval-next'); if (an) an.setAttribute('data-raw', ap.next || '');
     setText('approval-next', ap.required ? ko(I18N.ui, 'human_required_sub') : (ap.rejected ? '거절됨: 이 작업은 실행되지 않습니다.' : (ap.inflight || ap.approved ? '승인됨: 전체 안전 검사를 거쳐 작업을 계속합니다.' : (ap.state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'not_approvable_sub') : ''))));
     setText('approval-reason', item.code ? rk(item).title : ((ap.explain || {}).title || item.title || ''));
@@ -1900,7 +1900,7 @@ DASHBOARD_JS = r"""
       setText('ap-na-desc', bk.title); setText('ap-na-why', bk.why);
       var pr = document.getElementById('ap-na-path-row'); if (pr) pr.style.display = block.file ? '' : 'none';
       setText('ap-na-path', block.file || '');
-      setText('ap-na-reco-text', (I18N.reasons || {})[block.code] ? ((I18N.reasons || {})[block.code].recommendation || '') : 'HEAD에게 다시 요청하거나 상세 정보를 확인하세요.');
+      setText('ap-na-reco-text', (I18N.reasons || {})[block.code] ? ((I18N.reasons || {})[block.code].recommendation || '') : 'ARCHITECT에게 다시 요청하거나 상세 정보를 확인하세요.');
       var rb = document.getElementById('approval-retry-btn'); if (rb) rb.setAttribute('data-prompt', retryPromptJs(block.code, block.file));
     }
   }
@@ -1929,9 +1929,9 @@ DASHBOARD_JS = r"""
     } else if (human) {
       kind = 'resolved'; text = ap.rejected ? '거절되어 이 작업은 실행되지 않습니다.' : '승인되어 전체 안전 검사를 거쳐 작업을 계속합니다.';
     } else if (!run || run.state === 'NONE') {
-      kind = 'idle'; text = ko(I18N.ui, 'head_ready');
+      kind = 'idle'; text = ko(I18N.ui, 'architect_ready');
     } else if (run.state === 'FAIL' || run.state === 'TIMEOUT') {
-      kind = 'failed'; text = '작업이 실패했습니다. 새로운 요청을 HEAD 대화창에 보내주세요.';
+      kind = 'failed'; text = '작업이 실패했습니다. 새로운 요청을 ARCHITECT 대화창에 보내주세요.';
     } else {
       show = false;
     }
@@ -1967,13 +1967,13 @@ DASHBOARD_JS = r"""
       var o = j.order || {};
       var lines = [
         'Run ID: ' + j.run_id, 'State: ' + j.state, 'Project: ' + (j.project_path || ''), 'Request: ' + (j.goal || ''),
-        '', 'HEAD ORDER: ' + (o.goal || ''), 'risk_level: ' + (o.risk_level || '') + '   requires_human_approval: ' + o.requires_human_approval,
+        '', 'ARCHITECT ORDER: ' + (o.goal || ''), 'risk_level: ' + (o.risk_level || '') + '   requires_human_approval: ' + o.requires_human_approval,
         'allowed_paths: ' + JSON.stringify(o.allowed_paths || []), 'protected_paths: ' + JSON.stringify(o.protected_paths || []),
         'allowed_deletions: ' + JSON.stringify(o.allowed_deletions || []), 'context: ' + (o.context || ''),
         '', 'Approval stage: ' + ((j.approval || {}).stage || 'n/a'), 'Approval reason: ' + (j.approval_reason || ''), 'Related files: ' + JSON.stringify(j.related_files || []),
         'Blocking (non-approvable) violations: ' + JSON.stringify((j.approval || {}).blocking || []),
         'Decisions so far: ' + JSON.stringify((j.approval || {}).decisions || []),
-        'Builder executed: ' + (j.builder_ran ? 'YES' : 'NO (nothing has been built)') + '  provider=' + ((j.builder || {}).provider || '-') + ' exit_code=' + ((j.builder || {}).exit_code === undefined ? '-' : (j.builder || {}).exit_code) + ' version=' + ((j.builder || {}).version || '-'),
+        'Maker executed: ' + (j.maker_ran ? 'YES' : 'NO (nothing has been built)') + '  provider=' + ((j.maker || {}).provider || '-') + ' exit_code=' + ((j.maker || {}).exit_code === undefined ? '-' : (j.maker || {}).exit_code) + ' version=' + ((j.maker || {}).version || '-'),
         'Worktree: ' + (j.worktree_path || 'none'),
         'Changed files: ' + JSON.stringify(j.changed_files || []), 'Diff stat: ' + JSON.stringify(j.diff_stat || []),
         'Tests so far: baseline=' + JSON.stringify((j.tests || {}).baseline || null) + ' post=' + JSON.stringify((j.tests || {}).post || null),
@@ -2001,7 +2001,7 @@ DASHBOARD_JS = r"""
   function renderActivity(act) {
     if (!act) return;
     var core = document.getElementById('director-core');
-    if (core) { core.classList.toggle('active', !!act.director); var cs = document.getElementById('core-stage'); if (cs) { cs.setAttribute('data-raw', act.director ? ('ORCHESTRATING \u00b7 ' + (act.stage || '')) : 'IDLE'); } setText('core-stage', act.director ? ('지휘 중 \u00b7 ' + ko(I18N.stage, act.stage === 'BUILDER' ? 'BUILD' : (act.stage === 'REVIEWER' ? 'REVIEW' : (act.stage || '')))) : ko(I18N.state, 'IDLE')); }
+    if (core) { core.classList.toggle('active', !!act.director); var cs = document.getElementById('core-stage'); if (cs) { cs.setAttribute('data-raw', act.director ? ('ORCHESTRATING \u00b7 ' + (act.stage || '')) : 'IDLE'); } setText('core-stage', act.director ? ('지휘 중 \u00b7 ' + ko(I18N.stage, act.stage === 'MAKER' ? 'BUILD' : (act.stage === 'INSPECTOR' ? 'REVIEW' : (act.stage || '')))) : ko(I18N.state, 'IDLE')); }
     Object.keys(act.nodes || {}).forEach(function (dom) {
       var n = act.nodes[dom]; var el = document.getElementById('node-' + dom); if (!el) return;
       el.classList.toggle('active', !!n.active);
@@ -2033,8 +2033,8 @@ DASHBOARD_JS = r"""
   function pollMessages() {
     return fetch('/chat/messages?after_id=' + lastId, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       (j.messages || []).forEach(function (m) { if (m.id > lastId) { appendMessage(m); lastId = m.id; } });
-      serverBusy = !!j.head_busy; updateSendUi();
-      scheduleMessages((j.head_busy || lastStatusMode === 'active') ? 3000 : 10000);
+      serverBusy = !!j.architect_busy; updateSendUi();
+      scheduleMessages((j.architect_busy || lastStatusMode === 'active') ? 3000 : 10000);
     }).catch(function () { scheduleMessages(10000); });
   }
   function replaceList(id, items, formatter) {
@@ -2157,8 +2157,8 @@ DASHBOARD_JS = r"""
       var pl = document.getElementById('project-label'); if (pl) setText('project-label', j.project_name || ko(I18N.ui, 'no_project'));
       window.__curProjectName = j.project_name || '';
       setText('session-label', j.session_id || '');
-      serverBusy = !!j.head_busy; updateSendUi();
-      var active = {PLANNING:1, ORDER_READY:1, BUILDING:1, VERIFYING:1, REVIEWING:1, DECIDING:1}[(j.run || {}).state] || j.head_busy;
+      serverBusy = !!j.architect_busy; updateSendUi();
+      var active = {PLANNING:1, ORDER_READY:1, BUILDING:1, VERIFYING:1, REVIEWING:1, DECIDING:1}[(j.run || {}).state] || j.architect_busy;
       var need = (j.approval || {}).required || (j.human_required_count || 0) > 0;
       lastStatusMode = active ? 'active' : (need ? 'human' : 'idle');
       scheduleStatus(active ? 3000 : (need ? 5000 : 12000));
@@ -2176,7 +2176,7 @@ DASHBOARD_JS = r"""
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (j.status === 'accepted' || j.status === 'duplicate') { input.value = ''; sendStatus.textContent = ''; }
-      else if (j.status === 'busy') { sendStatus.textContent = 'BUSY: ' + (j.message || 'HEAD is working...'); }
+      else if (j.status === 'busy') { sendStatus.textContent = 'BUSY: ' + (j.message || 'ARCHITECT is working...'); }
       else { sendStatus.textContent = 'Error: ' + (j.error || j.status); }
     })
     .catch(function (e) { sendStatus.textContent = 'Send failed: ' + e; })
@@ -2346,10 +2346,10 @@ DASHBOARD_CSS = r"""
     #chat-head .session-label { color: var(--muted); font-size: 12px; margin-left: auto; }
     #chat-box { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 12px; font-size: 13.5px; }
     .msg { margin-bottom: 10px; }
-    .msg-USER, .msg-HEAD { padding: 6px 10px; border-left: 3px solid var(--blue); background: rgba(90,169,255,0.05); border-radius: 0 4px 4px 0; }
-    .msg-HEAD { border-left-color: var(--purple); background: rgba(185,135,216,0.06); }
+    .msg-USER, .msg-ARCHITECT { padding: 6px 10px; border-left: 3px solid var(--blue); background: rgba(90,169,255,0.05); border-radius: 0 4px 4px 0; }
+    .msg-ARCHITECT { border-left-color: var(--purple); background: rgba(185,135,216,0.06); }
     .msg strong { font-size: 12px; letter-spacing: 0.6px; display: block; color: var(--muted); margin-bottom: 2px; }
-    .msg-USER strong { color: var(--blue); } .msg-HEAD strong { color: var(--purple); }
+    .msg-USER strong { color: var(--blue); } .msg-ARCHITECT strong { color: var(--purple); }
     .msg pre { white-space: pre-wrap; margin: 0; font-family: inherit; font-size: 13.5px; line-height: 1.4; }
     .msg-SYSTEM { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px 0; font-size: 12px; color: var(--muted); cursor: pointer; }
     .msg-SYSTEM .ev { display: none; flex: 0 0 auto; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; padding: 0 5px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
@@ -2479,7 +2479,7 @@ DASHBOARD_CSS = r"""
 
 EVENT_LABELS = [
     (r"\[미션 \d+/\d+\] 실행 시작", "STEP STARTED", "ev-info"), (r"\[미션 \d+/\d+\] 결과 PASS", "STEP PASS", "ev-ok"),
-    (r"\[미션 \d+/\d+\] 결과 ", "STEP NOT PASSED", "ev-bad"), (r"\[미션 \d+/\d+\] 사용자 확인 요청", "HEAD REVIEW", "ev-info"), (r"\[미션 \d+/\d+\] HEAD 계획", "HEAD PLAN", "ev-info"),
+    (r"\[미션 \d+/\d+\] 결과 ", "STEP NOT PASSED", "ev-bad"), (r"\[미션 \d+/\d+\] 사용자 확인 요청", "ARCHITECT REVIEW", "ev-info"), (r"\[미션 \d+/\d+\] (?:ARCHITECT|HEAD) 계획", "ARCHITECT PLAN", "ev-info"),
     (r"^미션 시작", "MISSION STARTED", "ev-info"), (r"결과물을 프로젝트에 적용했습니다", "RESULT APPLIED", "ev-ok"),
     (r"결과물을 자동 적용하지 않았습니다", "NOT AUTO-APPLIED", "ev-bad"),
     (r"finished: PASS", "RUN PASS", "ev-ok"), (r"finished: HUMAN_REQUIRED", "HUMAN REQUIRED", "ev-bad"),
@@ -2487,7 +2487,7 @@ EVENT_LABELS = [
     (r"RECOVERY TRIAL", "RECOVERY TRIAL", "ev-info"), (r"SYSTEM STOP", "SYSTEM STOP", "ev-bad"),
     (r"PROJECT_SELECTED", "PROJECT SELECTED", "ev-ok"), (r"PROJECT_SELECTION_REJECTED|PROJECT_SELECTION_REQUIRED", "PROJECT REJECTED", "ev-bad"),
     (r"NEW_CHAT", "NEW CHAT", "ev-ok"), (r"HUMAN_REQUIRED|APPROVAL_REQUIRED", "HUMAN REQUIRED", "ev-bad"),
-    (r"BUSY", "BUSY", "ev-bad"), (r"HEAD Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])", "ERROR", "ev-bad"),
+    (r"BUSY", "BUSY", "ev-bad"), (r"(?:ARCHITECT|HEAD) Error|(?<![A-Za-z0-9_])Error(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])failed(?![A-Za-z0-9_])", "ERROR", "ev-bad"),
 ]
 NODE_NAMES = {"OPENAI": "CODEX", "ANTHROPIC": "CLAUDE", "GOOGLE": "ANTIGRAVITY"}
 
@@ -2581,22 +2581,22 @@ def render_html():
         project_path = st["project_path"]
         project_name = html_lib.escape(st.get("project_name") or "") or "NO PROJECT SELECTED"
         proj_cls = "proj-name" if project_path else "proj-name proj-none"
-        busy = st["head_busy"]
+        busy = st["architect_busy"]
         busy_attr = " disabled" if busy else ""
-        busy_text = "BUSY: HEAD is working on another request..." if busy else ""
+        busy_text = "BUSY: ARCHITECT is working on another request..." if busy else ""
         human = run["human_required"] == "YES"
         hdr_run = html_lib.escape(str(run["run_id"])[:18])
         alert_cls = "a-red" if human else "a-ok"
         alert_text = ("HUMAN REQUIRED \u2014 " + (run.get("details") or str(run["run_id"]))) if human else "SAFE / NO ACTION REQUIRED"
-        chat_badge_cls, chat_badge = ("b-busy", "HEAD is working...") if busy else (("b-red", "HUMAN_REQUIRED") if human else ("b-green", "READY"))
+        chat_badge_cls, chat_badge = ("b-busy", "ARCHITECT is working...") if busy else (("b-red", "HUMAN_REQUIRED") if human else ("b-green", "READY"))
         recovery_short = html_lib.escape(st.get("recovery_short") or "")
         recovery_reasons = html_lib.escape("\n".join(st.get("recovery_details") or []))
         core_cls = " active" if act.get("director") else ""
         mode_sentence = st.get("system_mode_sentence") or ""
         run_label_ko = I18N.state_ko(run_state) + (f" \u00b7 {elapsed}" if elapsed else "")
-        stage_map = {"HEAD": "HEAD", "BUILDER": "BUILD", "REVIEWER": "REVIEW", "VERIFY": "VERIFY"}
+        stage_map = {"ARCHITECT": "ARCHITECT", "MAKER": "BUILD", "INSPECTOR": "REVIEW", "VERIFY": "VERIFY"}
         core_stage_ko = ("지휘 중 \u00b7 " + I18N.STAGE_TEXT.get(stage_map.get(act.get("stage") or "", ""), act.get("stage") or "")) if act.get("director") else I18N.state_ko("IDLE")
-        chat_badge_ko = {"HEAD is working...": I18N.t("head_working"), "HUMAN_REQUIRED": I18N.t("human_required"), "READY": I18N.t("chat_ready")}.get(chat_badge, chat_badge)
+        chat_badge_ko = {"ARCHITECT is working...": I18N.t("architect_working"), "HUMAN_REQUIRED": I18N.t("human_required"), "READY": I18N.t("chat_ready")}.get(chat_badge, chat_badge)
         ap = st.get("approval") or {"required": False}
         ap_item = (ap.get("items") or [{}])[0] if ap.get("items") else {}
         ap_show = bool(ap.get("required") or ap.get("inflight") or ap.get("rejected") or (run["state"] == "HUMAN_REQUIRED" and str(run.get("details") or "").startswith("APPROVAL_REQUIRED")))
@@ -2645,7 +2645,7 @@ def render_html():
         rt = res.get("tests") or {}
         cnt = res.get("counts") or {}
         r_files = f"Changed files: {res.get('changed_count', 0)}  (A {cnt.get('A', 0)} / M {cnt.get('M', 0)} / D {cnt.get('D', 0)})" if res.get("is_pass") else ""
-        r_tests = (f"Tests: {'PASS' if rt.get('post_passed') else 'FAIL'}  \u00b7  Reviewer: {str(rt.get('reviewer') or '').upper()}  \u00b7  Safety: {rt.get('final_gate') or '?'}") if res.get("is_pass") else ""
+        r_tests = (f"Tests: {'PASS' if rt.get('post_passed') else 'FAIL'}  \u00b7  Inspector: {str(rt.get('inspector') or '').upper()}  \u00b7  Safety: {rt.get('final_gate') or '?'}") if res.get("is_pass") else ""
         r_can = res.get("is_pass") and r_state not in ("APPLIED", "DISCARDED")
         r_act_attr = "" if r_can else " disabled"
         r_apply_attr = "" if (r_can and not r_blocked) else " disabled"
@@ -2659,7 +2659,7 @@ def render_html():
         ap_headline_ko = html_lib.escape(I18N.t("human_approval_required") if ap.get("required") else ("사용자가 거절함" if ap.get("rejected") else ("승인됨 \u00b7 작업 재개 중" if (ap.get("inflight") or ap.get("approved")) else (I18N.t("not_approvable") if ap_show else ""))))
         ap_next_ko = html_lib.escape(I18N.t("human_required_sub") if ap.get("required") else ("거절됨: 이 작업은 실행되지 않습니다." if ap.get("rejected") else ("승인됨: 전체 안전 검사를 거쳐 작업을 계속합니다." if (ap.get("inflight") or ap.get("approved")) else (I18N.t("not_approvable_sub") if ap_show else ""))))
         ap_stage_ko = {"ENTRY": "작업 시작 전 (ENTRY)", "POST_BUILD": "코드 작성 후 검증 단계 (POST-BUILD / VERIFYING)"}.get(ap.get("stage") or "", html_lib.escape(ap.get("stage_label") or ""))
-        ap_builder_ko = {"COMPLETED": "코드 작성 완료", "NOT RUN": "아직 실행 안 됨"}.get(ap.get("builder") or "", html_lib.escape(ap.get("builder") or ""))
+        ap_maker_ko = {"COMPLETED": "코드 작성 완료", "NOT RUN": "아직 실행 안 됨"}.get(ap.get("maker") or "", html_lib.escape(ap.get("maker") or ""))
         r_headline_ko = {"RESULT APPLIED \u2713": I18N.t("result_applied"), "RESULT DISCARDED": I18N.t("result_discarded"), "APPLY BLOCKED": I18N.t("apply_blocked"), "RESULT READY": I18N.t("result_ready")}.get(r_headline, r_headline)
         _rdetail = (res.get("result") or {}).get("detail") or ""
         _rcode = I18N.reason_code(_rdetail)
@@ -2667,7 +2667,7 @@ def render_html():
                    (I18N.reason_ko(_rcode)[1] + f" (상세 코드: {_rcode})") if (r_state in ("APPLY_BLOCKED",) or "ROLLED_BACK" in r_state) and _rcode != "UNKNOWN" else
                    ("TRIBUNAL AI 보호 파일이 결과에 포함되어 적용할 수 없습니다" if res.get("control_plane") else ("프로젝트에 적용할 준비가 되었습니다" if r_state == "READY" and not r_blocked else _rdetail))))
         r_files_ko = (f"{I18N.t('changed_files')} {res.get('changed_count', 0)}개  (추가 {cnt.get('A', 0)} / 수정 {cnt.get('M', 0)} / 삭제 {cnt.get('D', 0)})") if res.get("is_pass") else ""
-        r_tests_ko = (f"{I18N.t('tests')} {I18N.t('pass') if rt.get('post_passed') else I18N.t('fail')}  \u00b7  {I18N.t('review')} {I18N.t('pass') if str(rt.get('reviewer') or '').lower() == 'pass' else I18N.t('fail')}  \u00b7  {I18N.t('safety')} {I18N.t('pass') if rt.get('final_gate') == 'PASS' else (rt.get('final_gate') or '?')}") if res.get("is_pass") else ""
+        r_tests_ko = (f"{I18N.t('tests')} {I18N.t('pass') if rt.get('post_passed') else I18N.t('fail')}  \u00b7  {I18N.t('review')} {I18N.t('pass') if str(rt.get('inspector') or '').lower() == 'pass' else I18N.t('fail')}  \u00b7  {I18N.t('safety')} {I18N.t('pass') if rt.get('final_gate') == 'PASS' else (rt.get('final_gate') or '?')}") if res.get("is_pass") else ""
         r_state_label_ko = (I18N.t("result_state") + ": " + (I18N.t("apply_blocked") if (r_state == "READY" and r_blocked) else I18N.result_ko(r_state))) if res.get("is_pass") else ""
         _alert_explain = I18N.explain_reason(run.get("details") or "")
         ap_resolved = bool(ap.get("rejected") or ap.get("inflight") or ap.get("approved"))
@@ -2699,9 +2699,9 @@ def render_html():
             todo_kind = "resolved"
             todo_text_ko = "\uac70\uc808\ub418\uc5b4 \uc774 \uc791\uc5c5\uc740 \uc2e4\ud589\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4." if ap.get("rejected") else "\uc2b9\uc778\ub418\uc5b4 \uc804\uccb4 \uc548\uc804 \uac80\uc0ac\ub97c \uac70\uccd0 \uc791\uc5c5\uc744 \uacc4\uc18d\ud569\ub2c8\ub2e4."
         elif run_state in ("NONE",):
-            todo_kind, todo_text_ko = "idle", I18N.t("head_ready")
+            todo_kind, todo_text_ko = "idle", I18N.t("architect_ready")
         elif run_state in ("FAIL", "TIMEOUT"):
-            todo_kind, todo_text_ko = "failed", "\uc791\uc5c5\uc774 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4. \uc0c8\ub85c\uc6b4 \uc694\uccad\uc744 HEAD \ub300\ud654\ucc3d\uc5d0 \ubcf4\ub0b4\uc8fc\uc138\uc694."
+            todo_kind, todo_text_ko = "failed", "\uc791\uc5c5\uc774 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4. \uc0c8\ub85c\uc6b4 \uc694\uccad\uc744 ARCHITECT \ub300\ud654\ucc3d\uc5d0 \ubcf4\ub0b4\uc8fc\uc138\uc694."
         else:
             todo_kind, todo_text_ko = "busy", ""
         todo_style = "display:none;" if todo_kind == "busy" else ""
@@ -2868,7 +2868,7 @@ def render_html():
         </div>
 
         <div class="panel" id="chat-panel">
-            <div id="chat-head"><h2>{I18N.t("head_chat")}</h2><span id="chat-badge" class="badge {chat_badge_cls}" data-raw="{chat_badge}">{chat_badge_ko}</span>
+            <div id="chat-head"><h2>{I18N.t("architect_chat")}</h2><span id="chat-badge" class="badge {chat_badge_cls}" data-raw="{chat_badge}">{chat_badge_ko}</span>
                 <button id="new-chat-btn" type="button" class="ghost"{busy_attr}>{I18N.t("new_chat")}</button>
                 <span class="session-label mono" id="session-label">{html_lib.escape(sid)}</span></div>
             <div id="chat-box" role="log" aria-live="polite" tabindex="0" data-last-id="{last_id}">
@@ -2888,7 +2888,7 @@ def render_html():
                 </div>
             </div>
             <form id="chat-form" method="POST" action="/chat" accept-charset="utf-8">
-                <textarea id="chat-input" name="message" rows="2" placeholder="{I18N.t("input_placeholder")}" aria-label="HEAD에게 보낼 메시지"></textarea>
+                <textarea id="chat-input" name="message" rows="2" placeholder="{I18N.t("input_placeholder")}" aria-label="ARCHITECT에게 보낼 메시지"></textarea>
                 <div><button type="submit" id="send-btn"{busy_attr}>{I18N.t("send")}</button><div id="send-status">{busy_text}</div></div>
             </form>
         </div>
@@ -2904,12 +2904,12 @@ def render_html():
                     <button type="button" id="todo-approve-btn" class="approve" style="{'' if todo_kind == 'approvable' else 'display:none;'}">{I18N.t("approve_resume")}</button>
                     <button type="button" id="todo-reject-btn" class="reject" style="{'' if todo_kind == 'approvable' else 'display:none;'}">{I18N.t("reject")}</button>
                     <button type="button" id="todo-view-result-btn" class="ghost" style="{'' if todo_kind == 'pass' else 'display:none;'}">{I18N.t("view_result")}</button>
-                    <button type="button" id="todo-retry-btn" class="ghost" data-prompt="{ap_retry_prompt}" style="{'' if todo_kind == 'nonapprovable' else 'display:none;'}">HEAD\uc5d0\uac8c \ub2e4\uc2dc \uc694\uccad</button>
+                    <button type="button" id="todo-retry-btn" class="ghost" data-prompt="{ap_retry_prompt}" style="{'' if todo_kind == 'nonapprovable' else 'display:none;'}">ARCHITECT\uc5d0\uac8c \ub2e4\uc2dc \uc694\uccad</button>
                     <button type="button" id="todo-details-btn" class="ghost" style="{'' if todo_kind == 'nonapprovable' else 'display:none;'}">{I18N.t("details")}</button>
                 </div>
             </div>
             <div class="pipeline">
-                <div class="stage" id="stage-0" title="{I18N.STAGE_TEXT["HEAD"]}"><span class="mark">\u25cb</span>HEAD<small>{I18N.STAGE_TEXT["HEAD"]}</small></div>
+                <div class="stage" id="stage-0" title="{I18N.STAGE_TEXT["ARCHITECT"]}"><span class="mark">\u25cb</span>ARCHITECT<small>{I18N.STAGE_TEXT["ARCHITECT"]}</small></div>
                 <div class="stage" id="stage-1" title="{I18N.STAGE_TEXT["BUILD"]}"><span class="mark">\u25cb</span>BUILD<small>{I18N.STAGE_TEXT["BUILD"]}</small></div>
                 <div class="stage" id="stage-2" title="{I18N.STAGE_TEXT["VERIFY"]}"><span class="mark">\u25cb</span>VERIFY<small>{I18N.STAGE_TEXT["VERIFY"]}</small></div>
                 <div class="stage" id="stage-3" title="{I18N.STAGE_TEXT["REVIEW"]}"><span class="mark">\u25cb</span>REVIEW<small>{I18N.STAGE_TEXT["REVIEW"]}</small></div>
@@ -2930,7 +2930,7 @@ def render_html():
                     <div><span class="ak">{I18N.t("file")}: </span><span id="approval-file" class="mono">{ap_file}</span></div>
                     <div><span class="ak">{I18N.t("why")}: </span><span id="approval-why">{ap_why_ko}</span></div>
                     <div><span class="ak">{I18N.t("stage")}: </span><span id="approval-stage">{ap_stage_ko}</span></div>
-                    <div><span class="ak">{I18N.t("builder")}: </span><span id="approval-builder">{ap_builder_ko}</span></div>
+                    <div><span class="ak">{I18N.t("maker")}: </span><span id="approval-maker">{ap_maker_ko}</span></div>
                     <div class="abtns">
                         <button type="button" id="inspect-btn" class="ghost">{I18N.t("inspect")}</button>
                         <button type="button" id="approve-btn" class="approve" style="{ap_btn_style}">{I18N.t("approve_resume")}</button>
@@ -2944,7 +2944,7 @@ def render_html():
                     <div id="ap-na-blocked">이 작업은 승인으로 계속할 수 없습니다.</div>
                     <div id="ap-na-reco"><span class="ak">권장 조치:</span> <span id="ap-na-reco-text">{ap_na_reco_ko}</span></div>
                     <div class="abtns">
-                        <button type="button" id="approval-retry-btn" class="ghost" data-prompt="{ap_retry_prompt}">HEAD에게 다시 요청</button>
+                        <button type="button" id="approval-retry-btn" class="ghost" data-prompt="{ap_retry_prompt}">ARCHITECT에게 다시 요청</button>
                         <button type="button" id="approval-details-btn" class="ghost">{I18N.t("details")}</button>
                     </div>
                 </div>
@@ -3127,9 +3127,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 after_id = 0
             session_id = q.get('session_id', [None])[0] or active_session_id()
             try:
-                payload = {"messages": chat_messages_after(after_id, session_id), "head_busy": chat_in_flight(), "session_id": session_id}
+                payload = {"messages": chat_messages_after(after_id, session_id), "architect_busy": chat_in_flight(), "session_id": session_id}
             except Exception as e:
-                payload = {"messages": [], "head_busy": chat_in_flight(), "error": str(e)}
+                payload = {"messages": [], "architect_busy": chat_in_flight(), "error": str(e)}
             self._send_json(payload)
         else:
             self.send_response(404)
@@ -3241,7 +3241,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 def run(server_class=DashboardServer, handler_class=DashboardHandler, host=BIND_HOST, port=DEFAULT_PORT):
     """Serves the dashboard on localhost only. Requests are handled concurrently (ThreadingHTTPServer)
-    so a slow HEAD CLI call never blocks the status page; DEV_TASK concurrency is guarded separately."""
+    so a slow ARCHITECT CLI call never blocks the status page; DEV_TASK concurrency is guarded separately."""
     if host != BIND_HOST:
         raise ValueError(f"Dashboard must bind to {BIND_HOST} only (got {host!r}); LAN exposure is forbidden")
     _ensure_schema()

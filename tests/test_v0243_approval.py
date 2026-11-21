@@ -1,6 +1,6 @@
 """
 v0.2.4.3 HUMAN_REQUIRED APPROVAL UX — explicit dashboard Approve & Resume / Reject; approval lifts only the
-entry APPROVAL_REQUIRED halt, every runtime gate stays; one resume per run; Builder never runs otherwise.
+entry APPROVAL_REQUIRED halt, every runtime gate stays; one resume per run; Maker never runs otherwise.
 """
 import json
 import time
@@ -18,50 +18,50 @@ from core.provider_manager import ProviderManager
 from core.safety import SafetyPolicy
 from schemas.order import OrderSchema
 from schemas.decision import DecisionSchema
-from agents.mock_head import MockHead
-from agents.codex_reviewer import CodexReviewer
+from agents.mock_architect import MockArchitect
+from agents.codex_inspector import CodexInspector
 from tests.test_v0231_chat_stabilization import make_git_project
 from tests.test_v0238_dashboard_ux import env, server, _get_json, _post  # noqa: F401
 
 
-class PassHead(MockHead):
+class PassArchitect(MockArchitect):
     def decide(self, *a, **k):
         return DecisionSchema(decision="PASS", rationale="ok", next_steps=[])
 
 
-BUILDER_CALLS = []
+MAKER_CALLS = []
 
 
 def _mock_orch():
-    return Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                        head_agent=PassHead(), reviewer_agent=CodexReviewer(provider="mock"))
+    return Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                        architect_agent=PassArchitect(), inspector_agent=CodexInspector(provider="mock"))
 
 
-def _good_builder(b, o, w):
-    BUILDER_CALLS.append(w)
+def _good_maker(b, o, w):
+    MAKER_CALLS.append(w)
     (Path(w) / "src" / "n.py").write_text("z=1\n", encoding="utf-8")
     return ["src/n.py"]
 
 
-def _rogue_builder(b, o, w):
-    BUILDER_CALLS.append(w)
+def _rogue_maker(b, o, w):
+    MAKER_CALLS.append(w)
     (Path(w) / "README.md").write_text("outside scope\n", encoding="utf-8")     # not in allowed_paths -> Scope Guard
     return ["README.md"]
 
 
 class ApprovingOrch:
-    """Wraps the mock orchestrator so approve_and_resume runs a deterministic builder (no CLI)."""
-    def __init__(self, builder):
-        self.o = _mock_orch(); self.builder = builder
+    """Wraps the mock orchestrator so approve_and_resume runs a deterministic maker (no CLI)."""
+    def __init__(self, maker):
+        self.o = _mock_orch(); self.maker = maker
     def __getattr__(self, n):
         return getattr(self.o, n)
     def approve_and_resume(self, run_id, approver="HUMAN", note="", **kw):
-        return self.o.approve_and_resume(run_id, approver=approver, note=note, builder_fn=self.builder, **kw)
+        return self.o.approve_and_resume(run_id, approver=approver, note=note, maker_fn=self.maker, **kw)
 
 
 @pytest.fixture
 def approval_env(env, monkeypatch):
-    BUILDER_CALLS.clear()
+    MAKER_CALLS.clear()
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
     with dashboard_server._APPROVAL_LOCK:
         dashboard_server._APPROVAL_INFLIGHT.clear(); dashboard_server._RECENT_APPROVAL_REQUESTS.clear()
@@ -91,14 +91,14 @@ def _halted_run(proj, allowed=("src/", "requirements.txt")):
     return run_id, orch
 
 
-# ------------------------------------------------------------------ A/B/C: halt, Builder 0, buttons shown
+# ------------------------------------------------------------------ A/B/C: halt, Maker 0, buttons shown
 
-def test_abc_sensitive_file_halts_before_builder_and_shows_actions(approval_env, server, monkeypatch):
+def test_abc_sensitive_file_halts_before_maker_and_shows_actions(approval_env, server, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _halted_run(proj)
         assert orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED"
-        assert BUILDER_CALLS == [] and orch._load_json(run_id, "builder.json") is None and orch.sm.get_run(run_id)["worktree_path"] is None
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_builder))
+        assert MAKER_CALLS == [] and orch._load_json(run_id, "maker.json") is None and orch.sm.get_run(run_id)["worktree_path"] is None
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_maker))
         st = _get_json(server, "/status")[1]
         ap = st["approval"]
         assert ap["required"] is True and ap["headline"] == "HUMAN APPROVAL REQUIRED" and ap["next"] == "Approval required before continuing"
@@ -109,25 +109,25 @@ def test_abc_sensitive_file_halts_before_builder_and_shows_actions(approval_env,
             assert f'id="{bid}"' in html
         assert 'id="approve-btn" class="approve" style="">' in html      # visible (label is localized)
         assert "HUMAN APPROVAL REQUIRED" in html and "Approval required before continuing" in html and "requirements.txt" in html
-        # Inspect is read-only and says the builder never ran
+        # Inspect is read-only and says the maker never ran
         code, ins = _get_json(server, f"/run/inspect?run_id={run_id}")
-        assert ins["builder_ran"] is False and ins["related_files"] == ["requirements.txt"] and "requirements.txt" in ins["order"]["allowed_paths"]
+        assert ins["maker_ran"] is False and ins["related_files"] == ["requirements.txt"] and "requirements.txt" in ins["order"]["allowed_paths"]
         assert ins["stages_executed"] == [] and ins["approval_items"][0]["code"] == "SENSITIVE_FILE_IN_SCOPE"
-        assert orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED" and BUILDER_CALLS == []
+        assert orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED" and MAKER_CALLS == []
 
 
-# ------------------------------------------------------------------ D: approve -> audit -> SAME run resumes -> builder runs
+# ------------------------------------------------------------------ D: approve -> audit -> SAME run resumes -> maker runs
 
 def test_d_approve_records_audit_and_resumes_same_run(approval_env, server, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _halted_run(proj)
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_builder))
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_maker))
         code, j = _post(server, "/run/approve", {"run_id": run_id, "request_id": "ap-1"})
         assert code == 200 and j["status"] == "accepted"
         _wait_done(orch, run_id)
         row = orch.sm.get_run(run_id)
         assert row["current_state"] == "PASS", row
-        assert len(BUILDER_CALLS) == 1 and row["worktree_path"] and run_id in row["worktree_path"]
+        assert len(MAKER_CALLS) == 1 and row["worktree_path"] and run_id in row["worktree_path"]
         audits = orch.sm.get_audit_logs(run_id)
         ap = [a for a in audits if a["action"] == "HUMAN_APPROVAL"]
         assert len(ap) == 1
@@ -141,22 +141,22 @@ def test_d_approve_records_audit_and_resumes_same_run(approval_env, server, monk
         assert st["approval"]["required"] is False and st["run"]["state"] == "PASS"
 
 
-# ------------------------------------------------------------------ E: reject -> builder 0, terminal
+# ------------------------------------------------------------------ E: reject -> maker 0, terminal
 
 def test_e_reject_keeps_terminal_and_never_builds(approval_env, server, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _halted_run(proj)
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_builder))
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_maker))
         code, j = _post(server, "/run/reject", {"run_id": run_id})
         assert code == 200 and j["status"] == "ok"
         assert orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED"
         assert [a["action"] for a in orch.sm.get_audit_logs(run_id)].count("HUMAN_REJECTED") == 1
-        assert BUILDER_CALLS == []
+        assert MAKER_CALLS == []
         st = _get_json(server, "/status")[1]
         assert st["approval"]["required"] is False and st["approval"]["rejected"] is True and st["approval"]["headline"] == "REJECTED BY HUMAN"
         # approving after a reject is refused
         code, j2 = _post(server, "/run/approve", {"run_id": run_id, "request_id": "ap-after-reject"})
-        assert code == 400 and j2["status"] == "not_applicable" and BUILDER_CALLS == []
+        assert code == 400 and j2["status"] == "not_applicable" and MAKER_CALLS == []
         assert 'id="approve-btn" class="approve" style="display:none;"' in render_html()
 
 
@@ -165,12 +165,12 @@ def test_e_reject_keeps_terminal_and_never_builds(approval_env, server, monkeypa
 def test_f_other_safety_violation_still_blocks_after_approval(approval_env, server, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _halted_run(proj)
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_rogue_builder))
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_rogue_maker))
         code, j = _post(server, "/run/approve", {"run_id": run_id, "request_id": "ap-f"})
         assert code == 200
         _wait_done(orch, run_id)
         row = orch.sm.get_run(run_id)
-        assert row["current_state"] == "HUMAN_REQUIRED" and len(BUILDER_CALLS) == 1
+        assert row["current_state"] == "HUMAN_REQUIRED" and len(MAKER_CALLS) == 1
         last = orch.sm.get_transitions(run_id)[-1]["details"]
         assert "outside allowed_paths" in last or "SCOPE" in last.upper()
         # the second HUMAN_REQUIRED is a runtime gate, not an approval question: no Approve button
@@ -183,10 +183,10 @@ def test_f2_non_approvable_reasons_are_not_approvable(approval_env, server, monk
     with make_git_project() as proj:
         orch = _mock_orch()
         run_id = _record_human_required(orch, str(proj), "g", "PROJECT_SELECTION_REQUIRED: not a git repository", OrderSchema(goal="g", allowed_paths=["src/"]))
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_builder))
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_maker))
         assert _get_json(server, "/status")[1]["approval"]["required"] is False
         code, j = _post(server, "/run/approve", {"run_id": run_id, "request_id": "ap-x"})
-        assert code == 400 and BUILDER_CALLS == [] and orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED"
+        assert code == 400 and MAKER_CALLS == [] and orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED"
         assert parse_approval_reason("APPROVAL_REQUIRED: INVALID_PATH (protected_paths: ..)")["approvable"] is False
     # gate-produced HUMAN_REQUIRED (no APPROVAL_REQUIRED prefix) is never approvable either
     assert approval_info("RUN-NONE", "HUMAN_REQUIRED", "FINAL_GATE: PASS refused")["required"] is False
@@ -198,10 +198,10 @@ def test_g_duplicate_approve_single_resume(approval_env, server, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _halted_run(proj)
         slow_calls = []
-        def slow_builder(b, o, w):
+        def slow_maker(b, o, w):
             slow_calls.append(w); time.sleep(1.0)
-            return _good_builder(b, o, w)
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(slow_builder))
+            return _good_maker(b, o, w)
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(slow_maker))
         results = []
         def fire(rid):
             results.append(_post(server, "/run/approve", {"run_id": run_id, "request_id": rid}))
@@ -222,14 +222,14 @@ def test_g_duplicate_approve_single_resume(approval_env, server, monkeypatch):
 def test_h_button_state_stable_across_polls(approval_env, server, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _halted_run(proj)
-        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_builder))
+        monkeypatch.setattr(dashboard_server, "_new_orchestrator", lambda: ApprovingOrch(_good_maker))
         snaps = [_get_json(server, "/status")[1]["approval"] for _ in range(3)]
         assert all(s["required"] is True and s["run_id"] == run_id for s in snaps) and snaps[0] == snaps[1] == snaps[2]
         html = render_html()
         assert "lastApprovalKey" in html and "approvalBusy" in html      # JS: no rebuild while unchanged, disabled while a click is in flight
         # chat text never approves anything
         dashboard_server.set_project(str(proj))
-        assert _get_json(server, "/status")[1]["approval"]["required"] is True and BUILDER_CALLS == []
+        assert _get_json(server, "/status")[1]["approval"]["required"] is True and MAKER_CALLS == []
 
 
 # ------------------------------------------------------------------ page script must parse (a broken script silently kills polling)

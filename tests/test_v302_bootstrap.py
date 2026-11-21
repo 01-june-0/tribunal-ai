@@ -67,18 +67,18 @@ def test_project_runtime_selected_without_global_config_mutation(tmp_path):
     assert cfg['verification']['test_command'] == 'python -m pytest tests/'
 
 def test_protected_glob_outside_grants_keeps_default_deny(tmp_path):
-    from agents.antigravity_builder import AntigravityBuilder
+    from agents.antigravity_maker import AntigravityMaker
     from schemas.order import OrderSchema
-    builder = AntigravityBuilder()
-    builder._setup_scoped_permissions(tmp_path, OrderSchema(goal='test', allowed_paths=['src/**'], protected_paths=['.env.*']))
-    assert builder._native_protected_permission_paths == []
+    maker = AntigravityMaker()
+    maker._setup_scoped_permissions(tmp_path, OrderSchema(goal='test', allowed_paths=['src/**'], protected_paths=['.env.*']))
+    assert maker._native_protected_permission_paths == []
     assert not (tmp_path / '.env.local').exists()
 
 def test_protected_glob_overlap_still_fails_closed(tmp_path):
-    from agents.antigravity_builder import AntigravityBuilder
+    from agents.antigravity_maker import AntigravityMaker
     from schemas.order import OrderSchema
     with pytest.raises(ValueError):
-        AntigravityBuilder()._setup_scoped_permissions(tmp_path, OrderSchema(goal='test', allowed_paths=['src/**'], protected_paths=['src/secret*']))
+        AntigravityMaker()._setup_scoped_permissions(tmp_path, OrderSchema(goal='test', allowed_paths=['src/**'], protected_paths=['src/secret*']))
 
 @pytest.mark.parametrize('with_product_test', [True, False])
 def test_empty_project_prepares_and_requires_real_tests(tmp_path, with_product_test):
@@ -92,7 +92,7 @@ def test_empty_project_prepares_and_requires_real_tests(tmp_path, with_product_t
             (p / 'tests/test_feature.py').write_text('from feature import double\ndef test_double():\n    assert double(4) == 8\n')
         return ['feature.py'] + (['tests/test_feature.py'] if with_product_test else [])
     order = OrderSchema(goal='Create double helper and tests', allowed_paths=['feature.py', 'tests/**'], acceptance_criteria=['double(4) == 8'])
-    result = orch.run(str(tmp_path / 'fresh'), order.goal, order=order, builder_fn=build)
+    result = orch.run(str(tmp_path / 'fresh'), order.goal, order=order, maker_fn=build)
     assert result['baseline_verification']['passed'] is True
     assert result['baseline_verification']['test_counts']['passed'] == 1
     assert result['final_state'] == ('PASS' if with_product_test else 'FAIL')

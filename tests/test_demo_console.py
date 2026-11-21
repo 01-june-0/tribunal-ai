@@ -57,7 +57,7 @@ print(json.dumps({
   "tools": sum(a["tools"] for a in acts), "errors": sum(a["errors"] for a in acts),
   "providers": sorted({r["provider"] for r in rows}),
   "missions": sorted((m["mission_id"], m["status"]) for m in MissionStore().all()),
-  "estimate": usage.expected_duration("GOOGLE", "BUILDER", "BUILDING"),
+  "estimate": usage.expected_duration("GOOGLE", "MAKER", "BUILDING"),
 }))
 """
     out = _run(probe, {"TRIBUNAL_DB_PATH": str(demo / "director.db"), "CLAUDE_CONFIG_DIR": str(demo / "claude"),
@@ -153,14 +153,14 @@ def test_demo_server_is_read_only_and_keeps_the_real_machine_out(demo_server):
     from core import role_settings
     token = {"X-Tribunal-Token": demo_server.bridge_token, "Content-Type": "application/json"}
     before = _real_data_snapshot(), (role_settings.PATH.read_bytes() if role_settings.PATH.exists() else None)
-    roles = json.dumps({"head": "openai", "builder": "claude", "reviewer": "antigravity"}).encode()
+    roles = json.dumps({"architect": "openai", "maker": "claude", "inspector": "antigravity"}).encode()
     for path, body in (("/ops/roles", roles), ("/chat", b"message=hi"), ("/project", b"path=/tmp"), ("/ops/pick-folder", b""),
                        ("/ops/mission/decide", b"mission_id=MSN-DEMO-0003&action=discard"), ("/bridge/missions", b"{}"),
                        ("/ops/shutdown", b""), ("/providers/refresh", b"")):
         assert _http(demo_server, path, "POST", body, token)[0] == 403, path
     assert _http(demo_server, "/bridge/projects", headers=token)[0] == 403       # would list real project folders
     status, roles_seen = _http(demo_server, "/ops/roles")
-    assert status == 200 and roles_seen == {"roles": {"head": "claude", "builder": "antigravity", "reviewer": "openai"},
+    assert status == 200 and roles_seen == {"roles": {"architect": "claude", "maker": "antigravity", "inspector": "openai"},
                                             "independence": "full", "csrf": ""}
     status, ai = _http(demo_server, "/ops/ai")                                  # invented plan and limits, nothing looked up
     assert status == 200 and ai["limits"]["claude"]["plan"] == "max" and ai["settings"]["claude"]["model"] == "sonnet"

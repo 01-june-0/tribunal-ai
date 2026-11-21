@@ -11,7 +11,7 @@ class SafetyPolicy:
     """Enforces Deny-All policy and Scope Guard validation."""
 
     # Sensitive dependency / package management files
-    # ---- Director-owned control plane: the Builder may never write/delete/rename these, at any layer
+    # ---- Director-owned control plane: the Maker may never write/delete/rename these, at any layer
     # (Antigravity hook, Antigravity permission settings, Director pre-write guard, post-build Scope Guard).
     CONTROL_PLANE_DIRS = {".git", ".agents", ".director_worktrees"}          # any path segment
     CONTROL_PLANE_FILES = {"gemini.md"}                                     # repo-root files (case-insensitive)
@@ -22,7 +22,7 @@ class SafetyPolicy:
     # PROTECTED_PATH_*, GIT_INTERNALS_IN_SCOPE, CONTROL_PLANE_IN_SCOPE, INVALID_PATH, DESTRUCTIVE_CHANGE and any
     # unknown/new code are non-approvable.
     APPROVABLE_ENTRY = {"SENSITIVE_FILE_IN_SCOPE", "AMBIGUOUS_SCOPE", "HIGH_RISK", "EXPLICIT_HUMAN_APPROVAL_REQUESTED",
-                        "USER_DECISION_REQUIRED"}   # HEAD proxy escalated a money/credential/irreversible decision
+                        "USER_DECISION_REQUIRED"}   # ARCHITECT proxy escalated a money/credential/irreversible decision
 
     @staticmethod
     def _norm_control(path_str) -> str:
@@ -173,7 +173,7 @@ class SafetyPolicy:
 
     @classmethod
     def normalize_order_paths(cls, order: OrderSchema, project_path: str) -> OrderSchema:
-        """Best-effort, safety-preserving normalization of a freshly HEAD-generated chat ORDER's paths,
+        """Best-effort, safety-preserving normalization of a freshly ARCHITECT-generated chat ORDER's paths,
         run once BEFORE SafetyPolicy.assess_order_for_auto_run()/validate_order_paths() ever sees it.
 
         This never loosens is_repo_relative_path/validate_order_paths themselves - those remain the
@@ -184,7 +184,7 @@ class SafetyPolicy:
               (e.g. "E:/.../the trading sample project/src" -> "src") - same authority the ORDER already implied, just
               spelled correctly.
           (b) a protected_paths entry that resolves OUTSIDE project_path (absolute-outside, or a '..'
-              traversal) is dropped - a worktree-isolated Builder cannot reach anything outside the
+              traversal) is dropped - a worktree-isolated Maker cannot reach anything outside the
               project root anyway, so "protecting" it is a no-op, never a grant of anything.
         allowed_paths and allowed_deletions are never dropped or widened here: an entry that cannot be
         resolved to somewhere inside project_path is passed through untouched, so a genuine attempt to
@@ -324,7 +324,7 @@ class SafetyPolicy:
             if not ok_rel:
                 return False, f"Forbidden: {why}"
 
-            # Director control plane is never writable by the Builder (hard deny, regardless of the ORDER)
+            # Director control plane is never writable by the Maker (hard deny, regardless of the ORDER)
             if cls.is_control_plane_path(rel_path):
                 return False, f"Forbidden: Director control-plane path is never writable: {rel_path}"
 
@@ -374,7 +374,7 @@ class SafetyPolicy:
 
     # Post-build violations a human may explicitly waive, per file. Everything else is deterministic and final:
     # traversal / canonical / symlink escapes, files outside allowed_paths, protected paths, permission files,
-    # critical config, deletions, regression, missing evidence, reviewer/final gate failures.
+    # critical config, deletions, regression, missing evidence, inspector/final gate failures.
     APPROVABLE_POST_BUILD = {
         "DEPENDENCY_CONFIGURATION_MODIFIED": "Dependency configuration modified",
         "LIVE_MONEY_CODE": "Live money code",   # order_send / payment SDK added: only the user may allow executing it

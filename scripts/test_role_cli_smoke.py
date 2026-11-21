@@ -5,24 +5,24 @@ import sys
 import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from agents.google_roles import GoogleHead, GoogleReviewer
-from agents.proposal_builder import ProposalBuilder
+from agents.google_roles import GoogleArchitect, GoogleInspector
+from agents.proposal_maker import ProposalMaker
 from schemas.order import OrderSchema
 
 def check(kind):
     with tempfile.TemporaryDirectory(prefix='director-role-smoke-') as tmp:
         order=OrderSchema(goal='Create src/add.py with def add(a,b): return a+b. No other files.',
                           allowed_paths=['src/**'],max_files_changed=1,max_diff_lines=20)
-        if kind=='google-head':
-            agent=GoogleHead(timeout=180)
+        if kind=='google-architect':
+            agent=GoogleArchitect(timeout=180)
             result=agent.create_order(order.goal,{'project_path':tmp,'existing_files':[]})
             assert result.allowed_paths
-        elif kind=='google-reviewer':
-            agent=GoogleReviewer(timeout=180)
+        elif kind=='google-inspector':
+            agent=GoogleInspector(timeout=180)
             result=agent.review(order,'+def add(a,b): return a+b',{'passed':True,'summary':'smoke evidence only'})
             assert result.verdict in ('pass','changes_required')
         else:
-            agent=ProposalBuilder(provider=kind,timeout=180)
+            agent=ProposalMaker(provider=kind,timeout=180)
             result=agent.run(order,tmp)
             assert result.status=='COMPLETED'
             scope={}
@@ -33,6 +33,6 @@ def check(kind):
 if __name__=='__main__':
     # Keep calls bounded; no same-provider concurrent invocations.
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        for result in pool.map(check,['google-head','openai','claude']):
+        for result in pool.map(check,['google-architect','openai','claude']):
             print(json.dumps(result),flush=True)
-    print(json.dumps(check('google-reviewer')),flush=True)
+    print(json.dumps(check('google-inspector')),flush=True)

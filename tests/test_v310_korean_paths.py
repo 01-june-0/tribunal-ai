@@ -42,7 +42,7 @@ def test_korean_file_inside_allowed_paths_is_not_a_scope_violation(tmp_path):
 
 
 def test_a_sentence_that_starts_with_a_folder_is_not_read_as_a_document_path():
-    from core.builder_context import referenced_documents
+    from core.maker_context import referenced_documents
     order = OrderSchema(goal="g", allowed_paths=["docs/**"], context=(
         "E:/work/dog_walker = 개 산책 게임 '오늘도, 산책'. 수치는 data/*.json 에 있고 계획은 docs/v3/plan.md 에 쓴다."))
     assert referenced_documents(order) == {}

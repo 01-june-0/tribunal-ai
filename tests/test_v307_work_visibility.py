@@ -19,20 +19,20 @@ def result(stdout="", stderr="", exit_code=0, duration=2.5, timed_out=False):
 def test_claude_reported_tokens_are_exact():
     envelope = json.dumps({"result": "ok", "usage": {"input_tokens": 100, "cache_read_input_tokens": 900,
                                                       "cache_creation_input_tokens": 50, "output_tokens": 40}})
-    usage.set_context(role="HEAD", stage="DECIDING", run_id="RUN-A", mission_id="MSN-A")
+    usage.set_context(role="ARCHITECT", stage="DECIDING", run_id="RUN-A", mission_id="MSN-A")
     rid = usage.call_started([r"C:\x\claude.exe", "--print"], "prompt")
     usage.call_finished(rid, [r"C:\x\claude.exe"], "prompt", result(envelope))
     call = usage.recent_calls(1)[0]
-    assert call["provider"] == "ANTHROPIC" and call["role"] == "HEAD" and call["tokens"] == 1090 and call["exact"]
+    assert call["provider"] == "ANTHROPIC" and call["role"] == "ARCHITECT" and call["tokens"] == 1090 and call["exact"]
     assert call["mission_id"] == "MSN-A" and call["run_id"] == "RUN-A"
 
 
 def test_codex_total_and_estimates_for_silent_clis():
-    usage.set_context(role="REVIEWER", stage="REVIEWING", run_id=None, mission_id=None)
+    usage.set_context(role="INSPECTOR", stage="REVIEWING", run_id=None, mission_id=None)
     rid = usage.call_started(["codex.exe", "exec"], "x" * 400)
     usage.call_finished(rid, ["codex.exe"], "x" * 400, result("verdict...", "tokens used\n12,345"))
     assert usage.recent_calls(1)[0]["tokens"] == 12345
-    usage.set_context(role="BUILDER")
+    usage.set_context(role="MAKER")
     rid = usage.call_started(["agy.exe"], "a" * 400 + "가" * 150)
     usage.call_finished(rid, ["agy.exe"], "a" * 400 + "가" * 150, result("b" * 40))
     call = usage.recent_calls(1)[0]
@@ -42,7 +42,7 @@ def test_codex_total_and_estimates_for_silent_clis():
 def test_antigravity_output_is_estimated_from_the_answer_not_the_stream():
     stream = "\n".join([json.dumps({"event": "delta", "text": "x" * 4000})] * 10
                        + [json.dumps({"event": "result", "result": {"status": "SUCCESS", "response": "y" * 400}})])
-    usage.set_context(role="BUILDER")
+    usage.set_context(role="MAKER")
     rid = usage.call_started(["agy.exe"], "p" * 40)
     usage.call_finished(rid, ["agy.exe"], "p" * 40, result(stream))
     assert usage.recent_calls(1)[0]["tokens"] == (11) + (101)
@@ -54,31 +54,31 @@ def test_only_ai_clis_are_recorded():
 
 
 def test_aggregate_per_role_and_provider_and_running_now():
-    usage.set_context(role="BUILDER", stage="BUILDING", run_id="RUN-B", mission_id="MSN-B")
+    usage.set_context(role="MAKER", stage="BUILDING", run_id="RUN-B", mission_id="MSN-B")
     done = usage.call_started(["agy.exe"], "p")
     usage.call_finished(done, ["agy.exe"], "p", result("o", duration=60))
     failed = usage.call_started(["claude.exe"], "p")
     usage.call_finished(failed, ["claude.exe"], "p", result("", exit_code=1, duration=5))
     live = usage.call_started(["codex.exe"], "p")                      # still running
     with usage._conn() as conn:                                          # a RUNNING row from a process that died long ago
-        conn.execute("INSERT INTO ai_usage (started_at, status, provider, role) VALUES (?, 'RUNNING', 'GOOGLE', 'BUILDER')",
+        conn.execute("INSERT INTO ai_usage (started_at, status, provider, role) VALUES (?, 'RUNNING', 'GOOGLE', 'MAKER')",
                      ((datetime.utcnow() - timedelta(hours=2)).isoformat(),))
     agg = usage.summary("MSN-B")["mission"]
-    b = agg["by_role"]["BUILDER"]
+    b = agg["by_role"]["MAKER"]
     assert b["calls"] == 2 and b["failed"] == 1 and b["seconds"] == 65.0 and b["providers"] == {"GOOGLE": 1, "ANTHROPIC": 1}
     now = usage.running_now()
-    assert [r["provider"] for r in now] == ["OPENAI"] and now[0]["role"] == "BUILDER" and now[0]["mission_id"] == "MSN-B"
+    assert [r["provider"] for r in now] == ["OPENAI"] and now[0]["role"] == "MAKER" and now[0]["mission_id"] == "MSN-B"
     assert live is not None
 
 
 def test_process_runner_records_around_the_real_call(monkeypatch):
     monkeypatch.setattr(ProcessTreeRunner, "_guarded", staticmethod(lambda argv: False))
     monkeypatch.setattr(ProcessTreeRunner, "_run_process", classmethod(lambda cls, argv, **kw: result("done", duration=7)))
-    usage.set_context(role="REVIEWER", stage="REVIEWING", run_id="RUN-C", mission_id=None)
+    usage.set_context(role="INSPECTOR", stage="REVIEWING", run_id="RUN-C", mission_id=None)
     out = ProcessTreeRunner.run(["codex.exe", "exec", "-"], stdin_data="review this")
     assert out.stdout == "done"
     call = usage.recent_calls(1)[0]
-    assert call["provider"] == "OPENAI" and call["role"] == "REVIEWER" and call["seconds"] == 7 and call["status"] == "OK"
+    assert call["provider"] == "OPENAI" and call["role"] == "INSPECTOR" and call["seconds"] == 7 and call["status"] == "OK"
 
 
 def test_ledger_failure_never_breaks_the_call(monkeypatch):
@@ -107,19 +107,19 @@ def test_activity_payload_shows_missions_and_workload(tmp_path):
                                "repair_rounds": 1, "stop_detail": ""}
     m["status"] = "DONE"
     store.save(m)
-    usage.set_context(role="BUILDER", stage="BUILDING", run_id=None, mission_id=m["mission_id"])
+    usage.set_context(role="MAKER", stage="BUILDING", run_id=None, mission_id=m["mission_id"])
     rid = usage.call_started(["agy.exe"], "p")
     usage.call_finished(rid, ["agy.exe"], "p", result("o", duration=30))
     p = dashboard_server.build_activity_payload()
     view = p["missions"][0]
     assert p["focus_mission_id"] == m["mission_id"] and view["passed_steps"] == 1
     assert view["steps"][0]["tests"]["total"] == 5 and view["steps"][0]["repairs"] == 1
-    assert p["usage"]["mission"]["by_role"]["BUILDER"]["seconds"] == 30.0
+    assert p["usage"]["mission"]["by_role"]["MAKER"]["seconds"] == 30.0
     assert any(c["provider"] == "GOOGLE" for c in p["recent_calls"])
 
 
 def test_urls_in_an_order_are_not_mistaken_for_document_paths(tmp_path):
-    from core.builder_context import referenced_documents
+    from core.maker_context import referenced_documents
     from schemas.order import OrderSchema
     doc = tmp_path / "spec.md"
     doc.write_text("SPEC", encoding="utf-8")
@@ -145,7 +145,7 @@ def test_activity_endpoint_serves_json(env, server):
 
 
 def test_calls_of_a_stopped_director_process_are_not_shown_as_working(monkeypatch):
-    usage.set_context(role="HEAD", stage="MISSION_PLANNING", run_id=None, mission_id="MSN-DEAD")
+    usage.set_context(role="ARCHITECT", stage="MISSION_PLANNING", run_id=None, mission_id="MSN-DEAD")
     usage.call_started(["claude.exe"], "plan")
     with usage._conn() as conn:
         conn.execute("UPDATE ai_usage SET pid=999999 WHERE mission_id='MSN-DEAD'")

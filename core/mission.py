@@ -1,12 +1,13 @@
-"""Goal-oriented missions (HEAD proxy autonomy).
+"""Goal-oriented missions (ARCHITECT proxy autonomy).
 
-One user request becomes a MISSION. HEAD turns it into milestone ORDERs; each ORDER runs through the normal
-pipeline (worktree -> Builder -> Director tests -> independent Reviewer -> HEAD) and every new milestone starts
-from a private snapshot of the latest PASSED milestone's worktree. After each milestone HEAD re-plans from the
+One user request becomes a MISSION. ARCHITECT turns it into milestone ORDERs; each ORDER runs through the normal
+pipeline (worktree -> Maker -> Director tests -> independent Inspector -> ARCHITECT) and every new milestone starts
+from a private snapshot of the latest PASSED milestone's worktree. After each milestone ARCHITECT re-plans from the
 real evidence until the goal is DONE, BLOCKED on a delegated exception (money / credentials / irreversible
 external action), or the step budget is spent. The user's project is never modified; the deliverable is the
 final worktree. Missions are persisted so a restart continues where it stopped.
 """
+from core.role_names import canon
 import json
 import os
 import uuid
@@ -55,7 +56,7 @@ class MissionStore:
 
     def load(self, mission_id: str) -> Optional[Dict[str, Any]]:
         p = self._path(mission_id)
-        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+        return canon(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else None
 
     def all(self) -> List[Dict[str, Any]]:
         if not self.base.exists():
@@ -63,7 +64,7 @@ class MissionStore:
         out = []
         for p in sorted(self.base.glob("MSN-*.json")):
             try:
-                out.append(json.loads(p.read_text(encoding="utf-8")))
+                out.append(canon(json.loads(p.read_text(encoding="utf-8"))))
             except (OSError, ValueError):
                 continue
         return out
@@ -198,20 +199,20 @@ class MissionRunner:
             mission["base_worktree"] = result.get("worktree_path") or mission.get("base_worktree")
         elif result["final_state"] not in (State.FAIL, State.TIMEOUT):
             # Only a delegated exception (money / credentials / irreversible) or a security stop waits for the user;
-            # any other halted milestone is treated as failed and HEAD re-plans (a new milestone gets a fresh worktree).
+            # any other halted milestone is treated as failed and ARCHITECT re-plans (a new milestone gets a fresh worktree).
             detail = result.get("stop_detail") or ""
-            treated = "FAIL (not a delegated exception; HEAD re-plans)"
+            treated = "FAIL (not a delegated exception; ARCHITECT re-plans)"
             if step.get("operator_replan"):
                 # The operator looked at the stop and sent it back to planning (e.g. a guard false positive that
                 # was fixed). Nothing is approved or applied: the stopped run stays stopped, and the next
                 # milestone's own Scope Guard checks every file again.
-                treated = "FAIL (operator re-plan: " + str(step["operator_replan"])[:300] + "; HEAD re-plans)"
+                treated = "FAIL (operator re-plan: " + str(step["operator_replan"])[:300] + "; ARCHITECT re-plans)"
             elif autopilot.run_stop_needs_user(detail):
-                if not (autopilot.head_decision_only(detail) and step.get("user_decision_review") != "ESCALATE"):
+                if not (autopilot.architect_decision_only(detail) and step.get("user_decision_review") != "ESCALATE"):
                     return self._finish(mission, "BLOCKED", blocked=detail or result["final_state"])
                 # Second look as the user's proxy: only money, credentials, irreversible external actions or
-                # security wait for the user. HEAD's verdict is recorded; if it escalates, the mission blocks.
-                ok, why, source = autopilot.proxy_verdict(orch.head, (
+                # security wait for the user. ARCHITECT's verdict is recorded; if it escalates, the mission blocks.
+                ok, why, source = autopilot.proxy_verdict(orch.architect, (
                     "A milestone's final decision asked the user (USER_DECISION). Under the user's delegation only "
                     "payments/paid services, credentials, live-money trading, irreversible external actions or security "
                     "violations may go to the user. APPROVE if this can instead be resolved by re-planning the next "
@@ -223,8 +224,8 @@ class MissionRunner:
                 if not ok:
                     self.store.save(mission)
                     return self._finish(mission, "BLOCKED", blocked=detail)
-                treated = f"FAIL (USER_DECISION reviewed by {source} as not a delegated exception: {why[:300]}; HEAD re-plans)"
-                self.notify(f"[미션 {step['index']}/{total}] 사용자 확인 요청을 HEAD가 재검토: 위임 예외(결제·자격증명·"
+                treated = f"FAIL (USER_DECISION reviewed by {source} as not a delegated exception: {why[:300]}; ARCHITECT re-plans)"
+                self.notify(f"[미션 {step['index']}/{total}] 사용자 확인 요청을 ARCHITECT가 재검토: 위임 예외(결제·자격증명·"
                             f"실자금·보안)가 아니므로 계획을 다시 세웁니다.", run_id=step["run_id"])
             result["treated_as"] = treated
             self.store.save(mission)
@@ -237,11 +238,11 @@ class MissionRunner:
             return self._finish(mission, "BLOCKED", summary=plan.get("summary", ""), blocked=plan.get("reason", ""))
         if status != "CONTINUE":
             return self._finish(mission, "INCOMPLETE", summary=plan.get("summary", ""),
-                                blocked=f"HEAD could not plan the next step: {plan.get('reason', '')}")
+                                blocked=f"ARCHITECT could not plan the next step: {plan.get('reason', '')}")
         if len(mission["steps"]) >= total:
             return self._finish(mission, "INCOMPLETE", summary=plan.get("summary", ""),
                                 blocked=f"step budget ({total}) used; next step was: {plan['order'].get('goal', '')}")
-        # Consecutive failures end a mission - but an attempt HEAD chose to build on is progress, not a dead end
+        # Consecutive failures end a mission - but an attempt ARCHITECT chose to build on is progress, not a dead end
         # (the step budget still bounds the mission).
         streak, steps = 0, mission["steps"]
         for i in range(len(steps) - 1, -1, -1):
@@ -264,9 +265,9 @@ class MissionRunner:
         attempt_wt = result.get("worktree_path")
         if (plan.get("build_on_last_attempt") is True and result["final_state"] != State.PASS
                 and attempt_wt and Path(attempt_wt).is_dir()):
-            # HEAD judged the failed attempt worth keeping: continue from it rather than starting over
+            # ARCHITECT judged the failed attempt worth keeping: continue from it rather than starting over
             mission["base_worktree"] = builds_on = attempt_wt
-        gate = autopilot.entry_gate(order, mission["project_path"], orch.head,
+        gate = autopilot.entry_gate(order, mission["project_path"], orch.architect,
                                     cwd=mission.get("base_worktree") or mission["project_path"])
         nxt = {"index": len(mission["steps"]) + 1, "order": gate["order"].model_dump(),
                "entry_notes": gate["notes"], "plan_summary": plan.get("summary", ""), "run_id": None, "result": None,
@@ -277,8 +278,8 @@ class MissionRunner:
             nxt["result"] = self._evidence(orch, nxt["run_id"])
             return self._finish(mission, "BLOCKED", summary=plan.get("summary", ""), blocked=gate["escalate"])
         self.store.save(mission)
-        self.notify(f"[미션 {nxt['index']}/{total}] HEAD 계획: {plan.get('summary', '')[:400]}\n다음 단계: {order.goal[:300]}",
-                    role="HEAD")
+        self.notify(f"[미션 {nxt['index']}/{total}] ARCHITECT 계획: {plan.get('summary', '')[:400]}\n다음 단계: {order.goal[:300]}",
+                    role="ARCHITECT")
         return mission
 
     def _execute(self, orch, mission: Dict[str, Any], step: Dict[str, Any]) -> None:
@@ -314,11 +315,11 @@ class MissionRunner:
         # if the user approves, the resumed run must still build on the previous milestone
         orch._save_json(rid, "mission_base.json", {"mission_id": mission["mission_id"],
                                                     "base_worktree": mission.get("base_worktree")})
-        orch.sm.log_audit(rid, "HEAD", "MISSION_ESCALATION", reason)
+        orch.sm.log_audit(rid, "ARCHITECT", "MISSION_ESCALATION", reason)
         orch.sm.transition_to(rid, State.HUMAN_REQUIRED, details=reason)
         return rid
 
-    # ------------------------------------------------------------------ HEAD planning
+    # ------------------------------------------------------------------ ARCHITECT planning
     def _plan(self, orch, mission: Dict[str, Any]) -> Dict[str, Any]:
         history = [{"step": s["index"], "goal": s["order"].get("goal"),
                     "acceptance_criteria": s["order"].get("acceptance_criteria"),
@@ -333,16 +334,16 @@ class MissionRunner:
         usage.set_context(stage="MISSION_PLANNING", run_id=None)
         tried, err = set(), None
         for attempt in range(4):
-            tried.add(orch._get_agent_domain(orch.head))
+            tried.add(orch._get_agent_domain(orch.architect))
             try:
-                plan = orch.head.plan_next(mission["goal"], history, context, cwd=where) or {}
+                plan = orch.architect.plan_next(mission["goal"], history, context, cwd=where) or {}
                 status = str(plan.get("status", "")).upper()
                 if status == "CONTINUE":
                     problems = autopilot.order_conflicts(OrderSchema(**(plan.get("order") or {})))
                     if not problems:
                         return plan
-                    # HEAD's own ORDER contradicts itself (e.g. "create data/x.json" while protecting data/*.json):
-                    # it would fail in the Builder every time, so HEAD gets it back with the exact conflict.
+                    # ARCHITECT's own ORDER contradicts itself (e.g. "create data/x.json" while protecting data/*.json):
+                    # it would fail in the Maker every time, so ARCHITECT gets it back with the exact conflict.
                     err = "ORDER_CONFLICT: " + "; ".join(problems)[:600]
                     context["previous_plan_rejected"] = (
                         err + ". Fix the ORDER: every required output must be inside allowed_paths and must not match "
@@ -356,7 +357,7 @@ class MissionRunner:
             except Exception as exc:
                 err = str(exc)[:300]
             orch.sm.log_audit(last_run, "ORCHESTRATOR", "MISSION_PLAN_RETRY", f"attempt {attempt + 1}: {err}")
-            if attempt >= 1 and not orch._swap_agent("head", last_run, _NullLogger(), tried, "MISSION_PLANNING", err):
+            if attempt >= 1 and not orch._swap_agent("architect", last_run, _NullLogger(), tried, "MISSION_PLANNING", err):
                 break
         return {"status": "STALLED", "reason": err, "summary": ""}
 
@@ -368,14 +369,14 @@ class MissionRunner:
         ver = orch._load_json(run_id, "verification.json") or {}
         rev = orch._load_json(run_id, "review.json") or {}
         dec = orch._load_json(run_id, "decision.json") or {}
-        bld = orch._load_json(run_id, "builder.json") or {}
+        bld = orch._load_json(run_id, "maker.json") or {}
         return {
             "run_id": run_id, "final_state": row.get("current_state"), "worktree_path": row.get("worktree_path"),
             "stop_detail": ((trans[-1].get("details") if trans else "") or "")[:1500],
             "tests": ver.get("test_counts"), "verification": (ver.get("summary") or "")[:600],
             "review_verdict": rev.get("verdict"),
             "review_findings": (list(rev.get("p0") or []) + list(rev.get("p1") or []) + list(rev.get("p2") or []))[:10],
-            "head_rationale": (dec.get("rationale") or "")[:1200],
+            "architect_rationale": (dec.get("rationale") or "")[:1200],
             "files_changed": bld.get("files_modified"),
             "repair_rounds": len(orch._load_json(run_id, "repair_history.json") or []),
         }
@@ -407,7 +408,7 @@ class MissionRunner:
                 f"목표: {mission['goal'][:300]}\n{mission['summary'][:1500]}\n결과물 위치(작업본): {where}")
         if blocked:
             text += f"\n사유: {blocked[:600]}"
-        self.notify(text, run_id=mission["steps"][-1].get("run_id"), role="HEAD")
+        self.notify(text, run_id=mission["steps"][-1].get("run_id"), role="ARCHITECT")
         self._auto_apply(mission)
         return mission
 

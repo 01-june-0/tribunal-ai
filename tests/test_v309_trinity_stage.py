@@ -56,20 +56,20 @@ def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     js = (CONSOLE / "stage.js").read_text(encoding="utf-8")
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
     assert called == {"/ops/activity", "/status", "/ops/replay", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/ai", "/ops/ai/refresh", "/providers/refresh"}
-    assert js.count("method:'POST'") == 7                             # writes: chat to HEAD, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions
+    assert js.count("method:'POST'") == 7                             # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions
     assert set(re.findall(r"accountPost\('(/[a-z/_]+)", js)) == {"/ops/ai/account", "/ops/ai/account/reveal"}     # both go through the one token-carrying helper
     assert "'X-Tribunal-Token':roleToken" in js                        # the role change carries the local token
 
 
 def test_mission_calls_are_time_ordered_and_skip_running_rows():
-    record("HEAD", "claude.exe", "MSN-R", "RUN-1", "PLANNING", 5)
-    record("BUILDER", "agy.exe", "MSN-R", "RUN-1", "BUILDING", 60)
-    record("REVIEWER", "codex.exe", "MSN-OTHER", "RUN-9", "REVIEWING", 30)
-    usage.set_context(role="REVIEWER", stage="REVIEWING", run_id="RUN-1", mission_id="MSN-R")
+    record("ARCHITECT", "claude.exe", "MSN-R", "RUN-1", "PLANNING", 5)
+    record("MAKER", "agy.exe", "MSN-R", "RUN-1", "BUILDING", 60)
+    record("INSPECTOR", "codex.exe", "MSN-OTHER", "RUN-9", "REVIEWING", 30)
+    usage.set_context(role="INSPECTOR", stage="REVIEWING", run_id="RUN-1", mission_id="MSN-R")
     usage.call_started(["codex.exe"], "still running")
     calls = usage.mission_calls("MSN-R")
-    assert [(c["role"], c["provider"], c["stage"]) for c in calls] == [("HEAD", "ANTHROPIC", "PLANNING"),
-                                                                       ("BUILDER", "GOOGLE", "BUILDING")]
+    assert [(c["role"], c["provider"], c["stage"]) for c in calls] == [("ARCHITECT", "ANTHROPIC", "PLANNING"),
+                                                                       ("MAKER", "GOOGLE", "BUILDING")]
     assert calls[1]["seconds"] == 60 and calls[1]["run_id"] == "RUN-1"
 
 
@@ -89,11 +89,11 @@ def test_replay_endpoint_returns_the_latest_finished_mission_with_calls(env, ser
             record(role, cli, m["mission_id"], "RUN-" + goal, "BUILDING")
         return m["mission_id"]
 
-    done = mission("finished", "DONE", [("HEAD", "claude.exe"), ("BUILDER", "agy.exe")])
-    live = mission("running", "RUNNING", [("HEAD", "claude.exe")])
+    done = mission("finished", "DONE", [("ARCHITECT", "claude.exe"), ("MAKER", "agy.exe")])
+    live = mission("running", "RUNNING", [("ARCHITECT", "claude.exe")])
     code, payload = _get_json(server, "/ops/replay")
     assert code == 200 and payload["mission_id"] == done               # a running mission is never "replayed"
-    assert [c["role"] for c in payload["calls"]] == ["HEAD", "BUILDER"]
+    assert [c["role"] for c in payload["calls"]] == ["ARCHITECT", "MAKER"]
     assert payload["steps"][0]["state"] == "PASS" and payload["steps"][0]["tests"]["total"] == 3
     code, payload = _get_json(server, "/ops/replay?mission_id=" + live)
     assert payload["mission_id"] == live and len(payload["calls"]) == 1  # ... unless asked for by id

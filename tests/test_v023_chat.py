@@ -22,12 +22,12 @@ def chat_setup(isolate_provider_db):
     
     return cm, pm
 
-class MockHeadQuestion:
+class MockArchitectQuestion:
     provider = "OPENAI"
     def chat(self, msg, ctx, hist):
         return {"type": "QUESTION", "message": "I am a question answer"}
         
-class MockHeadTask:
+class MockArchitectTask:
     provider = "OPENAI"
     def chat(self, msg, ctx, hist):
         return {
@@ -45,7 +45,7 @@ class MockHeadTask:
             }
         }
         
-class MockHeadMalformed:
+class MockArchitectMalformed:
     provider = "OPENAI"
     def chat(self, msg, ctx, hist):
         return {"type": "DEV_TASK"} # missing order
@@ -54,12 +54,12 @@ def test_a_question(chat_setup, monkeypatch):
     cm, pm = chat_setup
     
     import core.orchestrator
-    monkeypatch.setattr(core.orchestrator.Orchestrator, "_init_head", lambda s, p: MockHeadQuestion())
+    monkeypatch.setattr(core.orchestrator.Orchestrator, "_init_architect", lambda s, p: MockArchitectQuestion())
     monkeypatch.setattr(core.orchestrator.Orchestrator, "run", lambda *a, **kw: None)
     
-    # Mocking self.head property after initialization
+    # Mocking self.architect property after initialization
     def mock_init(self, *args, **kwargs):
-        self.head = MockHeadQuestion()
+        self.architect = MockArchitectQuestion()
         self.config = {}
     
     monkeypatch.setattr(core.orchestrator.Orchestrator, "__init__", mock_init)
@@ -67,21 +67,21 @@ def test_a_question(chat_setup, monkeypatch):
     handle_chat_message("what is this?")
     msgs = cm.get_messages(GLOBAL_SESSION_ID)
     
-    assert msgs[-1]["role"] == "HEAD"
+    assert msgs[-1]["role"] == "ARCHITECT"
     assert msgs[-1]["content"] == "I am a question answer"
 
 def test_b_dev_task(chat_setup, monkeypatch):
     cm, pm = chat_setup
     
     run_called = False
-    def mock_run(self, project_path, goal, run_id=None, builder_fn=None, order=None, **kwargs):
+    def mock_run(self, project_path, goal, run_id=None, maker_fn=None, order=None, **kwargs):
         nonlocal run_called
         run_called = True
         assert order.goal == "do something"
         
     import core.orchestrator
     def mock_init(self, *args, **kwargs):
-        self.head = MockHeadTask()
+        self.architect = MockArchitectTask()
         self.config = {}
         self.sm = StateMachine()
         self.pm = ProviderManager()
@@ -107,7 +107,7 @@ def test_c_malformed_order(chat_setup, monkeypatch):
     
     import core.orchestrator
     def mock_init(self, *args, **kwargs):
-        self.head = MockHeadMalformed()
+        self.architect = MockArchitectMalformed()
         self.config = {}
         self.sm = StateMachine()
     monkeypatch.setattr(core.orchestrator.Orchestrator, "__init__", mock_init)
@@ -131,19 +131,19 @@ def test_d_system_mode_stop(chat_setup, monkeypatch):
 
 def test_e_real_init_passes_config_and_project_context(chat_setup, monkeypatch):
     """handle_chat_message must construct a real Orchestrator (config supplied) and pass a
-    dict project_context (not a bare string) to head.chat, and run() on the session project."""
+    dict project_context (not a bare string) to architect.chat, and run() on the session project."""
     cm, pm = chat_setup
     seen = {}
 
-    class CapturingHead:
+    class CapturingArchitect:
         provider = "openai"
         def chat(self, msg, ctx, hist):
             seen["ctx"] = ctx
             return {"type": "DEV_TASK", "message": "ok", "order": {"goal": "g", "allowed_paths": ["src/"]}}
 
     import core.orchestrator
-    monkeypatch.setattr(core.orchestrator.Orchestrator, "_init_head", lambda self, p=None: CapturingHead())
-    def mock_run(self, project_path, goal, run_id=None, builder_fn=None, order=None, **kwargs):
+    monkeypatch.setattr(core.orchestrator.Orchestrator, "_init_architect", lambda self, p=None: CapturingArchitect())
+    def mock_run(self, project_path, goal, run_id=None, maker_fn=None, order=None, **kwargs):
         seen["project_path"] = project_path
         seen["order"] = order
     monkeypatch.setattr(core.orchestrator.Orchestrator, "run", mock_run)
@@ -169,8 +169,8 @@ def test_h_protected_paths_safety(isolate_provider_db):
     from pathlib import Path
     from core.orchestrator import Orchestrator
     from core.state_machine import State
-    from agents.mock_head import MockHead
-    from agents.codex_reviewer import CodexReviewer
+    from agents.mock_architect import MockArchitect
+    from agents.codex_inspector import CodexInspector
     from schemas.order import OrderSchema
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -186,17 +186,17 @@ def test_h_protected_paths_safety(isolate_provider_db):
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), check=True, capture_output=True)
 
         orch = Orchestrator(
-            config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-            head_agent=MockHead(),
-            reviewer_agent=CodexReviewer(provider="mock")
+            config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+            architect_agent=MockArchitect(),
+            inspector_agent=CodexInspector(provider="mock")
         )
         order = OrderSchema(goal="chat order", allowed_paths=["src/"], protected_paths=[".env"], max_files_changed=5, max_diff_lines=100)
 
-        def rogue_builder(builder, o, wt_path):
+        def rogue_maker(maker, o, wt_path):
             (Path(wt_path) / ".env").write_text("SECRET=hacked\n", encoding="utf-8")
             return [".env"]
 
-        summary = orch.run(str(repo), order.goal, builder_fn=rogue_builder, order=order)
+        summary = orch.run(str(repo), order.goal, maker_fn=rogue_maker, order=order)
 
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert summary["scope_violations"] > 0

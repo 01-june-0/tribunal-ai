@@ -1,8 +1,8 @@
-"""Bounded HEAD correction for a project-root scope, without granting whole-repo writes."""
+"""Bounded ARCHITECT correction for a project-root scope, without granting whole-repo writes."""
 from pathlib import Path
 from core.safety import SafetyPolicy
 
-def repair_root_scope(order, project_path, head):
+def repair_root_scope(order, project_path, architect):
     original = SafetyPolicy.normalize_order_paths(order, project_path)
     root = Path(project_path).resolve()
     def is_root(value):
@@ -17,7 +17,7 @@ def repair_root_scope(order, project_path, head):
         return original, []
     notes=[]
     for attempt in range(2):
-        proposal=head.create_order(original.goal, {
+        proposal=architect.create_order(original.goal, {
             'project_path':str(root), 'original_order':original.model_dump(),
             'instruction':'Repair allowed_paths ONLY: replace the project root with narrowly scoped repo-relative files/subtrees needed by this goal. No absolute paths, dot, whole-repo wildcard or outside paths. Keep original requirements; do not request user approval for path formatting.',
             'previous_errors':notes})
@@ -27,6 +27,6 @@ def repair_root_scope(order, project_path, head):
         if any(p.strip() in ('*', '**', '**/*', '.', './') for p in candidate.allowed_paths):
             errors.append('Whole-project scope is not a path repair')
         if not errors:
-            return candidate, ['HEAD corrected project-root scope to '+', '.join(candidate.allowed_paths)]
+            return candidate, ['ARCHITECT corrected project-root scope to '+', '.join(candidate.allowed_paths)]
         notes=errors
     return original, notes

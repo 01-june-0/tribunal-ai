@@ -28,9 +28,9 @@ def page():
     ("[미션 2/3] 결과 PASS - tests failed earlier but pass now", "ev-ok", "✓ 미션 단계가 통과했습니다."),
     ("[미션 2/3] 결과 HUMAN_REQUIRED - needs a look", "ev-bad", "⚠ 미션 단계가 통과하지 못했습니다."),
     ("미션 시작 MSN-1: fix the Error page", "ev-info", "● 미션을 시작했습니다."),
-    ("[미션 2/3] HEAD 계획: retry the failed step", "ev-info", "● HEAD가 다음 단계를 계획했습니다."),
+    ("[미션 2/3] ARCHITECT 계획: retry the failed step", "ev-info", "● ARCHITECT가 다음 단계를 계획했습니다."),
     ("결과물을 자동 적용하지 않았습니다: TypeError in hook", "ev-bad", "⚠ 결과물을 자동 적용하지 않았습니다."),
-    ("HEAD Error: boom", "ev-bad", "✗ 오류가 발생했습니다."),
+    ("ARCHITECT Error: boom", "ev-bad", "✗ 오류가 발생했습니다."),
     ("Run RUN-1 failed", "ev-bad", "✗ 오류가 발생했습니다."),
     ("the goal mentions ValueError and unfailed things", "ev-info", "· 시스템 알림"),     # a word inside a word is not an error
 ])
@@ -56,7 +56,7 @@ def test_the_browser_labels_each_notice_the_way_the_server_does(page, tmp_path):
         pytest.skip("node is not installed")
     js = page[page.index("var EVENT_LABELS = ["):]
     js = js[:js.index("];") + 2]
-    lines = ["[미션 1/3] 실행 시작: fix the Error page", "미션 시작 MSN-1: fix the Error page", "[미션 2/3] HEAD 계획: retry the failed step", "HEAD Error: boom", "Run RUN-1 failed",
+    lines = ["[미션 1/3] 실행 시작: fix the Error page", "미션 시작 MSN-1: fix the Error page", "[미션 2/3] ARCHITECT 계획: retry the failed step", "ARCHITECT Error: boom", "Run RUN-1 failed",
              "the goal mentions ValueError and unfailed things", "오류Error처리", "BUSY now", "결과물을 적용했습니다 RUN-1"]
     script = js + "\nvar lines=" + json.dumps(lines, ensure_ascii=False) + ";\n" \
         "console.log(JSON.stringify(lines.map(function(l){for(var i=0;i<EVENT_LABELS.length;i++){if(EVENT_LABELS[i][0].test(l))return EVENT_LABELS[i][1];}return null;})));"
@@ -72,7 +72,7 @@ def test_the_browser_labels_each_notice_the_way_the_server_does(page, tmp_path):
 def test_page_has_a_language_names_its_inputs_and_shows_no_internal_placeholders(page):
     assert '<html lang="ko">' in page
     assert 'id="project-input"' in page and 'aria-label="프로젝트 폴더 경로"' in page
-    assert 'aria-label="HEAD에게 보낼 메시지"' in page
+    assert 'aria-label="ARCHITECT에게 보낼 메시지"' in page
     assert 'role="dialog" aria-modal="true"' in page                       # the result window
     for leftover in ("raw status:", "(read-only)", "click to expand", "New chat refused", "New chat failed", "역할 변경 버튼"):
         assert leftover not in page, leftover
@@ -209,7 +209,7 @@ def test_nothing_in_the_workshop_is_set_smaller_than_12px(page):
 def test_chat_names_the_speaker_in_korean_and_roles_use_the_stage_words(page):
     assert dashboard_i18n.SPEAKER_TEXT["USER"] == "나" and dashboard_i18n.i18n_bundle()["speaker"]["USER"] == "나"
     assert "(I18N.speaker || {})[m.role] || m.role" in page
-    assert dashboard_i18n.role_ko("HEAD, BUILDER, REVIEWER") == "HEAD · BUILDER · REVIEWER (지휘 · 구현 · 검수)"
+    assert dashboard_i18n.role_ko("ARCHITECT, MAKER, INSPECTOR") == "ARCHITECT · MAKER · INSPECTOR (설계 · 제작 · 감리)"
     cm = ChatManager(); sid = ds.active_session_id()
     cm.add_message(sid, "USER", "hello there")
     html = ds.render_html()
@@ -217,7 +217,7 @@ def test_chat_names_the_speaker_in_korean_and_roles_use_the_stage_words(page):
 
 
 def test_any_ai_without_a_role_is_the_spare_one():
-    roles = {"OPENAI": {"role": "BACKUP"}, "ANTHROPIC": {"role": "HEAD, BUILDER, REVIEWER"}, "GOOGLE": {"role": "BACKUP"}}
+    roles = {"OPENAI": {"role": "BACKUP"}, "ANTHROPIC": {"role": "ARCHITECT, MAKER, INSPECTOR"}, "GOOGLE": {"role": "BACKUP"}}
     nodes = ds._node_activity("IDLE", roles)["nodes"]
     assert nodes["OPENAI"]["backup"] and nodes["GOOGLE"]["backup"] and not nodes["ANTHROPIC"]["backup"]
     for not_spare in ("NONE", "UNKNOWN", ""):                               # down, or not decided yet

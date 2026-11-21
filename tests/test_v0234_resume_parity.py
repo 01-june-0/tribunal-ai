@@ -26,10 +26,10 @@ from schemas.order import OrderSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 from schemas.provenance import AgentProvenanceRecord
-from agents.mock_head import MockHead
-from agents.codex_reviewer import CodexReviewer
-from agents.antigravity_builder import AntigravityBuilder
-from tests.test_v0231_chat_stabilization import make_git_project, inline_threads, HeadStub, _order
+from agents.mock_architect import MockArchitect
+from agents.codex_inspector import CodexInspector
+from agents.antigravity_maker import AntigravityMaker
+from tests.test_v0231_chat_stabilization import make_git_project, inline_threads, ArchitectStub, _order
 from tests.test_v0233_codex_fixes import _make_link
 
 
@@ -39,9 +39,9 @@ STATE_PATH = [State.PLANNING, State.ORDER_READY, State.BUILDING, State.VERIFYING
 
 
 def _mock_orch(sm=None, **cfg_over):
-    cfg = {"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}}
+    cfg = {"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}}
     cfg.update(cfg_over)
-    return Orchestrator(config=cfg, state_machine=sm, head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"))
+    return Orchestrator(config=cfg, state_machine=sm, architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"))
 
 
 def _stuck_run(proj, target_state, order=None, with_worktree=True, goal="Goal"):
@@ -64,14 +64,14 @@ def _stuck_run(proj, target_state, order=None, with_worktree=True, goal="Goal"):
 
 
 def _rogue(sentinel, calls):
-    def builder(b, o, wt):
+    def maker(b, o, wt):
         calls.append(wt)
         sentinel.write_text("HACKED", encoding="utf-8")
         return []
-    return builder
+    return maker
 
 
-# ------------------------------------------------------------------ TEST A/B: resume with bad ORDER paths -> Builder 0
+# ------------------------------------------------------------------ TEST A/B: resume with bad ORDER paths -> Maker 0
 
 @pytest.mark.parametrize("bad", ["../outside", "../../outside", r"C:\temp", "/tmp/foo", r"\\server\share", "~/x"])
 def test_a_b_resume_bad_paths_fail_closed(isolate_provider_db, tmp_path, bad):
@@ -81,7 +81,7 @@ def test_a_b_resume_bad_paths_fail_closed(isolate_provider_db, tmp_path, bad):
     with make_git_project() as proj:
         order = OrderSchema(goal="attack", allowed_paths=[bad])
         run_id, wt, sm = _stuck_run(proj, State.ORDER_READY, order)
-        summary = _mock_orch().resume(run_id, builder_fn=_rogue(sentinel, calls))
+        summary = _mock_orch().resume(run_id, maker_fn=_rogue(sentinel, calls))
     assert summary["final_state"] == State.HUMAN_REQUIRED
     assert calls == []
     assert sentinel.read_text(encoding="utf-8") == "ORIGINAL"
@@ -90,11 +90,11 @@ def test_a_b_resume_bad_paths_fail_closed(isolate_provider_db, tmp_path, bad):
     calls2 = []
     with make_git_project() as proj:
         run_id2, wt2, sm2 = _stuck_run(proj, State.BUILDING, order)
-        summary2 = _mock_orch().resume(run_id2, builder_fn=_rogue(sentinel, calls2))
+        summary2 = _mock_orch().resume(run_id2, maker_fn=_rogue(sentinel, calls2))
     assert summary2["final_state"] == State.HUMAN_REQUIRED and calls2 == []
 
 
-# ------------------------------------------------------------------ TEST C: resume symlink escape -> Builder 0
+# ------------------------------------------------------------------ TEST C: resume symlink escape -> Maker 0
 
 def test_c_resume_symlink_escape(isolate_provider_db, tmp_path):
     outside = tmp_path / "outside"
@@ -107,7 +107,7 @@ def test_c_resume_symlink_escape(isolate_provider_db, tmp_path):
         run_id, wt, sm = _stuck_run(proj, State.ORDER_READY, order)
         if not _make_link(Path(wt) / "src" / "escape", outside):
             pytest.skip("symlink/junction creation not permitted")
-        summary = _mock_orch().resume(run_id, builder_fn=_rogue(sentinel, calls))
+        summary = _mock_orch().resume(run_id, maker_fn=_rogue(sentinel, calls))
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert calls == []
         assert sentinel.read_text(encoding="utf-8") == "ORIGINAL"
@@ -122,11 +122,11 @@ def test_d_resume_safety_cap_clamp(isolate_provider_db):
         run_id, wt, sm = _stuck_run(proj, State.ORDER_READY, order)
         orch = _mock_orch(safety={"max_files_changed": 4, "max_diff_lines": 120})
 
-        def builder(b, o, wt_):
+        def maker(b, o, wt_):
             for i in range(6):
                 (Path(wt_) / "src" / f"f{i}.py").write_text("x = 1\n", encoding="utf-8")
             return []
-        summary = orch.resume(run_id, builder_fn=builder)
+        summary = orch.resume(run_id, maker_fn=maker)
         saved = json.loads((Path("runs") / run_id / "order.json").read_text(encoding="utf-8"))
         assert saved["max_files_changed"] == 4 and saved["max_diff_lines"] == 120
         actions = [r["action"] for r in sm._get_conn().execute("SELECT action FROM audit_logs WHERE run_id=?", (run_id,)).fetchall()]
@@ -135,15 +135,15 @@ def test_d_resume_safety_cap_clamp(isolate_provider_db):
         assert "SCOPE_VIOLATION" in actions
 
 
-# ------------------------------------------------------------------ TEST E: resume ORDER_READY with failing baseline -> Builder 0
+# ------------------------------------------------------------------ TEST E: resume ORDER_READY with failing baseline -> Maker 0
 
-def test_e_resume_baseline_failure_blocks_builder(isolate_provider_db):
+def test_e_resume_baseline_failure_blocks_maker(isolate_provider_db):
     calls = []
     with make_git_project() as proj:
         run_id, wt, sm = _stuck_run(proj, State.ORDER_READY, OrderSchema(goal="g", allowed_paths=["src/"]))
         assert not (Path("runs") / run_id / "baseline_verification.json").exists()
         orch = _mock_orch(verification={"test_command": f'{sys.executable} -c "import sys; print(\'1 failed\'); sys.exit(1)"'})
-        summary = orch.resume(run_id, builder_fn=lambda b, o, w: calls.append(w) or [])
+        summary = orch.resume(run_id, maker_fn=lambda b, o, w: calls.append(w) or [])
     assert summary["final_state"] == State.HUMAN_REQUIRED
     assert calls == []
     assert any("BASELINE_FAILED" in (t["details"] or "") for t in sm.get_transitions(run_id))
@@ -160,27 +160,27 @@ def test_f_resume_full_pipeline_regression(isolate_provider_db):
         subprocess.run(["git", "add", "."], cwd=proj, check=True, capture_output=True)
         subprocess.run(["git", "commit", "-m", "tests"], cwd=proj, check=True, capture_output=True)
 
-        # regression: builder deletes one test -> HUMAN_REQUIRED via the shared regression gate
+        # regression: maker deletes one test -> HUMAN_REQUIRED via the shared regression gate
         run_id, wt, sm = _stuck_run(proj, State.ORDER_READY, OrderSchema(goal="g", allowed_paths=["tests/", "src/"]))
         orch = _mock_orch(verification={"test_command": "python -m pytest tests/ -q"})
 
-        def deleting_builder(b, o, wt_):
+        def deleting_maker(b, o, wt_):
             (Path(wt_) / "tests" / "test_x.py").write_text("def test_1(): pass\n", encoding="utf-8")
             return ["tests/test_x.py"]
-        summary = orch.resume(run_id, builder_fn=deleting_builder)
+        summary = orch.resume(run_id, maker_fn=deleting_maker)
         base = json.loads((Path("runs") / run_id / "baseline_verification.json").read_text(encoding="utf-8"))
         assert base["test_counts"]["passed"] == 2                       # baseline measured before the build
         assert summary["final_state"] == State.HUMAN_REQUIRED
         details = " ".join((t["details"] or "") for t in sm.get_transitions(run_id))
         assert "Unauthorized deletion" in details or "Baseline test count decreased" in details
 
-        # healthy path: builder adds a test -> resume walks BUILDING/VERIFYING/REVIEWING/DECIDING -> PASS
+        # healthy path: maker adds a test -> resume walks BUILDING/VERIFYING/REVIEWING/DECIDING -> PASS
         run_id2, wt2, sm2 = _stuck_run(proj, State.ORDER_READY, OrderSchema(goal="g", allowed_paths=["tests/", "src/"]))
 
-        def adding_builder(b, o, wt_):
+        def adding_maker(b, o, wt_):
             (Path(wt_) / "tests" / "test_y.py").write_text("def test_3(): pass\n", encoding="utf-8")
             return ["tests/test_y.py"]
-        summary2 = _mock_orch(verification={"test_command": "python -m pytest tests/ -q"}).resume(run_id2, builder_fn=adding_builder)
+        summary2 = _mock_orch(verification={"test_command": "python -m pytest tests/ -q"}).resume(run_id2, maker_fn=adding_maker)
         assert summary2["final_state"] == State.PASS
         seen = [t["to_state"] for t in sm2.get_transitions(run_id2)]
         assert seen[-5:] == [State.BUILDING, State.VERIFYING, State.REVIEWING, State.DECIDING, State.PASS]
@@ -208,7 +208,7 @@ def test_g_resume_trial_unavailable_blocks_cli(isolate_provider_db, monkeypatch)
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
     calls = []
 
-    class OpenAIHead:
+    class OpenAIArchitect:
         provider = "openai"
         agent_family = "gpt"
         last_execution_info = {}
@@ -219,12 +219,12 @@ def test_g_resume_trial_unavailable_blocks_cli(isolate_provider_db, monkeypatch)
             calls.append("decide")
             return DecisionSchema(decision="PASS", rationale="x", next_steps=[])
         def get_provenance(self, exit_code=0):
-            return AgentProvenanceRecord(agent="HEAD", provider="openai", model="m", executable="codex",
+            return AgentProvenanceRecord(agent="ARCHITECT", provider="openai", model="m", executable="codex",
                                          invocation_command="codex", version="1", exit_code=exit_code, timestamp=datetime.utcnow().isoformat())
 
     with make_git_project() as proj:
         run_id, wt, sm = _stuck_run(proj, State.PLANNING, with_worktree=False)
-        orch = Orchestrator(config={"verification": {}}, head_agent=OpenAIHead(), reviewer_agent=CodexReviewer(provider="mock"))
+        orch = Orchestrator(config={"verification": {}}, architect_agent=OpenAIArchitect(), inspector_agent=CodexInspector(provider="mock"))
         summary = orch.resume(run_id)
     assert summary["final_state"] == State.HUMAN_REQUIRED
     assert calls == []                                                 # no AI CLI call happened
@@ -232,44 +232,44 @@ def test_g_resume_trial_unavailable_blocks_cli(isolate_provider_db, monkeypatch)
     assert ProviderManager().get_status("OPENAI") == ProviderStatus.RECOVERING   # never promoted
 
 
-# ------------------------------------------------------------------ TEST H: resume reviewer exception -> terminal + audit + provenance
+# ------------------------------------------------------------------ TEST H: resume inspector exception -> terminal + audit + provenance
 
-def test_h_resume_reviewer_exception(isolate_provider_db):
+def test_h_resume_inspector_exception(isolate_provider_db):
     class Boom:
         provider = "mock"
         def review(self, *a, **k):
-            raise RuntimeError("reviewer crashed during resume")
+            raise RuntimeError("inspector crashed during resume")
         def get_provenance(self, exit_code=0):
-            return AgentProvenanceRecord(agent="REVIEWER", provider="mock", model="m", executable="x",
+            return AgentProvenanceRecord(agent="INSPECTOR", provider="mock", model="m", executable="x",
                                          invocation_command="x", version="1", exit_code=exit_code, timestamp=datetime.utcnow().isoformat())
 
     with make_git_project() as proj:
         run_id, wt, sm = _stuck_run(proj, State.REVIEWING, OrderSchema(goal="g", allowed_paths=["src/"]))
-        orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                            head_agent=MockHead(), reviewer_agent=Boom())
+        orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                            architect_agent=MockArchitect(), inspector_agent=Boom())
         orch._save_json(run_id, "baseline_verification.json", {"passed": True, "test_counts": {"passed": 0}})   # v0.2.3.5: late states need evidence
         orch._save_json(run_id, "verification.json", {"passed": True, "git_diff": "", "test_counts": {"passed": 0}})
         summary = orch.resume(run_id)
     assert summary["final_state"] in TERMINAL_STATES and summary["final_state"] != State.PASS
     assert sm.get_run(run_id)["current_state"] != State.REVIEWING
     actions = [r["action"] for r in sm._get_conn().execute("SELECT action FROM audit_logs WHERE run_id=?", (run_id,)).fetchall()]
-    assert "REVIEWER_EXCEPTION" in actions
+    assert "INSPECTOR_EXCEPTION" in actions
     prov = json.loads((Path("runs") / run_id / "provenance.json").read_text(encoding="utf-8"))
-    assert any(r.get("agent") == "REVIEWER" and r.get("exit_code") == 1 for r in prov["records"])
+    assert any(r.get("agent") == "INSPECTOR" and r.get("exit_code") == 1 for r in prov["records"])
 
 
 # ------------------------------------------------------------------ TEST I: resume changes_required + P2 only -> no PASS
 
-def test_i_resume_reviewer_verdict_gate(isolate_provider_db):
-    class PassHead(MockHead):
+def test_i_resume_inspector_verdict_gate(isolate_provider_db):
+    class PassArchitect(MockArchitect):
         def decide(self, *a, **k):
-            return DecisionSchema(decision="PASS", rationale="head says pass", next_steps=[])
+            return DecisionSchema(decision="PASS", rationale="architect says pass", next_steps=[])
 
     with make_git_project() as proj:
         run_id, wt, sm = _stuck_run(proj, State.DECIDING, OrderSchema(goal="g", allowed_paths=["src/"]))
-        orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                            head_agent=PassHead(), reviewer_agent=CodexReviewer(provider="mock"))
-        orch._save_json(run_id, "builder.json", {"status": "COMPLETED", "files_modified": [], "commands_run": [], "summary": "ok"})
+        orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                            architect_agent=PassArchitect(), inspector_agent=CodexInspector(provider="mock"))
+        orch._save_json(run_id, "maker.json", {"status": "COMPLETED", "files_modified": [], "commands_run": [], "summary": "ok"})
         orch._save_json(run_id, "baseline_verification.json", {"passed": True, "test_counts": {"passed": 0}})   # v0.2.3.5: late states need evidence
         orch._save_json(run_id, "verification.json", {"passed": True, "test_counts": {"passed": 0}})
         orch._save_json(run_id, "review.json", {"verdict": "changes_required", "p0": [], "p1": [], "p2": ["issue"], "summary": "minor"})
@@ -282,7 +282,7 @@ def test_i_resume_reviewer_verdict_gate(isolate_provider_db):
 
 def _fake_agy(monkeypatch, seen):
     from core.process_runner import ProcessResult
-    from agents import antigravity_builder as ab
+    from agents import antigravity_maker as ab
 
     def fake_run(argv, **kw):
         seen.append(argv)
@@ -298,8 +298,8 @@ def test_j_restore_success_removes_backup(isolate_provider_db, tmp_path, monkeyp
     sf.parent.mkdir(parents=True)
     sf.write_text(json.dumps({"permissions": {"allow": [], "deny": []}, "user_pref": 7}), encoding="utf-8")
     with make_git_project() as proj:
-        res = AntigravityBuilder(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
-    assert res.status == "FAILED" and res.error.startswith("BUILDER_NO_CHANGES")
+        res = AntigravityMaker(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+    assert res.status == "FAILED" and res.error.startswith("MAKER_NO_CHANGES")
     assert len([a for a in seen if "--sandbox" in a]) == 1          # exactly one agy build (probes excluded)
     assert json.loads(sf.read_text(encoding="utf-8"))["user_pref"] == 7
     assert not sf.with_name(sf.name + ".director-original").exists()
@@ -322,7 +322,7 @@ def test_k_restore_failure_keeps_backup_and_escalates(isolate_provider_db, tmp_p
     monkeypatch.setattr(os, "replace", failing_restore)
 
     with make_git_project() as proj:
-        res = AntigravityBuilder(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+        res = AntigravityMaker(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
     assert res.status == "FAILED" and res.error.startswith("PERMISSION_RESTORE_FAILED")
     backup = sf.with_name(sf.name + ".director-original")
     assert backup.exists() and json.loads(backup.read_text(encoding="utf-8")) == original      # original preserved
@@ -330,9 +330,9 @@ def test_k_restore_failure_keeps_backup_and_escalates(isolate_provider_db, tmp_p
     assert "scoped settings still active" in res.error
 
     # orchestrator escalates to HUMAN_REQUIRED
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                        head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"),
-                        builder_agent=AntigravityBuilder(executable=sys.executable))
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                        architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"),
+                        maker_agent=AntigravityMaker(executable=sys.executable))
     with make_git_project() as proj:
         summary = orch.run(proj, "g")
     assert summary["final_state"] == State.HUMAN_REQUIRED
@@ -355,7 +355,7 @@ def test_l_m_next_run_recovers_original_before_build(isolate_provider_db, tmp_pa
 
     # L: recovery succeeds -> build allowed, original restored afterwards, backup never overwritten with scoped content
     observed = {}
-    from agents import antigravity_builder as ab
+    from agents import antigravity_maker as ab
     from core.process_runner import ProcessResult
 
     def fake_run(argv, **kw):
@@ -363,13 +363,13 @@ def test_l_m_next_run_recovers_original_before_build(isolate_provider_db, tmp_pa
         return ProcessResult(exit_code=0, stdout='{"event":"result","result":{"status":"SUCCESS","response":"done"}}\n', stderr="", timed_out=False, duration_sec=0.1, pid=1)
     monkeypatch.setattr(ab.ProcessTreeRunner, "run", staticmethod(fake_run))
     with make_git_project() as proj:
-        res = AntigravityBuilder(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
-    assert res.status == "FAILED" and res.error.startswith("BUILDER_NO_CHANGES")
+        res = AntigravityMaker(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+    assert res.status == "FAILED" and res.error.startswith("MAKER_NO_CHANGES")
     assert observed["backup_during"] == original
     assert json.loads(sf.read_text(encoding="utf-8"))["user_pref"] == 42
     assert not backup.exists()
 
-    # M: recovery fails -> Builder 0, PERMISSION_SETUP_FAILED, backup untouched
+    # M: recovery fails -> Maker 0, PERMISSION_SETUP_FAILED, backup untouched
     sf.write_text(json.dumps(scoped), encoding="utf-8")
     backup.write_text(json.dumps(original), encoding="utf-8")
     calls = []
@@ -382,7 +382,7 @@ def test_l_m_next_run_recovers_original_before_build(isolate_provider_db, tmp_pa
         return real_replace(src, dst)
     monkeypatch.setattr(os, "replace", failing_recovery)
     with make_git_project() as proj:
-        res2 = AntigravityBuilder(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+        res2 = AntigravityMaker(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
     assert res2.status == "FAILED" and res2.error.startswith("PERMISSION_SETUP_FAILED")
     assert calls == []
     assert json.loads(backup.read_text(encoding="utf-8")) == original
@@ -480,10 +480,10 @@ def test_r_dashboard_run_id_collision_retry(isolate_provider_db, monkeypatch):
         pm.set_status(d, ProviderStatus.HEALTHY)
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
     dashboard_server._ACTIVE_PROJECTS.clear()
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: HeadStub(_order()))
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: ArchitectStub(_order()))
     seen = {}
 
-    def mock_run(self, project_path, goal, run_id=None, builder_fn=None, order=None, head_provenance=None):
+    def mock_run(self, project_path, goal, run_id=None, maker_fn=None, order=None, architect_provenance=None):
         seen["run_id"] = run_id
         self.sm.transition_to(run_id, State.PLANNING)
         self.sm.transition_to(run_id, State.FAIL, details="mock end")
@@ -511,39 +511,39 @@ def test_r_dashboard_run_id_collision_retry(isolate_provider_db, monkeypatch):
         orch._create_run_with_retry(seen["run_id"], "p", "g")          # already FAIL, not a reserved IDLE row
 
 
-# ------------------------------------------------------------------ TEST S: HEAD pre-exec exception provenance
+# ------------------------------------------------------------------ TEST S: ARCHITECT pre-exec exception provenance
 
-def test_s_head_pre_exec_exception_provenance(isolate_provider_db, monkeypatch):
+def test_s_architect_pre_exec_exception_provenance(isolate_provider_db, monkeypatch):
     StateMachine(); cm = ChatManager()
     pm = ProviderManager()
     for d in ("OPENAI", "ANTHROPIC", "GOOGLE"):
         pm.set_status(d, ProviderStatus.HEALTHY)
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
 
-    class PreExecFailHead:
+    class PreExecFailArchitect:
         provider = "openai"
         last_execution_info = {}                       # nothing ever ran
         def chat(self, msg, ctx, hist):
             raise RuntimeError("CONFIG_ERROR: Official Codex CLI not found")
         def get_provenance(self, exit_code=0):
-            return AgentProvenanceRecord(agent="HEAD", provider="openai", runtime="codex-cli", model="m", executable="codex",
+            return AgentProvenanceRecord(agent="ARCHITECT", provider="openai", runtime="codex-cli", model="m", executable="codex",
                                          invocation_command="codex", version="unknown", exit_code=exit_code,
                                          timestamp=datetime.utcnow().isoformat())
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: PreExecFailHead())
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: PreExecFailArchitect())
 
     handle_chat_message("hello")
     rec = cm.get_provenance(GLOBAL_SESSION_ID)[-1]
     assert rec["exit_code"] is None and rec["duration_sec"] is None
     observed = json.loads(rec["observed_fields"])
     assert "exit_code" not in observed and "duration_sec" not in observed
-    assert rec["outcome"] == "HEAD_EXCEPTION"
-    rows = StateMachine()._get_conn().execute("SELECT action, payload FROM audit_logs WHERE action='HEAD_EXCEPTION'").fetchall()
+    assert rec["outcome"] == "ARCHITECT_EXCEPTION"
+    rows = StateMachine()._get_conn().execute("SELECT action, payload FROM audit_logs WHERE action='ARCHITECT_EXCEPTION'").fetchall()
     assert rows and "CONFIG_ERROR" in rows[-1]["payload"]
-    assert cm.get_messages(GLOBAL_SESSION_ID)[-1]["content"].startswith("HEAD Error")
+    assert cm.get_messages(GLOBAL_SESSION_ID)[-1]["content"].startswith("ARCHITECT Error")
 
     # real agents: no process -> exit_code None (never a default 0/1)
-    from agents.codex_head import CodexHead
-    h = CodexHead(executable=sys.executable)
+    from agents.codex_architect import CodexArchitect
+    h = CodexArchitect(executable=sys.executable)
     h.last_execution_info = {}
     assert h.get_provenance(exit_code=1).exit_code is None
     h.last_execution_info = {"exit_code": 3}

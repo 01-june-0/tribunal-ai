@@ -32,9 +32,9 @@ CLAUDE, CODEX, AGY = "ANTHROPIC", "OPENAI", "GOOGLE"
 EXE = {CLAUDE: "claude", CODEX: "codex", AGY: "agy"}
 
 # What each kind of call "does": (kind, name, detail, failed). Written out in the format of the CLI that made it.
-HEAD_PLAN = [("think", "", "", False), ("tool", "Read", "README.md", False), ("tool", "Glob", "src/**/*.py", False),
+ARCHITECT_PLAN = [("think", "", "", False), ("tool", "Read", "README.md", False), ("tool", "Glob", "src/**/*.py", False),
              ("tool", "Read", "src/settings/theme.py", False), ("say", "", "설정 화면 구조를 확인했습니다. 다음 단계의 작업 지시서를 씁니다.", False)]
-HEAD_DECIDE = [("think", "", "", False), ("tool", "Read", "tests/test_theme.py", False),
+ARCHITECT_DECIDE = [("think", "", "", False), ("tool", "Read", "tests/test_theme.py", False),
                ("say", "", '{"decision": "PASS", "rationale": "수용 기준 6개를 모두 충족했고 테스트 41개가 통과했습니다."}', False)]
 BUILD = [("think", "", "", False), ("tool", "read_file", "src/settings/theme.py", False), ("tool", "read_file", "src/settings/view.py", False),
          ("think", "", "", False), ("tool", "write_file", "src/settings/theme.py", False), ("tool", "write_file", "src/settings/view.py", False),
@@ -163,15 +163,15 @@ class Demo:
         """A whole passed step: plan -> build -> test -> review -> decide. Returns the time it ended."""
         self.run_row(run, goal, t, "PLANNING")
         self.move(run, "PLANNING", t)
-        t = self.past_call(CLAUDE, "HEAD", "CHAT" if first else "MISSION_PLANNING", t, 11 if first else 9, 11200, HEAD_PLAN, mission, None if first else None)
+        t = self.past_call(CLAUDE, "ARCHITECT", "CHAT" if first else "MISSION_PLANNING", t, 11 if first else 9, 11200, ARCHITECT_PLAN, mission, None if first else None)
         self.move(run, "BUILDING", t)
-        t = self.past_call(AGY, "BUILDER", "BUILDING", t, 31, 6400, BUILD, mission, run, exact=False)
+        t = self.past_call(AGY, "MAKER", "BUILDING", t, 31, 6400, BUILD, mission, run, exact=False)
         self.move(run, "VERIFYING", t, f"Tests: {tests} passed")
         t += timedelta(seconds=6)
         self.move(run, "REVIEWING", t)
-        t = self.past_call(CODEX, "REVIEWER", "REVIEWING", t, 24, 9800, REVIEW, mission, run)
+        t = self.past_call(CODEX, "INSPECTOR", "REVIEWING", t, 24, 9800, REVIEW, mission, run)
         self.move(run, "DECIDING", t)
-        t = self.past_call(CLAUDE, "HEAD", "DECIDING", t, 8, 12100, HEAD_DECIDE, mission, run)
+        t = self.past_call(CLAUDE, "ARCHITECT", "DECIDING", t, 8, 12100, ARCHITECT_DECIDE, mission, run)
         self.move(run, "PASS", t, "Final decision: 수용 기준을 모두 충족했습니다.")
         return t
 
@@ -200,7 +200,7 @@ class Demo:
                                "base_worktree": WORKTREE, "summary": goal.rstrip(".") + " — 완료했습니다.", "owner_pid": None,
                                "applied": {"status": "applied"}, "steps": records})
             self.chat.add_message(sid, "USER", goal)
-            self.chat.add_message(sid, "HEAD", f"미션 완료 ({len(steps)}/{len(steps)} 단계 통과) 목표: {goal}")
+            self.chat.add_message(sid, "ARCHITECT", f"미션 완료 ({len(steps)}/{len(steps)} 단계 통과) 목표: {goal}")
 
         # the mission that is running right now: step 1 passed a few minutes ago, step 2 is in progress
         mid, began = "MSN-DEMO-0003", now - timedelta(minutes=4)
@@ -214,7 +214,7 @@ class Demo:
                            "summary": "", "owner_pid": os.getpid(), "applied": None,
                            "steps": [self.step_record(1, "RUN-DEMO-0003-1", step1, 41), self.step_record(2, self.live["run"], step2, 0, state=None)]})
         self.chat.add_message(sid, "USER", goal)
-        self.chat.add_message(sid, "HEAD", "1단계를 통과했습니다. 2단계로 설정 화면에 전환 스위치를 연결합니다.")
+        self.chat.add_message(sid, "ARCHITECT", "1단계를 통과했습니다. 2단계로 설정 화면에 전환 스위치를 연결합니다.")
 
     def close_live_mission(self):
         """--no-live: nothing is running, so the open mission ends after its first step and its second run goes."""
@@ -228,9 +228,9 @@ class Demo:
 
     def live_loop(self, stop):
         """Keeps step 2 of the running mission busy: one AI at a time, with tools appearing as the call goes on."""
-        stages = [(AGY, "BUILDER", "BUILDING", 26, 6400, BUILD, False), (None, None, "VERIFYING", 6, 0, [], True),
-                  (CODEX, "REVIEWER", "REVIEWING", 20, 9800, REVIEW, True), (CLAUDE, "HEAD", "DECIDING", 9, 12100, HEAD_DECIDE, True),
-                  (CLAUDE, "HEAD", "MISSION_PLANNING", 10, 11200, HEAD_PLAN, True)]
+        stages = [(AGY, "MAKER", "BUILDING", 26, 6400, BUILD, False), (None, None, "VERIFYING", 6, 0, [], True),
+                  (CODEX, "INSPECTOR", "REVIEWING", 20, 9800, REVIEW, True), (CLAUDE, "ARCHITECT", "DECIDING", 9, 12100, ARCHITECT_DECIDE, True),
+                  (CLAUDE, "ARCHITECT", "MISSION_PLANNING", 10, 11200, ARCHITECT_PLAN, True)]
         while not stop.is_set():
             try:
                 self.live_cycle(stages, stop)
@@ -288,7 +288,7 @@ def block_real_ai_calls():
     ProcessTreeRunner.run = classmethod(lambda cls, *a, **k: refuse())
 
 
-DEMO_ROLES = {"head": "claude", "builder": "antigravity", "reviewer": "openai"}
+DEMO_ROLES = {"architect": "claude", "maker": "antigravity", "inspector": "openai"}
 READ_ONLY = {"error": "demo console: read-only (invented data)", "message": "데모 콘솔은 보기 전용입니다."}
 
 

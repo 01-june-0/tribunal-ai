@@ -9,10 +9,10 @@ import pytest
 
 from core.state_machine import StateMachine, State
 from core.git_manager import GitManager
-from agents.codex_reviewer import CodexReviewer
-from agents.codex_head import CodexHead
-from agents.claude_reviewer import ClaudeReviewer
-from agents.claude_head import ClaudeHead
+from agents.codex_inspector import CodexInspector
+from agents.codex_architect import CodexArchitect
+from agents.claude_inspector import ClaudeInspector
+from agents.claude_architect import ClaudeArchitect
 from core.orchestrator import Orchestrator
 
 def test_a_clean_worktrees_preserves_pass_and_human_required():
@@ -158,20 +158,20 @@ def test_d_clean_worktrees_unicode_paths():
             director.StateMachine = orig_sm
 
 def test_e_real_provenance():
-    rev = CodexReviewer(executable="python")
+    rev = CodexInspector(executable="python")
     rev.last_execution_info = {"exit_code": 123}
     prov = rev.get_provenance()
     assert prov.exit_code == 123
     assert prov.authentication_mode == "subscription"          # declared policy value (v0.2.3.3)
     assert "authentication_mode" in prov.declared_fields and "exit_code" in prov.observed_fields
     
-    h = ClaudeHead(executable="python")
+    h = ClaudeArchitect(executable="python")
     h.last_execution_info = {"exit_code": 456}
     prov = h.get_provenance()
     assert prov.exit_code == 456
 
-def test_f_malformed_reviewer_output():
-    class MockReviewer(CodexReviewer):
+def test_f_malformed_inspector_output():
+    class MockInspector(CodexInspector):
         def _invoke_cli(self, *args, **kwargs):
             return "not json"
         
@@ -186,7 +186,7 @@ def test_f_malformed_reviewer_output():
                 summary="UNPARSEABLE_REVIEW"
             )
 
-    rev = MockReviewer()
+    rev = MockInspector()
     res = rev._review_with_cli(None, None, None)
     assert res.verdict == "changes_required"
     assert "UNPARSEABLE_REVIEW" in res.p0[0]
@@ -198,9 +198,9 @@ def test_g_resume_catches_provider_exceptions():
         db_path = Path(tmpdir) / "test.db"
         
         config = {
-            "head": {"provider": "mock"},
-            "builder": {"provider": "mock"},
-            "reviewer": {"provider": "mock"}
+            "architect": {"provider": "mock"},
+            "maker": {"provider": "mock"},
+            "inspector": {"provider": "mock"}
         }
         sm = StateMachine(str(db_path))
         orch = Orchestrator(config, sm)
@@ -210,10 +210,10 @@ def test_g_resume_catches_provider_exceptions():
         orch.sm.transition_to(run_id, State.PLANNING)
         
         # Inject exception in planning
-        orch.head.create_order = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Head failed randomly"))
+        orch.architect.create_order = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Architect failed randomly"))
         
         orch.resume(run_id)
         run_record = orch.sm.get_run(run_id)
         assert run_record["current_state"] == "FAIL"
         transitions = orch.sm.get_transitions(run_id)
-        assert "Planning error: Head failed randomly" in transitions[-1]["details"]
+        assert "Planning error: Architect failed randomly" in transitions[-1]["details"]

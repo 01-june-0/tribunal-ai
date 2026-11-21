@@ -62,10 +62,13 @@ class ResultManager:
         return Path(__file__).resolve().parent.parent / "runs" / run_id
 
     def _load(self, run_id: str, name: str):
+        from core.role_names import canon, old_file
         p = self.run_dir(run_id) / name
         if not p.exists():
-            return None
-        return json.loads(p.read_text(encoding="utf-8"))
+            p = old_file(self.run_dir(run_id), name)        # a run from before the role rename
+            if p is None:
+                return None
+        return canon(json.loads(p.read_text(encoding="utf-8")))
 
     def _save(self, run_id: str, name: str, data) -> None:
         d = self.run_dir(run_id); d.mkdir(parents=True, exist_ok=True)
@@ -107,7 +110,7 @@ class ResultManager:
         fields = {
             "state": current, "changed_count": len(changes), "counts_json": counts,
             "tests_state": "PASS" if ver.get("passed") else "FAIL",
-            "reviewer_state": (ev.get("reviewer_verdict") or "").upper() or "UNKNOWN",
+            "inspector_state": (ev.get("inspector_verdict") or "").upper() or "UNKNOWN",
             "safety_state": "PASS" if (ev and not ev.get("reasons")) else ("FAIL" if ev else "MISSING"),
             "worktree_state": ("CONTROL_PLANE" if cp else ("PRESENT" if wt_exists else "MISSING")),
         }
@@ -148,7 +151,7 @@ class ResultManager:
             "builds_on": self._builds_on_safe(run_id),
             "tests": {"baseline": base.get("test_counts"), "post": ver.get("test_counts"), "post_passed": ver.get("passed"),
                       "regression": ev.get("regression"), "canonical": ev.get("canonical_containment"),
-                      "reviewer": ev.get("reviewer_verdict"), "final_gate": "PASS" if (ev and not ev.get("reasons")) else ("FAIL" if ev else "MISSING")},
+                      "inspector": ev.get("inspector_verdict"), "final_gate": "PASS" if (ev and not ev.get("reasons")) else ("FAIL" if ev else "MISSING")},
         }
 
     def backfill_missing_summaries(self, limit: int = 500) -> int:
@@ -254,9 +257,9 @@ class ResultManager:
         ver = self._load(run_id, "verification.json") or {}
         base = self._load(run_id, "baseline_verification.json") or {}
         order = self._load(run_id, "order.json") or {}
-        builder = self._load(run_id, "builder.json") or {}
+        maker = self._load(run_id, "maker.json") or {}
         prov = (self._load(run_id, "provenance.json") or {}).get("records", [])
-        bprov = next((p for p in prov if p.get("agent") == "BUILDER"), {})
+        bprov = next((p for p in prov if p.get("agent") == "MAKER"), {})
         review = self._load(run_id, "review.json") or {}
         approvals = [a for a in self.sm.get_audit_logs(run_id) if a["action"] in ("HUMAN_APPROVAL", "HUMAN_REJECTED")]
         state = self.result_state(run_id)
@@ -280,11 +283,11 @@ class ResultManager:
             "diff_stat": [f"{c['type']} {c['path']}" for c in changes], "file_diffs": diffs,
             "tests": {"baseline": base.get("test_counts"), "post": ver.get("test_counts"), "post_passed": ver.get("passed"),
                       "regression": ev.get("regression"), "scope": "PASS" if run["current_state"] == State.PASS else ev.get("order_paths"),
-                      "canonical": ev.get("canonical_containment"), "reviewer": ev.get("reviewer_verdict") or review.get("verdict"),
+                      "canonical": ev.get("canonical_containment"), "inspector": ev.get("inspector_verdict") or review.get("verdict"),
                       "final_gate": "PASS" if (ev and not ev.get("reasons")) else ("FAIL" if ev else "MISSING"),
                       "verifier_output_tail": test_out[-1500:], "verifier_summary": ver.get("summary")},
-            "final_evidence": ev, "reviewer": {"verdict": review.get("verdict"), "summary": review.get("summary"), "p0": review.get("p0"), "p1": review.get("p1")},
-            "builder": {"provider": bprov.get("provider"), "version": bprov.get("version"), "exit_code": bprov.get("exit_code"), "status": builder.get("status")},
+            "final_evidence": ev, "inspector": {"verdict": review.get("verdict"), "summary": review.get("summary"), "p0": review.get("p0"), "p1": review.get("p1")},
+            "maker": {"provider": bprov.get("provider"), "version": bprov.get("version"), "exit_code": bprov.get("exit_code"), "status": maker.get("status")},
             "order": {k: order.get(k) for k in ("goal", "allowed_paths", "protected_paths", "allowed_deletions", "risk_level")},
             "approvals": [{"action": a["action"], "at": a["timestamp"], "payload": (a["payload"] or "")[:300]} for a in approvals],
         }
@@ -348,7 +351,7 @@ class ResultManager:
         if st in (RESULT_APPLIED, RESULT_DISCARDED):
             blocks.append(f"Result already {st}")
         ev = self._load(run_id, "final_evidence.json") or {}
-        if not ev or ev.get("reasons") or ev.get("canonical_containment") != "PASS" or ev.get("verification") != "PASS" or ev.get("baseline") != "PASS" or ev.get("regression") != "PASS" or ev.get("reviewer_verdict") != "pass":
+        if not ev or ev.get("reasons") or ev.get("canonical_containment") != "PASS" or ev.get("verification") != "PASS" or ev.get("baseline") != "PASS" or ev.get("regression") != "PASS" or ev.get("inspector_verdict") != "pass":
             blocks.append("final_evidence is missing or not fully PASS")
         if not wt or not Path(wt).exists():
             blocks.append("Worktree missing")
@@ -365,7 +368,7 @@ class ResultManager:
             current = {(c["type"], c["path"]) for c in changes}
             if not self._covers(recorded, current):
                 blocks.append(f"Change set differs from verification evidence (recorded={sorted(recorded)} now={sorted(current)})")
-            builder_files = set((self._load(run_id, "builder.json") or {}).get("files_modified") or [])
+            maker_files = set((self._load(run_id, "maker.json") or {}).get("files_modified") or [])
             wt_root = Path(wt).resolve(); proj_root = Path(proj).resolve()
             allowed_del = set(order.get("allowed_deletions") or [])
             for c in changes:
@@ -394,8 +397,8 @@ class ResultManager:
                         blocks.append(f"Unauthorized deletion in result: {rel}"); continue
                     entry = {"path": rel, "type": "D", "source": None, "sha256": None, "size": 0, "deletion": True}
                 manifest.append(entry)
-            if builder_files and not builder_files.issubset({c["path"] for c in changes} | {b for b in builder_files if b not in {c["path"] for c in changes} and not (wt_root / b).exists()}):
-                pass  # builder may report files it later left unchanged; the git change set is the source of truth
+            if maker_files and not maker_files.issubset({c["path"] for c in changes} | {b for b in maker_files if b not in {c["path"] for c in changes} and not (wt_root / b).exists()}):
+                pass  # maker may report files it later left unchanged; the git change set is the source of truth
             # main repo state
             rc, wt_head, _ = _git(["rev-parse", "HEAD"], wt)
             rc2, main_head, _ = _git(["rev-parse", "HEAD"], proj)
@@ -451,7 +454,7 @@ class ResultManager:
         self.sm.log_audit(run_id, applied_by, "RESULT_APPLY_STARTED", json.dumps(
             {"run_id": run_id, "project": str(proj_root), "files": [m["path"] for m in manifest], "hashes": {m["path"]: m["sha256"] for m in manifest},
              "source_commit": pre["base_commit"], "applied_by": applied_by, "timestamp": datetime.utcnow().isoformat(), "request_id": rid}, ensure_ascii=False))
-        # backup snapshot (Director-owned artifact under runs/<id>/apply_backup; the Builder never runs there)
+        # backup snapshot (Director-owned artifact under runs/<id>/apply_backup; the Maker never runs there)
         backup_dir = self.run_dir(run_id) / "apply_backup"
         if backup_dir.exists():
             shutil.rmtree(backup_dir)
@@ -679,7 +682,7 @@ class ResultManager:
         if st in (RESULT_APPLIED, RESULT_DISCARDED):
             blocks.append(f"Result already {st}")
         ev = self._load(run_id, "final_evidence.json") or {}
-        if not ev or ev.get("reasons") or ev.get("canonical_containment") != "PASS" or ev.get("verification") != "PASS" or ev.get("baseline") != "PASS" or ev.get("regression") != "PASS" or ev.get("reviewer_verdict") != "pass":
+        if not ev or ev.get("reasons") or ev.get("canonical_containment") != "PASS" or ev.get("verification") != "PASS" or ev.get("baseline") != "PASS" or ev.get("regression") != "PASS" or ev.get("inspector_verdict") != "pass":
             blocks.append("final_evidence is missing or not fully PASS")
         if not wt or not Path(wt).exists():
             blocks.append("Worktree missing")

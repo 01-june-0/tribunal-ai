@@ -14,20 +14,20 @@ from core.env_utils import resolve_cli, get_sanitized_env
 from core.process_runner import ProcessTreeRunner
 from core.safety import SafetyPolicy
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.provenance import AgentProvenanceRecord
 
 import threading
 
-# Only one Antigravity CLI build may run per process: the builder rewrites the user-global
+# Only one Antigravity CLI build may run per process: the maker rewrites the user-global
 # ~/.gemini/antigravity-cli/settings.json for the duration of the run, so concurrent builds
 # would race on that file.
 _AGY_GLOBAL_LOCK = threading.Lock()
 
 
-class AntigravityBuilder:
+class AntigravityMaker:
     """
-    Antigravity Builder Agent using the official Google Antigravity CLI ('agy') via ProcessTreeRunner.
+    Antigravity Maker Agent using the official Google Antigravity CLI ('agy') via ProcessTreeRunner.
     Direct API calls and PAYG API keys are strictly forbidden.
     """
     provider: str = "google"
@@ -53,7 +53,7 @@ class AntigravityBuilder:
         self.timeout = timeout
         self.no_progress_timeout = no_progress_timeout
         self.heartbeat_interval = heartbeat_interval
-        self.logger = logging.getLogger("director.antigravity_builder")
+        self.logger = logging.getLogger("director.antigravity_maker")
         self.last_execution_info = {}
 
     def pre_tool_write_file(
@@ -113,7 +113,7 @@ class AntigravityBuilder:
         actual_exit_code = self.last_execution_info.get("exit_code")   # None when no process ran (never a default)
 
         return AgentProvenanceRecord(
-            agent="BUILDER",
+            agent="MAKER",
             provider="google",
             runtime="antigravity-cli",
             model="antigravity-cli",
@@ -131,7 +131,7 @@ class AntigravityBuilder:
     def _control_plane_snapshot(worktree_path: Path) -> Dict[str, str]:
         """sha256 of every Director control-plane file inside the worktree (.agents/**, GEMINI.md, any
         .director_worktrees/** that should not exist). Compared before/after the CLI run: any difference means the
-        Builder touched the control plane -> hard, non-approvable failure."""
+        Maker touched the control plane -> hard, non-approvable failure."""
         import hashlib
         wt = Path(worktree_path)
         snap: Dict[str, str] = {}
@@ -190,8 +190,8 @@ class AntigravityBuilder:
                     raise
         self._native_protected_permission_paths = protected_permission_paths
         allow_writes = [f"write_file({wt_posix}/{p})" for p in allowed_permission_paths]
-        # The Director performs Git inspection and deterministic verification after the Builder. Headless AGY on
-        # Windows may request an interactive admin escalation even for read-only shell commands, so the Builder
+        # The Director performs Git inspection and deterministic verification after the Maker. Headless AGY on
+        # Windows may request an interactive admin escalation even for read-only shell commands, so the Maker
         # gets no terminal permission at all; it may only use scoped file tools.
         allow_commands = []
 
@@ -350,7 +350,7 @@ except Exception as e:
             if isinstance(check, dict) and "_director_scoped" in check:
                 raise RuntimeError("scoped marker still present after restore")
         except Exception as e:
-            self.logger.error(f"[Antigravity Builder] PERMISSION_RESTORE_FAILED: settings.json restore failed: {e}; "
+            self.logger.error(f"[Antigravity Maker] PERMISSION_RESTORE_FAILED: settings.json restore failed: {e}; "
                               f"original snapshot preserved at {backup_file}")
             return False
         try:
@@ -364,8 +364,8 @@ except Exception as e:
         self,
         order: OrderSchema,
         worktree_path: str,
-        builder_fn: Optional[Callable[["AntigravityBuilder", OrderSchema, str], List[str]]] = None
-    ) -> BuilderResultSchema:
+        maker_fn: Optional[Callable[["AntigravityMaker", OrderSchema, str], List[str]]] = None
+    ) -> MakerResultSchema:
         """
         Executes Antigravity CLI subprocess inside the RUN Git worktree with scoped permissions.
         """
@@ -373,21 +373,21 @@ except Exception as e:
         start_time = time.time()
 
         # If custom/test function provided for unit test suite
-        if builder_fn is not None:
-            self.logger.info("[Antigravity Builder] Executing custom/test builder function")
-            modified = builder_fn(self, order, worktree_path) or []
-            return BuilderResultSchema(
+        if maker_fn is not None:
+            self.logger.info("[Antigravity Maker] Executing custom/test maker function")
+            modified = maker_fn(self, order, worktree_path) or []
+            return MakerResultSchema(
                 status="COMPLETED",
                 files_modified=modified,
                 commands_run=[],
-                summary=f"Custom builder executed on {len(modified)} files.",
+                summary=f"Custom maker executed on {len(modified)} files.",
                 error=None
             )
 
         if not self.executable or not Path(self.executable).exists():
             err_msg = f"CONFIG_ERROR: Antigravity CLI executable not found: {self.executable}"
             self.logger.error(err_msg)
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED",
                 files_modified=[],
                 commands_run=[],
@@ -399,19 +399,19 @@ except Exception as e:
         from core.file_lock import FileLock
         from core.db_path import get_lock_dir
         if not _AGY_GLOBAL_LOCK.acquire(blocking=False):
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED", files_modified=[], commands_run=[],
                 summary="Antigravity busy (in-process)",
-                error="BUILDER_BUSY: another Antigravity build is running in this process"
+                error="MAKER_BUSY: another Antigravity build is running in this process"
             )
         file_lock = FileLock(get_lock_dir() / "antigravity.lock", max_age_sec=self.timeout + 300, note=str(wt))
         if not file_lock.try_acquire():
             owner = file_lock.read_owner() or {}
             _AGY_GLOBAL_LOCK.release()
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED", files_modified=[], commands_run=[],
                 summary="Antigravity busy (another process)",
-                error=f"BUILDER_BUSY: Antigravity lock held by PID {owner.get('pid', '?')} ({owner.get('note', '')})"
+                error=f"MAKER_BUSY: Antigravity lock held by PID {owner.get('pid', '?')} ({owner.get('note', '')})"
             )
         self._file_lock = file_lock
         try:
@@ -421,7 +421,7 @@ except Exception as e:
         except Exception as e:
             file_lock.release()
             _AGY_GLOBAL_LOCK.release()
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED",
                 files_modified=[],
                 commands_run=[],
@@ -449,10 +449,10 @@ except Exception as e:
                 # the original MUST be recovered before any build; the snapshot is never overwritten with scoped content
                 if backup_file.exists():
                     os.replace(str(backup_file), str(settings_file))
-                    self.logger.warning("[Antigravity Builder] Restored original settings.json left behind by an interrupted run")
+                    self.logger.warning("[Antigravity Maker] Restored original settings.json left behind by an interrupted run")
                 else:
                     settings_file.unlink()
-                    self.logger.warning("[Antigravity Builder] Removed leftover scoped settings.json (no original snapshot existed)")
+                    self.logger.warning("[Antigravity Maker] Removed leftover scoped settings.json (no original snapshot existed)")
                 if settings_file.exists():
                     verify = json.loads(settings_file.read_text(encoding="utf-8"))
                     if isinstance(verify, dict) and "_director_scoped" in verify:
@@ -475,7 +475,7 @@ except Exception as e:
                 pass
             file_lock.release()
             _AGY_GLOBAL_LOCK.release()
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED", files_modified=[], commands_run=[],
                 summary="Permission snapshot failed",
                 error=f"PERMISSION_SETUP_FAILED: could not snapshot global settings.json: {e}"
@@ -551,10 +551,10 @@ except Exception as e:
                 if a in ("write_file(*)", "write_file(**)", "command(*)", "unsandboxed(*)",
                          "read_file(*)", "list_dir(*)"):
                     raise RuntimeError(f"wildcard permission present after write: {a}")
-            self.logger.info("[Antigravity Builder] Dynamically applied strict Deny-by-Default scoped permissions (verified by read-back)")
+            self.logger.info("[Antigravity Maker] Dynamically applied strict Deny-by-Default scoped permissions (verified by read-back)")
         except Exception as e:
             # FAIL-CLOSED: without verified permission setup Antigravity must not run
-            self.logger.error(f"[Antigravity Builder] PERMISSION_SETUP_FAILED: {e}")
+            self.logger.error(f"[Antigravity Maker] PERMISSION_SETUP_FAILED: {e}")
             self._restore_settings(settings_file, backup_file, orig_settings_content)
             try:
                 shutil.rmtree(wt / ".agents", ignore_errors=True)
@@ -563,7 +563,7 @@ except Exception as e:
                 pass
             file_lock.release()
             _AGY_GLOBAL_LOCK.release()
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED", files_modified=[], commands_run=[],
                 summary="Permission setup failed; Antigravity not executed",
                 error=f"PERMISSION_SETUP_FAILED: {e}"
@@ -580,7 +580,7 @@ except Exception as e:
             "test function unless ALLOWED DELETIONS lists that exact path. Add new tests next to the existing ones. "
             "If the goal seems to require changing or removing an existing test, do NOT do it: finish the rest, "
             "keep the test as it is, and explain the conflict in your final summary so the Director can ask the operator. "
-            "A result that removed or rewrote existing tests is rejected by the Reviewer as an unauthorised deletion.\n\n"
+            "A result that removed or rewrote existing tests is rejected by the Inspector as an unauthorised deletion.\n\n"
             f"HARD CHANGE CAPS: at most {order.max_files_changed} changed files and at most "
             f"{order.max_diff_lines} total added/deleted lines. These are fail-closed limits; implement the "
             "smallest complete solution that stays below both caps.\n\n"
@@ -603,12 +603,12 @@ except Exception as e:
             "agy --input-format stream-json --output-format stream-json "
             "--mode accept-edits --sandbox <stdin>"
         )
-        self.logger.info(f"[Antigravity Builder] Subprocess execution: {self.executable} in {wt}")
+        self.logger.info(f"[Antigravity Maker] Subprocess execution: {self.executable} in {wt}")
 
-        def _execute_agy() -> BuilderResultSchema:
+        def _execute_agy() -> MakerResultSchema:
             # Antigravity's official stream protocol keeps long prompts off the Windows
             # command line and provides an explicit terminal result event.  The same
-            # protocol is used by the read-only TRIAD runner; Builder remains writable
+            # protocol is used by the read-only TRIAD runner; Maker remains writable
             # only through the scoped settings installed above.
             cmd = [
                 self.executable,
@@ -665,7 +665,7 @@ except Exception as e:
                     break
 
                 self.logger.warning(
-                    "[Antigravity Builder] Output token limit reached; preserving edits and retrying once with a compact continuation"
+                    "[Antigravity Maker] Output token limit reached; preserving edits and retrying once with a compact continuation"
                 )
                 active_prompt = (
                     "CONTINUE THE CURRENT REPAIR IN THIS WORKTREE. Inspect the files already changed by your prior "
@@ -687,10 +687,10 @@ except Exception as e:
                 "attempts": attempts,
             }
 
-            self.logger.info(f"[Antigravity Builder] agy finished with code {res.exit_code} in {res.duration_sec:.2f}s")
+            self.logger.info(f"[Antigravity Maker] agy finished with code {res.exit_code} in {res.duration_sec:.2f}s")
 
             if res.timed_out:
-                return BuilderResultSchema(
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
@@ -699,7 +699,7 @@ except Exception as e:
                 )
 
             if res.exit_code != 0:
-                return BuilderResultSchema(
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
@@ -708,7 +708,7 @@ except Exception as e:
                 )
 
             if not final_event:
-                return BuilderResultSchema(
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
@@ -717,7 +717,7 @@ except Exception as e:
                 )
             if final_event.get("status") != "SUCCESS":
                 detail = str(final_event.get("error") or final_event.get("status") or "UNKNOWN")[:500]
-                return BuilderResultSchema(
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
@@ -726,18 +726,18 @@ except Exception as e:
                 )
             provider_response = str(final_event.get("response") or "")
 
-            # Control-plane integrity: the Builder must not have touched .agents/**, GEMINI.md or created
+            # Control-plane integrity: the Maker must not have touched .agents/**, GEMINI.md or created
             # .director_worktrees/** (checked BEFORE cleanup so the evidence is compared, never assumed)
             cp_after = self._control_plane_snapshot(wt)
             cp_before = getattr(self, "_cp_before", {}) or {}
             changed = sorted(set(k for k in set(cp_before) | set(cp_after) if cp_before.get(k) != cp_after.get(k)))
             if changed:
-                self.logger.error(f"[Antigravity Builder] CONTROL_PLANE_MODIFIED: {changed}")
-                return BuilderResultSchema(
+                self.logger.error(f"[Antigravity Maker] CONTROL_PLANE_MODIFIED: {changed}")
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
-                    summary="Builder modified Director control-plane files (kept in worktree for inspection)",
+                    summary="Maker modified Director control-plane files (kept in worktree for inspection)",
                     error="CONTROL_PLANE_MODIFIED: " + "; ".join(f"Control plane modified: {c}" for c in changed)
                 )
 
@@ -760,12 +760,12 @@ except Exception as e:
                 encoding="utf-8"
             )
             if diff_res.returncode != 0:
-                return BuilderResultSchema(
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
-                    summary="Builder output could not be inspected",
-                    error="BUILDER_GIT_STATUS_FAILED: " + (diff_res.stderr or "git status failed")[:500]
+                    summary="Maker output could not be inspected",
+                    error="MAKER_GIT_STATUS_FAILED: " + (diff_res.stderr or "git status failed")[:500]
                 )
             raw_modified = [line[3:].strip() for line in diff_res.stdout.splitlines() if line.strip()]
             # Filter internal director scaffolding
@@ -777,27 +777,27 @@ except Exception as e:
             if not files_modified:
                 provider_output = (provider_response or res.stderr or "").strip().replace("\x00", "")
                 detail = f"; provider output: {provider_output[:500]}" if provider_output else ""
-                return BuilderResultSchema(
+                return MakerResultSchema(
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
                     summary="Antigravity exited successfully but made no task changes",
-                    error="BUILDER_NO_CHANGES: exit_code=0 and git status contained no task files" + detail
+                    error="MAKER_NO_CHANGES: exit_code=0 and git status contained no task files" + detail
                 )
 
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="COMPLETED",
                 files_modified=files_modified,
                 commands_run=[invocation_cmd],
                 summary=f"Antigravity CLI successfully applied changes in {res.duration_sec:.2f}s.",
                 error=None
             )
-        result: Optional[BuilderResultSchema] = None
+        result: Optional[MakerResultSchema] = None
         restore_ok = True
         try:
             result = _execute_agy()
         except Exception as e:
-            result = BuilderResultSchema(
+            result = MakerResultSchema(
                 status="FAILED",
                 files_modified=[],
                 commands_run=[invocation_cmd],
@@ -827,7 +827,7 @@ except Exception as e:
 
         if not restore_ok:
             # The user's original permissions are NOT back in place: fail closed, keep the snapshot, escalate.
-            return BuilderResultSchema(
+            return MakerResultSchema(
                 status="FAILED",
                 files_modified=list(result.files_modified) if result else [],
                 commands_run=[invocation_cmd],

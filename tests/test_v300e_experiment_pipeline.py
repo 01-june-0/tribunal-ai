@@ -2,8 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from agents.codex_reviewer import CodexReviewer
-from agents.mock_head import MockHead
+from agents.codex_inspector import CodexInspector
+from agents.mock_architect import MockArchitect
 from core.orchestrator import Orchestrator
 from core.research_experiment import TriadExperimentOrchestrator
 from core.research_orchestrator import ResearchOrchestrator
@@ -106,14 +106,14 @@ def _at_planning(tmp_path: Path, *, greenfield: bool, order_payload=None):
 
 def _factory(orchestrator: ResearchOrchestrator, created: list):
     config = {
-        "head": {"provider": "mock"}, "reviewer": {"provider": "mock"},
+        "architect": {"provider": "mock"}, "inspector": {"provider": "mock"},
         "verification": {"test_command": "python -m pytest tests/ -q"},
     }
 
     def factory(project_evidence, baseline_evidence):
         normal = TriadExperimentOrchestrator(
             config=config,
-            head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"),
+            architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"),
             greenfield_project_evidence=project_evidence if baseline_evidence else None,
             greenfield_baseline_evidence=baseline_evidence,
         )
@@ -123,20 +123,20 @@ def _factory(orchestrator: ResearchOrchestrator, created: list):
     orchestrator.experiment_factory = factory
 
 
-def _greenfield_builder(builder, order, worktree):
-    builder.pre_tool_write_file("src/app.py", "def value():\n    return 2\n", worktree, order)
-    builder.pre_tool_write_file(
+def _greenfield_maker(maker, order, worktree):
+    maker.pre_tool_write_file("src/app.py", "def value():\n    return 2\n", worktree, order)
+    maker.pre_tool_write_file(
         "tests/test_app.py", "from src.app import value\n\ndef test_value():\n    assert value() == 2\n",
         worktree, order,
     )
     return ["src/app.py", "tests/test_app.py"]
 
 
-def _existing_builder(builder, order, worktree):
-    builder.pre_tool_write_file(
+def _existing_maker(maker, order, worktree):
+    maker.pre_tool_write_file(
         "src/app.py", "def value():\n    return 1\n\ndef next_value():\n    return 2\n", worktree, order
     )
-    builder.pre_tool_write_file(
+    maker.pre_tool_write_file(
         "tests/test_next.py", "from src.app import next_value\n\ndef test_next():\n    assert next_value() == 2\n",
         worktree, order,
     )
@@ -149,7 +149,7 @@ def test_greenfield_experiment_uses_na_baseline_and_requires_post_build_pass(tmp
     assert planned["experiment"]["status"] == "PLANNED"
     created = []
     _factory(orchestrator, created)
-    result = orchestrator.execute_experiment(session_id, builder_fn=_greenfield_builder)
+    result = orchestrator.execute_experiment(session_id, maker_fn=_greenfield_maker)
     assert result["current_stage"] == ResearchState.RESULT_INTERPRETATION
     assert result["experiment"]["normal_final_state"] == State.PASS
     normal = created[0]
@@ -169,7 +169,7 @@ def test_existing_project_delegates_to_normal_baseline(tmp_path):
     orchestrator.plan_experiment(session_id)
     created = []
     _factory(orchestrator, created)
-    result = orchestrator.execute_experiment(session_id, builder_fn=_existing_builder)
+    result = orchestrator.execute_experiment(session_id, maker_fn=_existing_maker)
     assert result["current_stage"] == ResearchState.RESULT_INTERPRETATION
     normal = created[0]
     baseline = normal._load_json(result["experiment"]["normal_run_id"], "baseline_verification.json")
@@ -185,18 +185,18 @@ def test_greenfield_without_post_build_tests_cannot_pass(tmp_path):
     created = []
     _factory(orchestrator, created)
 
-    def no_tests(builder, order, worktree):
-        builder.pre_tool_write_file("src/app.py", "def value():\n    return 2\n", worktree, order)
+    def no_tests(maker, order, worktree):
+        maker.pre_tool_write_file("src/app.py", "def value():\n    return 2\n", worktree, order)
         return ["src/app.py"]
 
-    result = orchestrator.execute_experiment(session_id, builder_fn=no_tests)
+    result = orchestrator.execute_experiment(session_id, maker_fn=no_tests)
     assert result["current_stage"] == ResearchState.RESULT_INTERPRETATION
     assert result["experiment"]["normal_final_state"] == State.FAIL
     assert result["experiment"]["result"]["verification"]["passed"] is False
     assert "성공으로 처리하지 않았습니다" in result["message"]
 
 
-def test_invalid_order_is_blocked_before_normal_pipeline_or_builder(tmp_path):
+def test_invalid_order_is_blocked_before_normal_pipeline_or_maker(tmp_path):
     bad = _order()
     bad["allowed_paths"] = ["../outside"]
     _, orchestrator, session_id, _, calls = _at_planning(tmp_path, greenfield=True, order_payload=bad)
@@ -213,11 +213,11 @@ def test_scope_violation_in_normal_pipeline_fails_research_cycle(tmp_path):
     created = []
     _factory(orchestrator, created)
 
-    def rogue(builder, order, worktree):
+    def rogue(maker, order, worktree):
         (Path(worktree) / "outside.py").write_text("unsafe", encoding="utf-8")
         return ["outside.py"]
 
-    result = orchestrator.execute_experiment(session_id, builder_fn=rogue)
+    result = orchestrator.execute_experiment(session_id, maker_fn=rogue)
     assert result["current_stage"] == ResearchState.HUMAN_REQUIRED
     assert result["experiment"]["normal_final_state"] == State.HUMAN_REQUIRED
     assert result["experiment"]["result"]["scope_violations"] > 0
@@ -248,8 +248,8 @@ def test_planning_is_idempotent_and_does_not_consume_second_call(tmp_path):
 
 
 def test_adapter_inherits_all_normal_safety_stage_implementations():
-    assert TriadExperimentOrchestrator.run_builder_stage is Orchestrator.run_builder_stage
+    assert TriadExperimentOrchestrator.run_maker_stage is Orchestrator.run_maker_stage
     assert TriadExperimentOrchestrator.validate_post_build is Orchestrator.validate_post_build
-    assert TriadExperimentOrchestrator.run_reviewer_with_failover is Orchestrator.run_reviewer_with_failover
+    assert TriadExperimentOrchestrator.run_inspector_with_failover is Orchestrator.run_inspector_with_failover
     assert TriadExperimentOrchestrator.run_decision_with_failover is Orchestrator.run_decision_with_failover
     assert TriadExperimentOrchestrator.prepare_order_for_execution is Orchestrator.prepare_order_for_execution

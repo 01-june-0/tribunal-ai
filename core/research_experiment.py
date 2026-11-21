@@ -16,8 +16,8 @@ from core.state_machine import State
 class TriadExperimentOrchestrator(Orchestrator):
     """NORMAL pipeline with one narrowly scoped GREENFIELD baseline adapter.
 
-    All ORDER, worktree, Builder, Scope Guard, post-build Verifier, regression,
-    Reviewer, decision, and final containment methods are inherited unchanged.
+    All ORDER, worktree, Maker, Scope Guard, post-build Verifier, regression,
+    Inspector, decision, and final containment methods are inherited unchanged.
     Existing-project behavior delegates to the normal baseline implementation.
     """
 
@@ -71,7 +71,7 @@ class TriadExperimentOrchestrator(Orchestrator):
         if existing is not None:
             return 0, None
         if not allow_measure or not self._worktree_is_pristine(worktree_path):
-            msg = "GREENFIELD_BASELINE_INVALID: isolated worktree is missing or not pristine before Builder"
+            msg = "GREENFIELD_BASELINE_INVALID: isolated worktree is missing or not pristine before Maker"
             return None, self._stop(
                 run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "GREENFIELD_BASELINE_INVALID"
             )

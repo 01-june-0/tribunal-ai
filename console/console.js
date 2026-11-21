@@ -1,7 +1,7 @@
 'use strict';
 const T=(window.I18N&&window.I18N.t)||((s,...a)=>s.replace(/\{(\d+)\}/g,(m,i)=>i<a.length?String(a[i]):m));   // i18n.js missing: Korean, and the stop buttons still work
 const frame=document.getElementById('workspace');
-const labels={NONE:T('작업 대기'),IDLE:T('작업 대기'),PLANNING:T('계획 수립'),ORDER_READY:T('구현 준비'),BUILDING:T('코드 작성 중'),VERIFYING:T('테스트 실행 중'),REVIEWING:T('독립 검토 중'),DECIDING:T('결과 판단 중'),PASS:T('검증 통과'),RECOVERED:T('복구 완료 · 검증 통과'),FAIL:T('검증 실패'),HUMAN_REQUIRED:T('확인 · 수정 필요'),TIMEOUT:T('실행 시간 초과')};
+const labels={NONE:T('작업 대기'),IDLE:T('작업 대기'),PLANNING:T('설계 중'),ORDER_READY:T('제작 준비'),BUILDING:T('제작 중'),VERIFYING:T('테스트 실행 중'),REVIEWING:T('감리 중'),DECIDING:T('결과 판단 중'),PASS:T('검증 통과'),RECOVERED:T('복구 완료 · 검증 통과'),FAIL:T('검증 실패'),HUMAN_REQUIRED:T('확인 · 수정 필요'),TIMEOUT:T('실행 시간 초과')};
 let busy=false,doc,lastMissionProject='';
 function el(tag,text,cls){const n=doc.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;}
 function setup(){
@@ -22,7 +22,7 @@ function setup(){
  setupRoles();
  setupFolderPicker();
  setupActivity(panel);
- doc.getElementById('chat-box').setAttribute('aria-label',T('HEAD 대화 기록'));refresh();
+ doc.getElementById('chat-box').setAttribute('aria-label',T('ARCHITECT 대화 기록'));refresh();
  for(const id of ['normal-mode-btn','triad-mode-btn'])doc.getElementById(id)?.addEventListener('click',()=>refresh());
 }
 async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))return;busy=true;try{
@@ -31,7 +31,7 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
  doc.getElementById('mission-control').dataset.state=research?(r.status||'NONE'):state;
  let next=s.next_step||s.stage_sentence||T('새 작업을 입력해 주세요.');
  if(!s.next_step&&(s.pending_result_count||0)>0&&state!=='HUMAN_REQUIRED')next=T('결과물 {0}건이 적용을 기다립니다. 확인하고 적용할지 결정하세요.',s.pending_result_count);
- if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('코드 검토에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 검토를 다시 진행해야 합니다.'):next;}
+ if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('감리에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 감리를 다시 진행해야 합니다.'):next;}
  const nextText=research?(r.next_step||T('연구 기록을 기다리고 있습니다.')):next,nextEl=doc.getElementById('mission-next');
  if(nextEl.textContent!==nextText)nextEl.textContent=nextText;   // announced (aria-live) only when it really changes
  doc.getElementById('mission-project').textContent=s.project_name?T('프로젝트 · ')+s.project_name:(lastMissionProject?T('최근 미션 프로젝트 · ')+lastMissionProject:T('프로젝트 · ')+T('미선택'));
@@ -52,7 +52,7 @@ function setupRoles(){
 }
 
 // ---------------------------------------------------------------- AI work visibility (missions, who works now, workload)
-const PROVIDER={ANTHROPIC:'Claude',OPENAI:'Codex',GOOGLE:'Antigravity'},ROLE={HEAD:T('HEAD · 지휘'),BUILDER:T('BUILDER · 구현'),REVIEWER:T('REVIEWER · 검수'),OTHER:T('기타')};
+const PROVIDER={ANTHROPIC:'Claude',OPENAI:'Codex',GOOGLE:'Antigravity'},ROLE={ARCHITECT:T('ARCHITECT · 설계'),MAKER:T('MAKER · 제작'),INSPECTOR:T('INSPECTOR · 감리'),OTHER:T('기타')};
 const STEP_CLASS={PASS:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
 const MISSION_STATUS={DONE:T('완료'),INCOMPLETE:T('예산 소진'),BLOCKED:T('사용자 결정 필요'),FAILED:T('실패')};
 let activityBusy=false,usageWindow='mission';
@@ -95,7 +95,7 @@ function paintMission(focus){
  const list=el('details');list.append(el('summary',T('단계별 결과')));
  for(const s of [...focus.steps].reverse()){const row=el('div','','ai-step '+(STEP_CLASS[s.state]||'run'));const t=s.tests?(T(' · 테스트 ')+s.tests.passed+'/'+s.tests.total):'';row.append(el('strong',T('{0}단계 · ',s.index)+((s.state_ko&&T(s.state_ko))||s.state||T('진행 중'))+t+(s.review?T(' · 리뷰 ')+s.review:'')+(s.repairs?T(' · 자동 수정 ')+s.repairs+T('회'):'')+(s.builds_on_failed_attempt?T(' · 이전 시도 이어받음'):'')),el('p',s.goal));if(s.note)row.append(el('small',s.note));list.append(row);}
  m.append(list);
- if(focus.summary){const sm=el('details');sm.append(el('summary',T('HEAD 요약')),el('p',focus.summary));m.append(sm);}
+ if(focus.summary){const sm=el('details');sm.append(el('summary',T('ARCHITECT 요약')),el('p',focus.summary));m.append(sm);}
  if(focus.blocked_reason){m.append(el('small',T('멈춘 이유: ')+focus.blocked_reason,'ai-sub'));}
  if(focus.deliverable){const full=String(focus.deliverable),base=String(focus.project_path||''),inside=base&&(full.startsWith(base+'/')||full.startsWith(base+'\\'));
   const where=el('small',T('결과물 위치: ')+(inside?focus.project+full.slice(base.length):full.split(/[\\/]/).slice(-3).join('/')),'ai-sub path');where.title=full;m.append(where);}   // the full path only on hover
@@ -106,7 +106,7 @@ function paintWork(a){
  if(usageWindow==='mission'&&!a.usage.mission)usageWindow='today';
  const win=a.usage[usageWindow],table=doc.getElementById('ai-work');table.replaceChildren();
  const header=el('div','','ai-row head');for(const h of [T('역할'),T('담당 AI (호출 수)'),T('호출'),T('CLI 작업 시간'),T('토큰')])header.append(el('span',h));table.append(header);
- for(const role of ['HEAD','BUILDER','REVIEWER','OTHER']){const b=win.by_role[role];if(!b&&role==='OTHER')continue;const who=b?Object.entries(b.providers||{}).sort((x,y)=>y[1]-x[1]).map(([p,n])=>(PROVIDER[p]||p)+' '+n).join(', '):T('호출 없음');const row=el('div','','ai-row');row.append(el('span',ROLE[role]),el('span',who),el('span',b?String(b.calls)+(b.failed?T(' (실패 ')+b.failed+')':''):'0'),el('span',b?fmtTime(b.seconds):'—'),el('span',fmtTokens(b)));table.append(row);}
+ for(const role of ['ARCHITECT','MAKER','INSPECTOR','OTHER']){const b=win.by_role[role];if(!b&&role==='OTHER')continue;const who=b?Object.entries(b.providers||{}).sort((x,y)=>y[1]-x[1]).map(([p,n])=>(PROVIDER[p]||p)+' '+n).join(', '):T('호출 없음');const row=el('div','','ai-row');row.append(el('span',ROLE[role]),el('span',who),el('span',b?String(b.calls)+(b.failed?T(' (실패 ')+b.failed+')':''):'0'),el('span',b?fmtTime(b.seconds):'—'),el('span',fmtTokens(b)));table.append(row);}
  const tot=el('div','','ai-row total');tot.append(el('span',T('합계')),el('span',''),el('span',String(win.total.calls)),el('span',fmtTime(win.total.seconds)),el('span',fmtTokens(win.total)));table.append(tot);
  for(const p of ['OPENAI','GOOGLE','ANTHROPIC']){const node=doc.getElementById('node-'+p);if(!node)continue;let line=node.querySelector('.ai-card-usage');if(!line){line=el('p','','ai-card-usage');node.append(line);}const b=a.usage.today.by_provider[p],busy=(a.working_now||[]).find(w=>w.provider===p);line.textContent=(busy?T('● 작업 중 · ')+(ROLE[busy.role]||busy.role)+' · '+fmtTime(busy.elapsed_sec)+' — ':'')+T('오늘 ')+(b?b.calls+T('회 · ')+fmtTime(b.seconds)+T(' · 토큰 ')+fmtTokens(b):T('호출 없음'));line.classList.toggle('busy',!!busy);}
 }

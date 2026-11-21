@@ -258,29 +258,29 @@ def test_snapshot_shape():
 # ---------------------------------------------------------------- roles
 def test_the_same_ai_may_hold_several_roles(tmp_path, monkeypatch):
     monkeypatch.setattr(role_settings, "PATH", tmp_path / "roles.json")
-    all_claude = {"head": "claude", "builder": "claude", "reviewer": "claude"}
+    all_claude = {"architect": "claude", "maker": "claude", "inspector": "claude"}
     assert role_settings.save(all_claude) == all_claude
     config = role_settings.apply({})
     assert role_settings.current(config) == all_claude and config["manual_roles"] is True
     assert role_settings.independence(all_claude) == "reduced"
-    assert role_settings.independence({"head": "claude", "builder": "claude", "reviewer": "openai"}) == "full"
-    assert role_settings.independence({"head": "openai", "builder": "claude", "reviewer": "openai"}) == "reduced"   # also for Codex
-    assert role_settings.independence({"head": "claude", "builder": "openai", "reviewer": "openai"}) == "reduced"   # reviewing its own code
+    assert role_settings.independence({"architect": "claude", "maker": "claude", "inspector": "openai"}) == "full"
+    assert role_settings.independence({"architect": "openai", "maker": "claude", "inspector": "openai"}) == "reduced"   # also for Codex
+    assert role_settings.independence({"architect": "claude", "maker": "openai", "inspector": "openai"}) == "reduced"   # reviewing its own code
     with pytest.raises(ValueError):
-        role_settings.save({"head": "claude", "builder": "claude", "reviewer": "gemini"})
+        role_settings.save({"architect": "claude", "maker": "claude", "inspector": "gemini"})
 
 
 def test_orchestrator_builds_agents_when_all_roles_share_one_ai(tmp_path, monkeypatch):
     from core.orchestrator import Orchestrator
     monkeypatch.setattr(role_settings, "PATH", tmp_path / "roles.json")
-    role_settings.save({"head": "claude", "builder": "claude", "reviewer": "claude"})
+    role_settings.save({"architect": "claude", "maker": "claude", "inspector": "claude"})
     orch = Orchestrator(role_settings.apply({}))
-    assert (orch.head.provider, orch.builder.provider, orch.reviewer.provider) == ("anthropic", "anthropic", "anthropic")
+    assert (orch.architect.provider, orch.maker.provider, orch.inspector.provider) == ("anthropic", "anthropic", "anthropic")
     assigned = orch.pm.resolve_roles("claude", "claude", "claude", strict=True)
-    assert [assigned[r + "_provider"] for r in ("head", "builder", "reviewer")] == ["claude"] * 3
+    assert [assigned[r + "_provider"] for r in ("architect", "maker", "inspector")] == ["claude"] * 3
     with orch.pm._get_conn() as conn:
         row = conn.execute("SELECT current_role FROM provider_health WHERE provider='ANTHROPIC'").fetchone()
-    assert row[0] == "HEAD, BUILDER, REVIEWER"
+    assert row[0] == "ARCHITECT, MAKER, INSPECTOR"
 
 
 # ---------------------------------------------------------------- the console endpoints
@@ -338,16 +338,16 @@ def test_ai_endpoint_reads_and_saves_settings(console):
 
 
 def test_roles_endpoint_accepts_duplicates_and_reports_independence(console):
-    status, out = _call(console, "/ops/roles", {"head": "claude", "builder": "claude", "reviewer": "claude"})
-    assert status == 200 and out["roles"] == {"head": "claude", "builder": "claude", "reviewer": "claude"}
+    status, out = _call(console, "/ops/roles", {"architect": "claude", "maker": "claude", "inspector": "claude"})
+    assert status == 200 and out["roles"] == {"architect": "claude", "maker": "claude", "inspector": "claude"}
     status, now = _call(console, "/ops/roles")
-    assert now["roles"]["reviewer"] == "claude" and now["independence"] == "reduced"
+    assert now["roles"]["inspector"] == "claude" and now["independence"] == "reduced"
 
 
 @pytest.mark.parametrize("roles,independent", [
-    ({"head": "openai", "builder": "antigravity", "reviewer": "openai"}, False),     # Codex planning and reviewing
-    ({"head": "claude", "builder": "openai", "reviewer": "openai"}, False),          # Codex reviewing its own code
-    ({"head": "claude", "builder": "claude", "reviewer": "openai"}, True),
+    ({"architect": "openai", "maker": "antigravity", "inspector": "openai"}, False),     # Codex planning and reviewing
+    ({"architect": "claude", "maker": "openai", "inspector": "openai"}, False),          # Codex reviewing its own code
+    ({"architect": "claude", "maker": "claude", "inspector": "openai"}, True),
 ])
 def test_orchestrator_judges_console_roles_the_way_the_console_warns(tmp_path, monkeypatch, roles, independent):
     """Without autonomy a PASS from a non-independent review must stop for a human; with it the PASS is kept and noted."""
@@ -360,7 +360,7 @@ def test_orchestrator_judges_console_roles_the_way_the_console_warns(tmp_path, m
     import logging
     review = SimpleNamespace(verdict="pass", p0=[], p1=[], p2=[], summary="ok")
     for autonomy, expected in ((False, State.PASS if independent else State.HUMAN_REQUIRED), (True, State.PASS)):
-        config = role_settings.apply({"autonomy": {"enabled": autonomy, "head_proxy": autonomy}})
+        config = role_settings.apply({"autonomy": {"enabled": autonomy, "architect_proxy": autonomy}})
         orch = Orchestrator(config)
         assert orch._proxy() is autonomy
         decision = SimpleNamespace(decision=State.PASS, rationale="fine")
@@ -374,7 +374,7 @@ def test_strict_roles_need_only_the_chosen_clis(tmp_path, monkeypatch):
     from core.orchestrator import Orchestrator
     from core.provider_manager import FailoverMode
     monkeypatch.setattr(role_settings, "PATH", tmp_path / "roles.json")
-    role_settings.save({"head": "claude", "builder": "claude", "reviewer": "claude"})
+    role_settings.save({"architect": "claude", "maker": "claude", "inspector": "claude"})
     orch = Orchestrator(role_settings.apply({}))
     monkeypatch.setattr(orch.pm, "usable_domains", lambda: ["ANTHROPIC"])
     monkeypatch.setattr(orch.pm, "get_failover_mode", lambda: (FailoverMode.STOP, ["OPENAI(down)", "GOOGLE(down)"]))

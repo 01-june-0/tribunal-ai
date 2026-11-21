@@ -1,16 +1,16 @@
 from typing import Dict, Any
-from agents.head import BaseHead
+from agents.architect import BaseArchitect
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 
-class MockHead(BaseHead):
-    """Deterministic Mock HEAD for testing and offline verification."""
+class MockArchitect(BaseArchitect):
+    """Deterministic Mock ARCHITECT for testing and offline verification."""
     provider: str = "mock"
     agent_family: str = "mock"
 
-    def __init__(self, model: str = "mock-head"):
+    def __init__(self, model: str = "mock-architect"):
         self.model = model
         self.provider = "mock"
         self.agent_family = "mock"
@@ -27,26 +27,26 @@ class MockHead(BaseHead):
             ],
             max_files_changed=5,
             max_diff_lines=200,
-            context="Mock Head generated order"
+            context="Mock Architect generated order"
         )
 
     def decide(
         self,
         order: OrderSchema,
-        builder_result: BuilderResultSchema,
+        maker_result: MakerResultSchema,
         verification: Dict[str, Any],
         review_result: ReviewResultSchema,
         cwd: Any = None,
         **kwargs
     ) -> DecisionSchema:
         v_passed = verification.get("passed", False)
-        b_passed = (builder_result.status == "COMPLETED")
+        b_passed = (maker_result.status == "COMPLETED")
         r_passed = (review_result.verdict == "pass")
 
         if not v_passed or not b_passed:
             return DecisionSchema(
                 decision="FAIL",
-                rationale="Automated verification or builder execution failed.",
+                rationale="Automated verification or maker execution failed.",
                 next_steps=["Inspect error logs", "Fix compilation/test issues"]
             )
         
@@ -92,11 +92,11 @@ class MockHead(BaseHead):
         from datetime import datetime
         import sys
         return AgentProvenanceRecord(
-            agent="HEAD",
+            agent="ARCHITECT",
             provider="mock",
             model=self.model,
             executable=sys.executable,
-            invocation_command="mock_head.create_order()",
+            invocation_command="mock_architect.create_order()",
             version="0.1.0",
             exit_code=exit_code,
             timestamp=datetime.utcnow().isoformat()

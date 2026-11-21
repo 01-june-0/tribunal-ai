@@ -2,7 +2,7 @@
 Cross-process exclusive file lock (v0.2.3.3).
 
 Used to serialise Antigravity CLI builds across processes (dashboard thread vs. director.py CLI):
-the builder rewrites the user-global ~/.gemini/antigravity-cli/settings.json for the duration of a run,
+the maker rewrites the user-global ~/.gemini/antigravity-cli/settings.json for the duration of a run,
 so two concurrent builds must never overlap.
 
 Properties

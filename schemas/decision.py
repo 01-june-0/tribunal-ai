@@ -2,7 +2,7 @@ from typing import List, Literal
 from pydantic import BaseModel, Field
 
 class DecisionSchema(BaseModel):
-    """Final decision produced by HEAD based on evidence."""
+    """Final decision produced by ARCHITECT based on evidence."""
     decision: Literal["PASS", "HUMAN_REQUIRED", "FAIL"] = Field(
         ...,
         description="Final run verdict: PASS, HUMAN_REQUIRED, or FAIL"

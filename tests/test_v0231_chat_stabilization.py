@@ -96,8 +96,8 @@ def _order(**over):
     return base
 
 
-class HeadStub:
-    """Mock HEAD whose chat() returns a fixed DEV_TASK and records real-looking execution info."""
+class ArchitectStub:
+    """Mock ARCHITECT whose chat() returns a fixed DEV_TASK and records real-looking execution info."""
     provider = "openai"
 
     def __init__(self, order_dict, exit_code=0, duration=1.25):
@@ -110,7 +110,7 @@ class HeadStub:
 
     def get_provenance(self, exit_code=0):
         return AgentProvenanceRecord(
-            agent="HEAD", provider="codex", runtime="codex-cli", model="codex-cli",
+            agent="ARCHITECT", provider="codex", runtime="codex-cli", model="codex-cli",
             executable="codex", invocation_command=self.last_execution_info["invocation_command"],
             version="codex-cli 0.153.4", exit_code=exit_code,
             duration_sec=self.last_execution_info["execution_duration_sec"],
@@ -118,8 +118,8 @@ class HeadStub:
         )
 
 
-def _install_head(monkeypatch, head):
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: head)
+def _install_architect(monkeypatch, architect):
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: architect)
 
 
 # ------------------------------------------------------------------ TEST A: bind 127.0.0.1 only
@@ -142,11 +142,11 @@ def test_a_dashboard_binds_localhost_only(chat_env):
         dashboard_server.run(server_class=FakeServer, host="0.0.0.0", port=8099)
 
 
-# ------------------------------------------------------------------ TEST B: no project -> PROJECT_SELECTION_REQUIRED, Builder 0
+# ------------------------------------------------------------------ TEST B: no project -> PROJECT_SELECTION_REQUIRED, Maker 0
 
 def test_b_no_project_selected_blocks_dev_task(chat_env, monkeypatch):
     cm, pm = chat_env
-    _install_head(monkeypatch, HeadStub(_order()))
+    _install_architect(monkeypatch, ArchitectStub(_order()))
     run_calls = []
     monkeypatch.setattr(Orchestrator, "run", lambda self, *a, **k: run_calls.append(1))
 
@@ -168,11 +168,11 @@ def test_b_no_project_selected_blocks_dev_task(chat_env, monkeypatch):
 
 def test_c_low_risk_valid_dev_task_runs_autonomously(chat_env, monkeypatch):
     cm, pm = chat_env
-    _install_head(monkeypatch, HeadStub(_order(risk_level="LOW")))
+    _install_architect(monkeypatch, ArchitectStub(_order(risk_level="LOW")))
     seen = {}
 
-    def mock_run(self, project_path, goal, run_id=None, builder_fn=None, order=None, head_provenance=None):
-        seen.update(project_path=project_path, run_id=run_id, order=order, head_provenance=head_provenance)
+    def mock_run(self, project_path, goal, run_id=None, maker_fn=None, order=None, architect_provenance=None):
+        seen.update(project_path=project_path, run_id=run_id, order=order, architect_provenance=architect_provenance)
 
     monkeypatch.setattr(Orchestrator, "run", mock_run)
     inline_threads(monkeypatch)
@@ -183,7 +183,7 @@ def test_c_low_risk_valid_dev_task_runs_autonomously(chat_env, monkeypatch):
 
     assert seen["order"].goal == "add helper"
     assert Path(seen["project_path"]).resolve() == Path(proj).resolve()
-    assert seen["head_provenance"]["exit_code"] == 0
+    assert seen["architect_provenance"]["exit_code"] == 0
     contents = [m["content"] for m in cm.get_messages(GLOBAL_SESSION_ID)]
     assert not any("HUMAN_REQUIRED" in c for c in contents)
     assert any(c.startswith("Starting background run") for c in contents)
@@ -201,7 +201,7 @@ def test_c_low_risk_valid_dev_task_runs_autonomously(chat_env, monkeypatch):
 ])
 def test_d_high_risk_orders_require_human(chat_env, monkeypatch, bad_order, expected):
     cm, pm = chat_env
-    _install_head(monkeypatch, HeadStub(bad_order))
+    _install_architect(monkeypatch, ArchitectStub(bad_order))
     run_calls = []
     monkeypatch.setattr(Orchestrator, "run", lambda self, *a, **k: run_calls.append(1))
 
@@ -216,16 +216,16 @@ def test_d_high_risk_orders_require_human(chat_env, monkeypatch, bad_order, expe
     assert StateMachine().get_run(msgs[-1]["run_id"])["current_state"] == State.HUMAN_REQUIRED
 
 
-# ------------------------------------------------------------------ TEST E: concurrent DEV_TASK -> BUSY, Builder duplicate 0
+# ------------------------------------------------------------------ TEST E: concurrent DEV_TASK -> BUSY, Maker duplicate 0
 
 def test_e_concurrent_dev_task_second_is_busy(chat_env, monkeypatch):
     cm, pm = chat_env
-    _install_head(monkeypatch, HeadStub(_order()))
+    _install_architect(monkeypatch, ArchitectStub(_order()))
     release = threading.Event()
     started = threading.Event()
     run_calls = []
 
-    def blocking_run(self, project_path, goal, run_id=None, builder_fn=None, order=None, head_provenance=None):
+    def blocking_run(self, project_path, goal, run_id=None, maker_fn=None, order=None, architect_provenance=None):
         run_calls.append(run_id)
         started.set()
         release.wait(timeout=10)
@@ -251,7 +251,7 @@ def test_e_concurrent_dev_task_second_is_busy(chat_env, monkeypatch):
 
 
 def test_e2_antigravity_global_lock_held_during_build(monkeypatch, tmp_path):
-    from agents import antigravity_builder as ab
+    from agents import antigravity_maker as ab
     from core.process_runner import ProcessResult
 
     observed = {}
@@ -266,8 +266,8 @@ def test_e2_antigravity_global_lock_held_during_build(monkeypatch, tmp_path):
     wt = tmp_path / "wt"
     wt.mkdir()
     subprocess.run(["git", "init"], cwd=str(wt), check=True, capture_output=True)
-    builder = ab.AntigravityBuilder(executable=sys.executable)
-    builder.run(OrderSchema(goal="g", allowed_paths=["src/"]), str(wt))
+    maker = ab.AntigravityMaker(executable=sys.executable)
+    maker.run(OrderSchema(goal="g", allowed_paths=["src/"]), str(wt))
 
     assert observed["locked_during_run"] is True
     assert ab._AGY_GLOBAL_LOCK.locked() is False   # released afterwards
@@ -276,7 +276,7 @@ def test_e2_antigravity_global_lock_held_during_build(monkeypatch, tmp_path):
 # ------------------------------------------------------------------ TEST F: run_id unique within the same second
 
 def test_f_generate_run_id_unique_100(chat_env):
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}})
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}})
     ids = [orch.generate_run_id() for _ in range(100)]
     assert len(set(ids)) == 100
     assert all(i.startswith("RUN-") and len(i.split("-")) == 3 for i in ids)
@@ -346,9 +346,9 @@ def test_h2_all_components_share_resolver(isolate_provider_db):
     assert dashboard_server.resolve_db_path() == expected
 
 
-# ------------------------------------------------------------------ TEST I: dashboard GET works while a chat POST is blocked in HEAD
+# ------------------------------------------------------------------ TEST I: dashboard GET works while a chat POST is blocked in ARCHITECT
 
-def test_i_dashboard_not_blocked_by_slow_head(chat_env, monkeypatch):
+def test_i_dashboard_not_blocked_by_slow_architect(chat_env, monkeypatch):
     monkeypatch.setattr(dashboard_server, "handle_chat_message", lambda msg: time.sleep(2.5))
     from http.server import ThreadingHTTPServer
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), dashboard_server.DashboardHandler)
@@ -371,7 +371,7 @@ def test_i_dashboard_not_blocked_by_slow_head(chat_env, monkeypatch):
             body = r.read().decode("utf-8")
         elapsed = time.time() - t0
         assert r.status == 200 and "TRIBUNAL AI" in body
-        assert elapsed < 1.5, f"GET blocked for {elapsed:.2f}s while HEAD chat was running"
+        assert elapsed < 1.5, f"GET blocked for {elapsed:.2f}s while ARCHITECT chat was running"
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/status", timeout=5) as r2:
             assert "OPENAI" in r2.read().decode("utf-8")
         pt.join(timeout=10)
@@ -398,11 +398,11 @@ def test_j_korean_path_subprocess_no_decode_errors(tmp_path):
         assert isinstance(r.stdout, str) and "한글경로_테스트" in r.stdout
         assert isinstance(r.stderr, str)
 
-        # the reviewer/head git pre-checks use the same helper
-        from agents.codex_reviewer import CodexReviewer
-        src = Path("agents/codex_reviewer.py").read_text(encoding="utf-8")
+        # the inspector/architect git pre-checks use the same helper
+        from agents.codex_inspector import CodexInspector
+        src = Path("agents/codex_inspector.py").read_text(encoding="utf-8")
         assert "run_capture(" in src and 'capture_output=True, text=True)' not in src
-        src2 = Path("agents/codex_head.py").read_text(encoding="utf-8")
+        src2 = Path("agents/codex_architect.py").read_text(encoding="utf-8")
         assert "run_capture(" in src2
         src3 = Path("core/provider_manager.py").read_text(encoding="utf-8")
         assert "probe_version(" in src3 and "subprocess.run(" not in src3.split("def _get_cli_version")[1].split("def ")[0]
@@ -411,12 +411,12 @@ def test_j_korean_path_subprocess_no_decode_errors(tmp_path):
     assert thread_errors == []
 
 
-# ------------------------------------------------------------------ TEST K: chat HEAD provenance recorded with actual values
+# ------------------------------------------------------------------ TEST K: chat ARCHITECT provenance recorded with actual values
 
-def test_k_chat_head_provenance_recorded(chat_env, monkeypatch):
+def test_k_chat_architect_provenance_recorded(chat_env, monkeypatch):
     cm, pm = chat_env
-    head = HeadStub(_order(), exit_code=0, duration=3.75)
-    _install_head(monkeypatch, head)
+    architect = ArchitectStub(_order(), exit_code=0, duration=3.75)
+    _install_architect(monkeypatch, architect)
     monkeypatch.setattr(Orchestrator, "run", lambda self, *a, **k: None)
     inline_threads(monkeypatch)
 
@@ -427,7 +427,7 @@ def test_k_chat_head_provenance_recorded(chat_env, monkeypatch):
     prov = cm.get_provenance(GLOBAL_SESSION_ID)
     assert len(prov) == 1
     rec = prov[0]
-    assert rec["agent"] == "HEAD"
+    assert rec["agent"] == "ARCHITECT"
     assert rec["provider"] == "codex" and rec["runtime"] == "codex-cli"
     assert rec["executable"] == "codex"
     assert rec["invocation_command"] == "codex exec --sandbox read-only <prompt>"
@@ -439,10 +439,10 @@ def test_k_chat_head_provenance_recorded(chat_env, monkeypatch):
     assert "authentication_mode" in rec["declared_fields"] and "exit_code" in rec["observed_fields"]
     assert rec["api_key_used"] == 0
 
-    # a failing HEAD call records its real exit code and duration, not an estimate
-    head2 = HeadStub(_order(), exit_code=1, duration=0.5)
-    head2.chat = lambda msg, ctx, hist: {"type": "QUESTION", "message": "answer"}
-    _install_head(monkeypatch, head2)
+    # a failing ARCHITECT call records its real exit code and duration, not an estimate
+    architect2 = ArchitectStub(_order(), exit_code=1, duration=0.5)
+    architect2.chat = lambda msg, ctx, hist: {"type": "QUESTION", "message": "answer"}
+    _install_architect(monkeypatch, architect2)
     handle_chat_message("what is this?")
     rec2 = cm.get_provenance(GLOBAL_SESSION_ID)[-1]
     assert rec2["exit_code"] == 1 and rec2["duration_sec"] == 0.5
@@ -451,14 +451,14 @@ def test_k_chat_head_provenance_recorded(chat_env, monkeypatch):
 # ------------------------------------------------------------------ TEST L: safety caps
 
 def test_l_order_caps_clamped_to_global_config(isolate_provider_db):
-    from agents.mock_head import MockHead
-    from agents.codex_reviewer import CodexReviewer
+    from agents.mock_architect import MockArchitect
+    from agents.codex_inspector import CodexInspector
     cfg = {
-        "head": {"provider": "mock"}, "reviewer": {"provider": "mock"},
+        "architect": {"provider": "mock"}, "inspector": {"provider": "mock"},
         "safety": {"max_files_changed": 4, "max_diff_lines": 120},
         "verification": {},
     }
-    orch = Orchestrator(config=cfg, head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"))
+    orch = Orchestrator(config=cfg, architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"))
 
     big = OrderSchema(goal="g", allowed_paths=["src/"], max_files_changed=999, max_diff_lines=99999)
     notes = orch.apply_safety_caps(big)
@@ -471,12 +471,12 @@ def test_l_order_caps_clamped_to_global_config(isolate_provider_db):
 
     # end-to-end: an oversized chat ORDER is clamped before the Scope Guard runs
     with make_git_project() as proj:
-        def builder(b, o, wt):
+        def maker(b, o, wt):
             for i in range(6):
                 (Path(wt) / "src" / f"f{i}.py").write_text("x = 1\n", encoding="utf-8")
             return [f"src/f{i}.py" for i in range(6)]
         oversized = OrderSchema(goal="g", allowed_paths=["src/"], max_files_changed=999, max_diff_lines=99999)
-        summary = orch.run(proj, "g", builder_fn=builder, order=oversized)
+        summary = orch.run(proj, "g", maker_fn=maker, order=oversized)
         assert summary["final_state"] == State.HUMAN_REQUIRED          # 6 files > effective cap 4
         saved = json.loads((Path("runs") / summary["run_id"] / "order.json").read_text(encoding="utf-8"))
         assert saved["max_files_changed"] == 4

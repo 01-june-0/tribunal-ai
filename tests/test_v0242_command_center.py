@@ -13,7 +13,7 @@ from core.db_path import get_db_path
 from tests.test_v0238_dashboard_ux import env, server, _get_json  # noqa: F401
 
 
-def _roles(openai="HEAD, REVIEWER", anthropic="BACKUP", google="BUILDER"):
+def _roles(openai="ARCHITECT, INSPECTOR", anthropic="BACKUP", google="MAKER"):
     return {"OPENAI": {"role": openai}, "ANTHROPIC": {"role": anthropic}, "GOOGLE": {"role": google}}
 
 
@@ -41,10 +41,10 @@ def test_activity_verify_stage_is_director_only():
 
 
 def test_activity_claude_failover_uses_recorded_roles():
-    a = _node_activity("REVIEWING", _roles(openai="NONE", anthropic="HEAD, REVIEWER"))
+    a = _node_activity("REVIEWING", _roles(openai="NONE", anthropic="ARCHITECT, INSPECTOR"))
     assert a["nodes"]["ANTHROPIC"]["active"] is True and a["nodes"]["OPENAI"]["active"] is False
     assert a["nodes"]["ANTHROPIC"]["backup"] is False
-    a2 = _node_activity("PLANNING", _roles(openai="NONE", anthropic="HEAD, REVIEWER"))
+    a2 = _node_activity("PLANNING", _roles(openai="NONE", anthropic="ARCHITECT, INSPECTOR"))
     assert a2["nodes"]["ANTHROPIC"]["active"] is True
 
 
@@ -56,17 +56,17 @@ def _run(sm, rid, chain, details="x"):
 
 def test_status_and_page_reflect_building_and_pass(server, env):
     with sqlite3.connect(str(get_db_path())) as c:
-        c.execute("UPDATE provider_health SET current_role='HEAD, REVIEWER' WHERE provider='OPENAI'")
-        c.execute("UPDATE provider_health SET current_role='BUILDER' WHERE provider='GOOGLE'")
+        c.execute("UPDATE provider_health SET current_role='ARCHITECT, INSPECTOR' WHERE provider='OPENAI'")
+        c.execute("UPDATE provider_health SET current_role='MAKER' WHERE provider='GOOGLE'")
         c.execute("UPDATE provider_health SET current_role='BACKUP' WHERE provider='ANTHROPIC'"); c.commit()
     sm = StateMachine()
     _run(sm, "RUN-CC-BUILD", [State.PLANNING, State.ORDER_READY, State.BUILDING])
     st = _get_json(server, "/status")[1]
-    assert st["activity"]["director"] is True and st["activity"]["stage"] == "BUILDER"
+    assert st["activity"]["director"] is True and st["activity"]["stage"] == "MAKER"
     assert st["activity"]["nodes"]["GOOGLE"]["active"] is True and st["activity"]["nodes"]["OPENAI"]["active"] is False
     html = render_html()
     assert 'id="node-GOOGLE"' in html and 'class="node active healthy" id="node-GOOGLE"' in html
-    assert 'id="director-core" class="active"' in html and "ORCHESTRATING \u00b7 BUILDER" in html
+    assert 'id="director-core" class="active"' in html and "ORCHESTRATING \u00b7 MAKER" in html
     assert 'id="node-GOOGLE-ind" data-raw="ACTIVE"' in html and 'class="tap active" id="tap-GOOGLE"' in html
     # PASS: no node active, director idle, pipeline badge data available
     sm.transition_to("RUN-CC-BUILD", State.VERIFYING); sm.transition_to("RUN-CC-BUILD", State.REVIEWING)

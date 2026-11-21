@@ -1,4 +1,4 @@
-"""Bounded, explicitly referenced document input for the proposal Builder."""
+"""Bounded, explicitly referenced document input for the proposal Maker."""
 import re
 import zipfile
 from pathlib import Path

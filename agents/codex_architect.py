@@ -9,18 +9,18 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from agents.head import BaseHead
+from agents.architect import BaseArchitect
 from core.env_utils import resolve_cli, get_sanitized_env
 from core.process_runner import ProcessTreeRunner
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 from schemas.provenance import AgentProvenanceRecord
 
-class CodexHead(BaseHead):
+class CodexArchitect(BaseArchitect):
     """
-    OpenAI GPT Head Agent using official OpenAI Codex CLI ('codex') via ProcessTreeRunner.
+    OpenAI GPT Architect Agent using official OpenAI Codex CLI ('codex') via ProcessTreeRunner.
     Direct API calls and PAYG API keys are strictly forbidden.
     """
     provider: str = "openai"
@@ -44,7 +44,7 @@ class CodexHead(BaseHead):
         self.timeout = timeout
         self.no_progress_timeout = no_progress_timeout
         self.heartbeat_interval = heartbeat_interval
-        self.logger = logging.getLogger("director.codex_head")
+        self.logger = logging.getLogger("director.codex_architect")
         self.last_execution_info = {}
 
     def get_version(self) -> str:
@@ -62,7 +62,7 @@ class CodexHead(BaseHead):
         actual_exit_code = self.last_execution_info.get("exit_code")   # None when no process ran (never a default)
 
         return AgentProvenanceRecord(
-            agent="HEAD",
+            agent="ARCHITECT",
             provider="openai",
             runtime="codex-cli",
             model=self.model,
@@ -100,7 +100,7 @@ class CodexHead(BaseHead):
 
     def _invoke_cli(self, prompt: str, cwd: Optional[str] = None) -> str:
         from core import usage
-        usage.set_context(role=getattr(self, "usage_role", "HEAD"))
+        usage.set_context(role=getattr(self, "usage_role", "ARCHITECT"))
         if not self.executable or not Path(self.executable).exists():
             raise RuntimeError(f"CONFIG_ERROR: Official Codex CLI not found at: {self.executable}")
 
@@ -108,14 +108,14 @@ class CodexHead(BaseHead):
 
         # Strict git repository check only when a project directory was given: Codex CLI wants a trusted git
         # directory for project work. With no project selected (console chat before choosing a folder) we behave
-        # exactly like ClaudeHead and let the CLI inherit the process cwd, so GPT<->Claude HEAD switching is symmetric.
+        # exactly like ClaudeArchitect and let the CLI inherit the process cwd, so GPT<->Claude ARCHITECT switching is symmetric.
         if cwd:
             try:
                 from core.env_utils import run_capture
                 r = run_capture(["git", "rev-parse", "--show-toplevel"], cwd=target_cwd, timeout=15)
                 if r.returncode != 0:
                     raise RuntimeError(
-                        f"CONFIG_ERROR: Codex HEAD directory '{target_cwd}' is not inside a git repository: {r.stderr.strip()}"
+                        f"CONFIG_ERROR: Codex ARCHITECT directory '{target_cwd}' is not inside a git repository: {r.stderr.strip()}"
                     )
             except FileNotFoundError:
                 raise RuntimeError("CONFIG_ERROR: git executable not found on system")
@@ -125,7 +125,7 @@ class CodexHead(BaseHead):
         from core.cli_models import codex_exec_argv, codex_exec_description
         cmd = codex_exec_argv(self.executable)
         invocation_desc = codex_exec_description()
-        self.logger.info(f"[Codex Head] Invoking CLI via ProcessTreeRunner: {self.executable} (cwd={target_cwd})")
+        self.logger.info(f"[Codex Architect] Invoking CLI via ProcessTreeRunner: {self.executable} (cwd={target_cwd})")
 
         sanitized_env = get_sanitized_env()
         res = ProcessTreeRunner.run(
@@ -147,8 +147,8 @@ class CodexHead(BaseHead):
         }
 
         if res.timed_out:
-            self.logger.error(f"[Codex Head] Process timed out: {res.timeout_reason}")
-            raise TimeoutError(f"TIMEOUT: Codex Head CLI exceeded limit: {res.timeout_reason}")
+            self.logger.error(f"[Codex Architect] Process timed out: {res.timeout_reason}")
+            raise TimeoutError(f"TIMEOUT: Codex Architect CLI exceeded limit: {res.timeout_reason}")
 
         if res.exit_code != 0:
             err_msg = res.stderr.strip() or res.stdout.strip()
@@ -159,7 +159,7 @@ class CodexHead(BaseHead):
 
     def create_order(self, goal: str, project_context: Dict[str, Any]) -> OrderSchema:
         prompt = (
-            "You are the HEAD architect of an autonomous software engineering system.\n"
+            "You are the ARCHITECT (lead planner) of an autonomous software engineering system.\n"
             "Your task is to analyze the user goal and project files, then generate a strict work ORDER in JSON format.\n"
             "Rules:\n"
             "1. Output MUST be valid JSON adhering strictly to the schema.\n"
@@ -168,7 +168,7 @@ class CodexHead(BaseHead):
             "4. Define clear, testable 'acceptance_criteria'. Include required_outputs: exact project-relative deliverable file paths, including required behavior tests. Include reference_paths for explicit user-supplied absolute document paths.\n"
             "5. Specify realistic 'max_files_changed' (<=15) and 'max_diff_lines' (<=800).\n"
             "6. 'allowed_deletions': Must be empty [] unless the user explicitly requested deleting specific functions, classes, tests, or files.\n"
-            "7. Explicitly remind the builder to preserve all existing functions, classes, and tests alongside new ones.\n\n"
+            "7. Explicitly remind the maker to preserve all existing functions, classes, and tests alongside new ones.\n\n"
             "SCHEMA SPECIFICATION:\n"
             "{\n"
             '  "goal": string,\n'
@@ -193,7 +193,7 @@ class CodexHead(BaseHead):
     def decide(
         self,
         order: OrderSchema,
-        builder_result: BuilderResultSchema,
+        maker_result: MakerResultSchema,
         verification: Dict[str, Any],
         review_result: ReviewResultSchema,
         cwd: Optional[str] = None,
@@ -202,7 +202,7 @@ class CodexHead(BaseHead):
         test_info = verification.get("test", {})
         evidence = {
             "order": order.model_dump(),
-            "builder_result": builder_result.model_dump(),
+            "maker_result": maker_result.model_dump(),
             "verification": {
                 "passed": verification.get("passed"),
                 "summary": verification.get("summary"),
@@ -216,21 +216,21 @@ class CodexHead(BaseHead):
         }
 
         prompt = (
-            "You are the HEAD architect making the final verdict on a development run.\n"
-            "Review the work order, builder output, automated verification results, and code review findings.\n\n"
+            "You are the ARCHITECT (lead planner) making the final verdict on a development run.\n"
+            "Review the work order, maker output, automated verification results, and code review findings.\n\n"
             "STRICT PASS RULES:\n"
             "1. 'PASS': ONLY permitted if:\n"
             "   - Automated build and tests passed.\n"
             "   - NO existing functions, classes, or tests were deleted (unless permitted in allowed_deletions).\n"
             "   - NO baseline test regressions occurred.\n"
-            "   - Reviewer reported NO P0/P1 issues and did NOT report accidental deletion of existing behaviors.\n"
-            "   - Reviewer verdict is pass, OR the reviewer reported only P2 (minor) findings: then PASS and list those P2 items in next_steps as follow-ups. Any P0/P1 needs FAIL with concrete corrections.\n"
+            "   - Inspector reported NO P0/P1 issues and did NOT report accidental deletion of existing behaviors.\n"
+            "   - Inspector verdict is pass, OR the inspector reported only P2 (minor) findings: then PASS and list those P2 items in next_steps as follow-ups. Any P0/P1 needs FAIL with concrete corrections.\n"
             "2. 'HUMAN_REQUIRED': MUST be returned if:\n"
             "   - Any existing function, test, or behavior was removed without explicit order permission.\n"
             "   - External authority, credentials, spending or live deployment is required (start the rationale with USER_DECISION:).\n"
-            "Product and business choices inside the ORDER's goal are YOURS as the user's proxy: pick one, state it, and direct the Builder.\n"
+            "Product and business choices inside the ORDER's goal are YOURS as the user's proxy: pick one, state it, and direct the Maker.\n"
             "3. 'FAIL': Implementation is incomplete or tests/review found defects. Give concrete developer repair instructions in next_steps.\n"
-            "Routine implementation architecture, input contracts and fixable review findings are YOUR decisions: resolve them and direct the Builder. Do not ask the user.\n"
+            "Routine implementation architecture, input contracts and fixable review findings are YOUR decisions: resolve them and direct the Maker. Do not ask the user.\n"
             "An ORDER that cannot be met as written (conflicting acceptance criteria, a needed file outside allowed_paths or in protected_paths, a broken test fixture) is NOT a user decision: return FAIL, name the conflict and the scope change needed; the mission planner re-plans.\n\n"
             "Before issuing repairs, cross-check every instruction against the ORIGINAL acceptance criteria. Never solve one defect by contradicting an existing requirement.\n"
             "SCHEMA SPECIFICATION:\n"
@@ -250,7 +250,7 @@ class CodexHead(BaseHead):
 
     def chat(self, message: str, project_context: Dict[str, Any], history: list) -> Dict[str, Any]:
         prompt = (
-            "You are the HEAD architect of an autonomous software engineering system.\n"
+            "You are the ARCHITECT (lead planner) of an autonomous software engineering system.\n"
             "The user is talking to you directly. You must determine if their message is a simple QUESTION or a DEV_TASK.\n\n"
             "If it's a simple QUESTION, output:\n"
             "{\n"
@@ -275,7 +275,7 @@ class CodexHead(BaseHead):
             '      "requires_human_approval": false\n'
             '  }\n'
             "}\n\n"
-            "RISK LEVEL GUIDANCE (HIGH always halts for human approval before the Builder runs - use it "
+            "RISK LEVEL GUIDANCE (HIGH always halts for human approval before the Maker runs - use it "
             "for real-world exposure, not for ambition):\n"
             "- 'HIGH': the goal could submit a real broker/exchange order, touch live credentials or an "
             "external account, delete or overwrite data that cannot be recovered from this worktree, or "

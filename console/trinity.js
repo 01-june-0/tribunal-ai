@@ -1,7 +1,7 @@
 'use strict';
 /* TRINITY stage: three AI cores feeding one fused core. Pure WebGL2, no libraries, no external assets (CSP: self).
    Nothing here is decorative-random: every speed, brightness and colour is driven through Trinity.set() by the
-   live work ledger (/ops/activity). Slots are roles: 0 HEAD (top), 1 BUILDER (left), 2 REVIEWER (right). */
+   live work ledger (/ops/activity). Slots are roles: 0 ARCHITECT (top), 1 MAKER (left), 2 INSPECTOR (right). */
 window.Trinity=(function(){
 const SLOTS=[[0,.98,0],[-1.02,-.60,0],[1.02,-.60,0]];
 const COUNTS={ribbon:7000,stream:4500,node:3200,dust:5200,edge:1700,nucleus:9000,verify:2400,shock:1800};
@@ -158,7 +158,7 @@ let onFrame=null,failed=false,flat=null,listening=false;
 const cur={act:[.1,.1,.1],edge:[0,0,0],core:.18,verify:0,colors:[[1,.54,.36],[.42,.65,1],[.24,.95,.75]]};
 const tgt={act:[.1,.1,.1],edge:[0,0,0],core:.18,verify:0,colors:cur.colors.map(c=>c.slice())};
 const ph={c:0,s:[0,0,0],e:[0,0,0],n:[0,0,0]};
-let pulse=0,pulseColor=[1,1,1],boot=0,time=0,last=0,timeScale=1;
+let pulse=0,pulseColor=[1,1,1],boot=0,time=0,last=0,timeScale=1,bootDelay=0,bootTime=3.2,age=0;
 let rect={x:0,y:0,w:1,h:1};const mouse=[0,0],mouseS=[0,0];
 const vp=new Float32Array(16);
 
@@ -240,7 +240,7 @@ function approach(dt){
   pulse=Math.max(0,pulse-dt/1.7);
   ph.c+=dt*(.16+.8*cur.core+.7*pulse);
   for(let i=0;i<3;i++){ph.s[i]+=dt*(.03+.34*cur.act[i]);ph.e[i]+=dt*(.045+.32*cur.edge[i]);ph.n[i]+=dt*(.22+1.7*cur.act[i]);}
-  boot=Math.min(1,boot+dt/3.2);
+  age+=dt;if(age>=bootDelay)boot=Math.min(1,boot+dt/bootTime);   // the intro holds the dust back until the roll call is over
 }
 function blur(src,dst,dx,dy){
   gl.bindFramebuffer(gl.FRAMEBUFFER,dst.f);gl.viewport(0,0,dst.w,dst.h);
@@ -305,7 +305,7 @@ function drawFlat(){
   c.globalCompositeOperation='source-over';
 }
 function init(el,opts){
-  canvas=el;onFrame=(opts&&opts.onFrame)||null;
+  canvas=el;onFrame=(opts&&opts.onFrame)||null;bootDelay=(opts&&opts.bootDelay)||0;bootTime=(opts&&opts.bootTime)||3.2;
   if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){timeScale=.2;boot=1;}
   try{
     gl=canvas.getContext('webgl2',{antialias:false,alpha:false,powerPreference:'high-performance'});

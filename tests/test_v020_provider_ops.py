@@ -53,9 +53,9 @@ def test_a_normal_mode(tmp_path):
     assert mode == FailoverMode.NORMAL
     
     roles = pm.resolve_roles()
-    assert roles["head_provider"] == "openai"
-    assert roles["builder_provider"] == "antigravity"
-    assert roles["reviewer_provider"] == "codex"
+    assert roles["architect_provider"] == "openai"
+    assert roles["maker_provider"] == "antigravity"
+    assert roles["inspector_provider"] == "codex"
 
 def test_b_openai_quota_exhausted(tmp_path):
     db_path = get_db(tmp_path)
@@ -69,8 +69,8 @@ def test_b_openai_quota_exhausted(tmp_path):
     
     # Resolve roles should shift to Claude
     roles = pm.resolve_roles()
-    assert roles["head_provider"] == "claude"
-    assert roles["reviewer_provider"] == "claude"
+    assert roles["architect_provider"] == "claude"
+    assert roles["inspector_provider"] == "claude"
     
     # Verify DB role was updated
     conn = sqlite3.connect(str(db_path))
@@ -78,8 +78,8 @@ def test_b_openai_quota_exhausted(tmp_path):
     cursor = conn.cursor()
     cursor.execute("SELECT current_role FROM provider_health WHERE provider = 'ANTHROPIC'")
     role = cursor.fetchone()['current_role']
-    assert "HEAD" in role
-    assert "REVIEWER" in role
+    assert "ARCHITECT" in role
+    assert "INSPECTOR" in role
 
 def test_c_stop_mode(tmp_path):
     db_path = get_db(tmp_path)

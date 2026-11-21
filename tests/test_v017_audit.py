@@ -16,16 +16,16 @@ from core.process_runner import ProcessTreeRunner, ProcessResult
 from core.verifier import Verifier
 from core.safety import SafetyPolicy
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 from schemas.provenance import AgentProvenanceRecord
-from agents.head import BaseHead
-from agents.codex_head import CodexHead
-from agents.claude_head import ClaudeHead
-from agents.codex_reviewer import CodexReviewer
-from agents.claude_reviewer import ClaudeReviewer
-from agents.antigravity_builder import AntigravityBuilder
+from agents.architect import BaseArchitect
+from agents.codex_architect import CodexArchitect
+from agents.claude_architect import ClaudeArchitect
+from agents.codex_inspector import CodexInspector
+from agents.claude_inspector import ClaudeInspector
+from agents.antigravity_maker import AntigravityMaker
 
 
 # =====================================================================
@@ -34,7 +34,7 @@ from agents.antigravity_builder import AntigravityBuilder
 
 def test_a_same_provider_guard_blocks_auto_pass():
     """
-    Audit Item 1: When HEAD and REVIEWER share the same provider (e.g. Claude HEAD + Claude REVIEWER),
+    Audit Item 1: When ARCHITECT and INSPECTOR share the same provider (e.g. Claude ARCHITECT + Claude INSPECTOR),
     final automated PASS is strictly forbidden. It must demote to HUMAN_REQUIRED.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -53,8 +53,8 @@ def test_a_same_provider_guard_blocks_auto_pass():
         subprocess.run(["git", "add", "."], cwd=str(proj_dir), check=True, capture_output=True)
         subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(proj_dir), check=True, capture_output=True)
 
-        # Mock Claude Head with explicit provider="anthropic"
-        class MockClaudeHead(BaseHead):
+        # Mock Claude Architect with explicit provider="anthropic"
+        class MockClaudeArchitect(BaseArchitect):
             provider = "anthropic"
             def create_order(self, goal, context, **kwargs):
                 return OrderSchema(
@@ -71,7 +71,7 @@ def test_a_same_provider_guard_blocks_auto_pass():
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="HEAD",
+                    agent="ARCHITECT",
                     provider="anthropic",
                     runtime="claude-code-cli",
                     model="claude-code-cli",
@@ -85,8 +85,8 @@ def test_a_same_provider_guard_blocks_auto_pass():
                     timestamp=datetime.utcnow().isoformat()
                 )
 
-        # Mock Claude Reviewer with explicit provider="anthropic"
-        class MockClaudeReviewer:
+        # Mock Claude Inspector with explicit provider="anthropic"
+        class MockClaudeInspector:
             provider = "anthropic"
             def review(self, order, diff, verif, context=None, worktree_path=None):
                 return ReviewResultSchema(
@@ -100,7 +100,7 @@ def test_a_same_provider_guard_blocks_auto_pass():
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="REVIEWER",
+                    agent="INSPECTOR",
                     provider="anthropic",
                     runtime="claude-code-cli",
                     model="claude-code-cli",
@@ -115,28 +115,28 @@ def test_a_same_provider_guard_blocks_auto_pass():
                 )
 
         cfg = {
-            "head": {"provider": "claude"},
-            "builder": {"provider": "antigravity"},
-            "reviewer": {"provider": "claude"},
+            "architect": {"provider": "claude"},
+            "maker": {"provider": "antigravity"},
+            "inspector": {"provider": "claude"},
             "verification": {"test_command": "python -m pytest tests/test_calc.py"}
         }
 
         orch = Orchestrator(
             config=cfg,
-            head_agent=MockClaudeHead(),
-            reviewer_agent=MockClaudeReviewer()
+            architect_agent=MockClaudeArchitect(),
+            inspector_agent=MockClaudeInspector()
         )
 
-        def builder_fn(builder, order, wt_path):
+        def maker_fn(maker, order, wt_path):
             p = Path(wt_path) / "src" / "calc.py"
             p.write_text("def add(a, b): return a + b\ndef sub(a, b): return a - b\n")
             t = Path(wt_path) / "tests" / "test_calc.py"
             t.write_text("from src.calc import add, sub\ndef test_add(): assert add(1, 2) == 3\ndef test_sub(): assert sub(3, 1) == 2\n")
             return ["src/calc.py", "tests/test_calc.py"]
 
-        summary = orch.run(str(proj_dir), "Add subtract", builder_fn=builder_fn)
+        summary = orch.run(str(proj_dir), "Add subtract", maker_fn=maker_fn)
 
-        # Head preference was PASS, reviewer verdict was PASS, but both are 'anthropic'
+        # Architect preference was PASS, inspector verdict was PASS, but both are 'anthropic'
         # Orchestrator Same-Provider Independence Guard MUST demote to HUMAN_REQUIRED
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert summary["decision"]["decision"] == "HUMAN_REQUIRED"
@@ -144,12 +144,12 @@ def test_a_same_provider_guard_blocks_auto_pass():
 
 
 # =====================================================================
-# TEST B: REVIEWER FAIL-CLOSED ON EMPTY STDOUT
+# TEST B: INSPECTOR FAIL-CLOSED ON EMPTY STDOUT
 # =====================================================================
 
-def test_b_reviewer_empty_stdout_fail_closed(monkeypatch):
+def test_b_inspector_empty_stdout_fail_closed(monkeypatch):
     """
-    Audit Item 2: Reviewer must never produce PASS when stdout is empty.
+    Audit Item 2: Inspector must never produce PASS when stdout is empty.
     Must return verdict='changes_required' with 'UNPARSEABLE_REVIEW' in p0.
     """
     order = OrderSchema(
@@ -170,15 +170,15 @@ def test_b_reviewer_empty_stdout_fail_closed(monkeypatch):
 
     monkeypatch.setattr(ProcessTreeRunner, "run", lambda *args, **kwargs: empty_res)
 
-    # Test ClaudeReviewer
-    cr = ClaudeReviewer()
+    # Test ClaudeInspector
+    cr = ClaudeInspector()
     cr.executable = "dummy_claude"
     res_claude = cr._review_with_cli(order, "", {})
     assert res_claude.verdict == "changes_required"
     assert any("UNPARSEABLE_REVIEW" in err for err in res_claude.p0)
 
-    # Test CodexReviewer
-    cx = CodexReviewer()
+    # Test CodexInspector
+    cx = CodexInspector()
     cx.executable = "dummy_codex"
     res_codex = cx._review_with_cli(order, "", {})
     assert res_codex.verdict == "changes_required"
@@ -186,12 +186,12 @@ def test_b_reviewer_empty_stdout_fail_closed(monkeypatch):
 
 
 # =====================================================================
-# TEST C: REVIEWER FAIL-CLOSED ON MALFORMED JSON (NO PASS HEURISTICS)
+# TEST C: INSPECTOR FAIL-CLOSED ON MALFORMED JSON (NO PASS HEURISTICS)
 # =====================================================================
 
-def test_c_reviewer_malformed_json_fail_closed(monkeypatch):
+def test_c_inspector_malformed_json_fail_closed(monkeypatch):
     """
-    Audit Item 2: Reviewer must delete natural language PASS guessing heuristics.
+    Audit Item 2: Inspector must delete natural language PASS guessing heuristics.
     Malformed/non-JSON response must strictly fail-closed with 'changes_required'.
     """
     order = OrderSchema(
@@ -203,7 +203,7 @@ def test_c_reviewer_malformed_json_fail_closed(monkeypatch):
 
     natural_language_good = "The changes look wonderful! No bugs found, clean implementation, all tests pass."
 
-    cr = ClaudeReviewer()
+    cr = ClaudeInspector()
     with pytest.raises(ValueError):
         cr._extract_json(natural_language_good)
 
@@ -221,7 +221,7 @@ def test_c_reviewer_malformed_json_fail_closed(monkeypatch):
     assert res.verdict == "changes_required"
     assert any("UNPARSEABLE_REVIEW" in err for err in res.p0)
 
-    cx = CodexReviewer()
+    cx = CodexInspector()
     with pytest.raises(ValueError):
         cx._extract_json(natural_language_good)
 
@@ -258,12 +258,12 @@ def test_d_provider_error_classification_and_domain_mapping():
 
     # In Orchestrator, Claude failure must map to ANTHROPIC
     orch = Orchestrator(config={})
-    claude_head = ClaudeHead()
-    assert orch._get_agent_domain(claude_head) == "ANTHROPIC"
-    codex_head = CodexHead()
-    assert orch._get_agent_domain(codex_head) == "OPENAI"
-    builder = AntigravityBuilder()
-    assert orch._get_agent_domain(builder) == "GOOGLE"
+    claude_architect = ClaudeArchitect()
+    assert orch._get_agent_domain(claude_architect) == "ANTHROPIC"
+    codex_architect = CodexArchitect()
+    assert orch._get_agent_domain(codex_architect) == "OPENAI"
+    maker = AntigravityMaker()
+    assert orch._get_agent_domain(maker) == "GOOGLE"
 
 
 # =====================================================================
@@ -438,8 +438,8 @@ def test_g2_resume_enforces_same_provider_guard():
         sm.transition_to(run_id, State.REVIEWING)
         sm.transition_to(run_id, State.DECIDING)
 
-        # Mock Claude Head & Reviewer (both anthropic)
-        class MockClaudeHead(BaseHead):
+        # Mock Claude Architect & Inspector (both anthropic)
+        class MockClaudeArchitect(BaseArchitect):
             provider = "anthropic"
             def create_order(self, goal, context=None, **kwargs):
                 return OrderSchema(goal=goal, allowed_paths=["src/"])
@@ -449,7 +449,7 @@ def test_g2_resume_enforces_same_provider_guard():
                 return {"type": "QUESTION", "response": "mock"}
             def get_provenance(self, exit_code=0):
                 return AgentProvenanceRecord(
-                    agent="HEAD",
+                    agent="ARCHITECT",
                     provider="anthropic",
                     runtime="claude-code-cli",
                     model="claude-code-cli",
@@ -463,18 +463,18 @@ def test_g2_resume_enforces_same_provider_guard():
                     timestamp=datetime.utcnow().isoformat()
                 )
 
-        class MockClaudeReviewer:
+        class MockClaudeInspector:
             provider = "anthropic"
 
         orch = Orchestrator(
             config={},
             state_machine=sm,
-            head_agent=MockClaudeHead(),
-            reviewer_agent=MockClaudeReviewer()
+            architect_agent=MockClaudeArchitect(),
+            inspector_agent=MockClaudeInspector()
         )
 
         orch._save_json(run_id, "order.json", OrderSchema(goal="Goal", allowed_paths=["src/"]))
-        orch._save_json(run_id, "builder.json", {"status": "COMPLETED", "files_modified": [], "commands_run": [], "summary": "Built successfully"})
+        orch._save_json(run_id, "maker.json", {"status": "COMPLETED", "files_modified": [], "commands_run": [], "summary": "Built successfully"})
         orch._save_json(run_id, "baseline_verification.json", {"passed": True, "test_counts": {"passed": 0}})   # v0.2.3.5: late-state resume needs evidence
         orch._save_json(run_id, "verification.json", {"passed": True, "test_counts": {"passed": 0}})
         orch._save_json(run_id, "review.json", {"verdict": "pass", "p0": [], "p1": [], "p2": [], "summary": "Looks good"})

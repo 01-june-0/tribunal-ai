@@ -27,31 +27,31 @@ from core import env_utils
 from schemas.order import OrderSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
-from agents.mock_head import MockHead
-from agents.codex_reviewer import CodexReviewer
-from agents.antigravity_builder import AntigravityBuilder
-from tests.test_v0231_chat_stabilization import make_git_project, inline_threads, HeadStub, _order
+from agents.mock_architect import MockArchitect
+from agents.codex_inspector import CodexInspector
+from agents.antigravity_maker import AntigravityMaker
+from tests.test_v0231_chat_stabilization import make_git_project, inline_threads, ArchitectStub, _order
 
 
 # ------------------------------------------------------------------ helpers
 
 def _mock_orch(**cfg_over):
-    cfg = {"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}}
+    cfg = {"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}}
     cfg.update(cfg_over)
-    return Orchestrator(config=cfg, head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"))
+    return Orchestrator(config=cfg, architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"))
 
 
-def _run_attack(order, proj, sentinel, builder_calls):
-    """Runs an ORDER through the real orchestrator with a builder that would clobber the sentinel."""
-    def rogue(builder, o, wt):
-        builder_calls.append(wt)
+def _run_attack(order, proj, sentinel, maker_calls):
+    """Runs an ORDER through the real orchestrator with a maker that would clobber the sentinel."""
+    def rogue(maker, o, wt):
+        maker_calls.append(wt)
         sentinel.write_text("HACKED", encoding="utf-8")
         return []
     orch = _mock_orch()
-    return orch.run(proj, order.goal, builder_fn=rogue, order=order)
+    return orch.run(proj, order.goal, maker_fn=rogue, order=order)
 
 
-# ------------------------------------------------------------------ TEST A: '../outside' fail-closed, Builder 0
+# ------------------------------------------------------------------ TEST A: '../outside' fail-closed, Maker 0
 
 @pytest.mark.parametrize("bad", ["../outside", "../../outside", "src/../../outside", "..\\outside", "./../x"])
 def test_a_parent_traversal_fail_closed(isolate_provider_db, tmp_path, bad):
@@ -62,7 +62,7 @@ def test_a_parent_traversal_fail_closed(isolate_provider_db, tmp_path, bad):
         order = OrderSchema(goal="attack", allowed_paths=[bad], protected_paths=[".git/"])
         summary = _run_attack(order, proj, sentinel, calls)
     assert summary["final_state"] == State.HUMAN_REQUIRED
-    assert calls == []                                   # Builder never executed
+    assert calls == []                                   # Maker never executed
     assert sentinel.read_text(encoding="utf-8") == "ORIGINAL"
     assert any("ORDER_PATH_VIOLATION" in (t["details"] or "") for t in StateMachine().get_transitions(summary["run_id"]))
 
@@ -120,14 +120,14 @@ def test_c_symlink_escape_fail_closed(isolate_provider_db, tmp_path):
             pytest.skip("symlink/junction creation not permitted in this environment")
 
         # 1) pre-tool write through the link is refused (canonical containment)
-        builder = AntigravityBuilder()
+        maker = AntigravityMaker()
         order = OrderSchema(goal="g", allowed_paths=["src/"], protected_paths=[".git/"])
         with pytest.raises(ScopeViolationError):
-            builder.pre_tool_write_file("src/escape/sentinel.txt", "HACKED", proj, order)
+            maker.pre_tool_write_file("src/escape/sentinel.txt", "HACKED", proj, order)
         assert sentinel.read_text(encoding="utf-8") == "ORIGINAL"
         assert SafetyPolicy.is_within_root(proj, Path(proj) / "src" / "escape" / "sentinel.txt") is False
 
-        # 2) an ORDER whose allowed path resolves outside the checkout is refused before the Builder runs.
+        # 2) an ORDER whose allowed path resolves outside the checkout is refused before the Maker runs.
         #    (a junction is not part of the git tree, so the orchestrator is pointed at this checkout as its
         #    worktree to exercise the canonical containment check against a real escape)
         o2 = OrderSchema(goal="attack", allowed_paths=["src/escape/"])
@@ -153,7 +153,7 @@ def test_c_symlink_escape_fail_closed(isolate_provider_db, tmp_path):
         assert ok is False and any("escapes worktree" in v for v in viol)
 
         # 4) hook guard: canonical containment (write via the link is denied even though the string starts with the worktree)
-        builder._setup_scoped_permissions(wt, order)
+        maker._setup_scoped_permissions(wt, order)
         guard = wt / ".agents" / "permission_guard.py"
         payload = json.dumps({"toolCall": {"name": "write_to_file", "args": {"TargetFile": str(wt / "src" / "escape" / "sentinel.txt")}}})
         r = subprocess.run([sys.executable, str(guard)], input=payload, text=True, capture_output=True, timeout=10)
@@ -163,16 +163,16 @@ def test_c_symlink_escape_fail_closed(isolate_provider_db, tmp_path):
         assert json.loads(r2.stdout.strip())["decision"] == "allow"
 
 
-# ------------------------------------------------------------------ TEST D: permission settings write failure -> Builder 0
+# ------------------------------------------------------------------ TEST D: permission settings write failure -> Maker 0
 
-def test_d_permission_setup_failure_blocks_builder(isolate_provider_db, tmp_path, monkeypatch):
+def test_d_permission_setup_failure_blocks_maker(isolate_provider_db, tmp_path, monkeypatch):
     from core.process_runner import ProcessResult
     agy_calls = []
 
     def fake_run(argv, **kw):
         agy_calls.append(argv)
         return ProcessResult(exit_code=0, stdout='{"event":"result","result":{"status":"SUCCESS","response":"done"}}\n', stderr="", timed_out=False, duration_sec=0.1, pid=1)
-    from agents import antigravity_builder as ab
+    from agents import antigravity_maker as ab
     monkeypatch.setattr(ab.ProcessTreeRunner, "run", staticmethod(fake_run))
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
 
@@ -185,8 +185,8 @@ def test_d_permission_setup_failure_blocks_builder(isolate_provider_db, tmp_path
     monkeypatch.setattr(os, "replace", failing_replace)
 
     with make_git_project() as proj:
-        builder = AntigravityBuilder(executable=sys.executable)
-        res = builder.run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+        maker = AntigravityMaker(executable=sys.executable)
+        res = maker.run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
     assert res.status == "FAILED" and res.error.startswith("PERMISSION_SETUP_FAILED")
     assert [a for a in agy_calls if "--sandbox" in a] == []   # Antigravity never launched (version probes excluded)
     assert not (tmp_path / ".gemini" / "antigravity-cli" / "settings.json.director-original").exists()
@@ -194,9 +194,9 @@ def test_d_permission_setup_failure_blocks_builder(isolate_provider_db, tmp_path
 
     # orchestrator maps it to HUMAN_REQUIRED
     monkeypatch.setattr(os, "replace", failing_replace)
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                        head_agent=MockHead(), reviewer_agent=CodexReviewer(provider="mock"),
-                        builder_agent=AntigravityBuilder(executable=sys.executable))
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                        architect_agent=MockArchitect(), inspector_agent=CodexInspector(provider="mock"),
+                        maker_agent=AntigravityMaker(executable=sys.executable))
     with make_git_project() as proj:
         summary = orch.run(proj, "g")
     assert summary["final_state"] == State.HUMAN_REQUIRED
@@ -206,7 +206,7 @@ def test_d_permission_setup_failure_blocks_builder(isolate_provider_db, tmp_path
 
 def test_d2_settings_snapshot_restore_and_leftover_detection(isolate_provider_db, tmp_path, monkeypatch):
     from core.process_runner import ProcessResult
-    from agents import antigravity_builder as ab
+    from agents import antigravity_maker as ab
     seen = {}
 
     def fake_run(argv, **kw):
@@ -222,8 +222,8 @@ def test_d2_settings_snapshot_restore_and_leftover_detection(isolate_provider_db
     sf.write_text(json.dumps(original), encoding="utf-8")
 
     with make_git_project() as proj:
-        res = AntigravityBuilder(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
-    assert res.status == "FAILED" and res.error.startswith("BUILDER_NO_CHANGES")
+        res = AntigravityMaker(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+    assert res.status == "FAILED" and res.error.startswith("MAKER_NO_CHANGES")
     assert "_director_scoped" in seen["during"] and seen["backup_exists"]
     restored = json.loads(sf.read_text(encoding="utf-8"))
     assert restored["user_pref"] == 1 and "_director_scoped" not in restored
@@ -234,29 +234,29 @@ def test_d2_settings_snapshot_restore_and_leftover_detection(isolate_provider_db
     sf.write_text(json.dumps({"permissions": {"allow": ["write_file(/x/*)"], "deny": []}, "_director_scoped": {"pid": 1}}), encoding="utf-8")
     sf.with_name(sf.name + ".director-original").write_text(json.dumps(original), encoding="utf-8")
     with make_git_project() as proj:
-        res2 = AntigravityBuilder(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
-    assert res2.status == "FAILED" and res2.error.startswith("BUILDER_NO_CHANGES")
+        res2 = AntigravityMaker(executable=sys.executable).run(OrderSchema(goal="g", allowed_paths=["src/"]), proj)
+    assert res2.status == "FAILED" and res2.error.startswith("MAKER_NO_CHANGES")
     assert json.loads(sf.read_text(encoding="utf-8"))["user_pref"] == 1
 
 
-# ------------------------------------------------------------------ TEST E: reviewer changes_required + P2 only -> no PASS
+# ------------------------------------------------------------------ TEST E: inspector changes_required + P2 only -> no PASS
 
-def test_e_reviewer_verdict_gate(isolate_provider_db):
-    class PassHead(MockHead):
+def test_e_inspector_verdict_gate(isolate_provider_db):
+    class PassArchitect(MockArchitect):
         def decide(self, *a, **k):
-            return DecisionSchema(decision="PASS", rationale="head says pass", next_steps=[])
+            return DecisionSchema(decision="PASS", rationale="architect says pass", next_steps=[])
 
-    class P2OnlyReviewer:
+    class P2OnlyInspector:
         provider = "mock"
         def review(self, *a, **k):
             return ReviewResultSchema(verdict="changes_required", p0=[], p1=[], p2=["issue"], summary="minor")
 
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                        head_agent=PassHead(), reviewer_agent=P2OnlyReviewer())
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                        architect_agent=PassArchitect(), inspector_agent=P2OnlyInspector())
     with make_git_project() as proj:
-        def b(builder, o, wt):
+        def b(maker, o, wt):
             (Path(wt) / "src" / "new.py").write_text("y = 2\n", encoding="utf-8"); return ["src/new.py"]
-        summary = orch.run(proj, "g", builder_fn=b, order=OrderSchema(goal="g", allowed_paths=["src/"]))
+        summary = orch.run(proj, "g", maker_fn=b, order=OrderSchema(goal="g", allowed_paths=["src/"]))
     assert summary["final_state"] != State.PASS
     assert summary["final_state"] == State.HUMAN_REQUIRED
     assert "not 'pass'" in summary["decision"]["rationale"]
@@ -268,28 +268,28 @@ def test_e_reviewer_verdict_gate(isolate_provider_db):
         ReviewResultSchema(verdict="", p0=[], p1=[], p2=[], summary="")
 
 
-# ------------------------------------------------------------------ TEST F: reviewer exception -> terminal state
+# ------------------------------------------------------------------ TEST F: inspector exception -> terminal state
 
-def test_f_reviewer_exception_terminal(isolate_provider_db):
+def test_f_inspector_exception_terminal(isolate_provider_db):
     class Boom:
         provider = "mock"
         def review(self, *a, **k):
-            raise RuntimeError("reviewer crashed hard")
+            raise RuntimeError("inspector crashed hard")
 
-    class PassHead(MockHead):
+    class PassArchitect(MockArchitect):
         def decide(self, order, b, v, r, **k):
-            return DecisionSchema(decision="PASS", rationale="head ignores reviewer", next_steps=[])
+            return DecisionSchema(decision="PASS", rationale="architect ignores inspector", next_steps=[])
 
-    orch = Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                        head_agent=PassHead(), reviewer_agent=Boom())
+    orch = Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                        architect_agent=PassArchitect(), inspector_agent=Boom())
     with make_git_project() as proj:
-        def b(builder, o, wt):
+        def b(maker, o, wt):
             (Path(wt) / "src" / "new.py").write_text("y = 2\n", encoding="utf-8"); return ["src/new.py"]
-        summary = orch.run(proj, "g", builder_fn=b, order=OrderSchema(goal="g", allowed_paths=["src/"]))
+        summary = orch.run(proj, "g", maker_fn=b, order=OrderSchema(goal="g", allowed_paths=["src/"]))
     from core.state_machine import TERMINAL_STATES
     assert summary["final_state"] in TERMINAL_STATES and summary["final_state"] != State.PASS
     actions = [r["action"] for r in orch.sm._get_conn().execute("SELECT action FROM audit_logs WHERE run_id=?", (summary["run_id"],)).fetchall()]
-    assert "REVIEWER_EXCEPTION" in actions
+    assert "INSPECTOR_EXCEPTION" in actions
     assert orch.sm.get_run(summary["run_id"])["current_state"] != State.REVIEWING
 
 

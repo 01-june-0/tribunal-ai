@@ -14,7 +14,8 @@ def load_config() -> dict:
     if cfg_path.exists():
         with open(cfg_path, "r", encoding="utf-8") as f:
             from core.role_settings import apply
-            return apply(yaml.safe_load(f) or {})
+            from core.role_names import canon
+            return apply(canon(yaml.safe_load(f) or {}))      # old key names (head:, builder_attempts ...) are still read
     return {}
 
 @click.group()
@@ -25,12 +26,12 @@ def cli():
 @cli.command()
 @click.option("--project", "-p", required=True, help="Target project root directory")
 @click.option("--goal", "-g", required=True, help="User goal/prompt for the run")
-@click.option("--head-provider", help="Override HEAD provider (claude, codex, mock)")
-def run(project: str, goal: str, head_provider: Optional[str]):
+@click.option("--architect-provider", "--head-provider", "architect_provider", help="Override ARCHITECT provider (claude, codex, mock)")
+def run(project: str, goal: str, architect_provider: Optional[str]):
     """Start a new development run."""
     config = load_config()
-    if head_provider:
-        config.setdefault("head", {})["provider"] = head_provider
+    if architect_provider:
+        config.setdefault("architect", {})["provider"] = architect_provider
 
     click.echo(f"=== Initiating TRIBUNAL AI Run ===")
     click.echo(f"Project: {project}")
@@ -141,11 +142,11 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
 @click.option("--goal", "-g", required=True, help="What you want built, in your own words")
 @click.option("--mission-id", help="Continue an existing mission instead of starting one")
 @click.option("--max-steps", type=int, help="Milestone budget for a new mission (default: autonomy.max_steps)")
-@click.option("--replan", help="With --mission-id: send the blocked step back to HEAD planning, with this reason")
+@click.option("--replan", help="With --mission-id: send the blocked step back to ARCHITECT planning, with this reason")
 @click.option("--profile", type=click.Choice(["quick", "standard", "deep"]), default=None, help="Budget profile for a new mission")
 def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optional[int], replan: Optional[str] = None,
             profile: Optional[str] = None):
-    """Run a goal-driven mission: HEAD plans milestones and decides on your behalf until the goal is done."""
+    """Run a goal-driven mission: ARCHITECT plans milestones and decides on your behalf until the goal is done."""
     from core import autopilot
     from core.chat_manager import ChatManager
     from core.mission import MissionRunner, MissionStore, latest_deliverable
@@ -178,15 +179,15 @@ def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optio
             notify(f"이전 미션 결과물에서 이어서 진행: {previous}")
             context["note"] = "Continuing from the latest mission deliverable; the listed files already exist there."
         from core import usage
-        usage.set_context(stage="CHAT", run_id=None, mission_id=None)   # the ledger shows what this first HEAD call is
-        resp = orch.head.chat(goal, context, [])
+        usage.set_context(stage="CHAT", run_id=None, mission_id=None)   # the ledger shows what this first ARCHITECT call is
+        resp = orch.architect.chat(goal, context, [])
         if resp.get("type") != "DEV_TASK":
             click.echo(resp.get("message", ""))
             return
         from schemas.order import OrderSchema
-        gate = autopilot.entry_gate(OrderSchema(**resp["order"]), project, orch.head, cwd=project)
+        gate = autopilot.entry_gate(OrderSchema(**resp["order"]), project, orch.architect, cwd=project)
         for note in gate["notes"]:
-            notify("HEAD 대리 처리: " + note)
+            notify("ARCHITECT 대리 처리: " + note)
         if gate["escalate"]:
             notify(f"사용자 결정 필요: {gate['escalate']}")
             return
@@ -228,9 +229,9 @@ def _print_summary(summary: dict):
         else:
             test_info = "PASS (skipped)"
 
-    # Builder status
-    b_data = summary.get("builder") or {}
-    builder_status = b_data.get("status", "N/A")
+    # Maker status
+    b_data = summary.get("maker") or {}
+    maker_status = b_data.get("status", "N/A")
 
     # Review status
     r_data = summary.get("review") or {}
@@ -243,19 +244,19 @@ def _print_summary(summary: dict):
         b_cnt = base_data.get("test_counts", {}).get("passed", 0)
         base_test_info = f"PASS ({b_cnt} tests)" if base_data.get("passed") else "FAIL"
 
-    head_label = summary.get("head_label") or "HEAD"
-    reviewer_label = summary.get("reviewer_label") or "CODEX"
+    architect_label = summary.get("architect_label") or "ARCHITECT"
+    inspector_label = summary.get("inspector_label") or "CODEX"
     failover_mode = summary.get("failover_mode", "NORMAL")
     mode_tag = f" [{failover_mode}]" if failover_mode != "NORMAL" else ""
 
     click.echo("\n" + "=" * 36)
     click.echo(f"{run_id}{mode_tag}\n")
-    click.echo(f"HEAD             PASS")
+    click.echo(f"ARCHITECT             PASS")
     click.echo(f"BASELINE TEST    {base_test_info}")
-    click.echo(f"ANTIGRAVITY      {builder_status}")
+    click.echo(f"ANTIGRAVITY      {maker_status}")
     click.echo(f"BUILD            {build_info}")
     click.echo(f"POST TEST        {test_info}")
-    click.echo(f"{reviewer_label} REVIEW".ljust(17) + f"{review_verdict}")
+    click.echo(f"{inspector_label} REVIEW".ljust(17) + f"{review_verdict}")
     click.echo("")
     click.echo(f"FILES CHANGED    {files_changed}")
     click.echo(f"SCOPE VIOLATION  {scope_violations}")

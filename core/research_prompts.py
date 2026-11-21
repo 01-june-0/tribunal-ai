@@ -219,7 +219,7 @@ def build_synthesis_prompt(user_challenge: str, proposals: Dict[str, Dict[str, A
         raise ValueError("synthesis requires one critique for every completed proposal")
     payload = {
         "stage": ResearchState.SYNTHESIS,
-        "research_role": "HEAD_SYNTHESIZER",
+        "research_role": "ARCHITECT_SYNTHESIZER",
         "provider_domain": "OPENAI",
         "user_challenge": user_challenge,
         "degraded_research": bool(degraded),
@@ -253,12 +253,12 @@ def build_synthesis_prompt(user_challenge: str, proposals: Dict[str, Dict[str, A
 def build_experiment_order_prompt(user_challenge: str, synthesis: Dict[str, Any],
                                   project_context: Dict[str, Any], project_type: str,
                                   baseline_state: str) -> Dict[str, Any]:
-    """Ask Codex HEAD to translate a synthesis into a safety-bounded NORMAL OrderSchema."""
+    """Ask Codex ARCHITECT to translate a synthesis into a safety-bounded NORMAL OrderSchema."""
     if not synthesis or not synthesis.get("synthesized_hypothesis"):
         raise ValueError("experiment planning requires persisted synthesis evidence")
     payload = {
         "stage": ResearchState.EXPERIMENT_PLANNING,
-        "research_role": "HEAD_EXPERIMENT_PLANNER",
+        "research_role": "ARCHITECT_EXPERIMENT_PLANNER",
         "provider_domain": "OPENAI",
         "user_challenge": user_challenge,
         "synthesis": synthesis,
@@ -393,7 +393,7 @@ def build_research_memory_prompt(synthesis: Dict[str, Any], experiment: Dict[str
         raise ValueError("memory consolidation requires complete interpretation and critique evidence")
     payload = {
         "stage": RESEARCH_MEMORY_STAGE,
-        "research_role": "HEAD_MEMORY_CURATOR",
+        "research_role": "ARCHITECT_MEMORY_CURATOR",
         "provider_domain": "OPENAI",
         "synthesis": synthesis,
         "experiment_evidence": experiment,

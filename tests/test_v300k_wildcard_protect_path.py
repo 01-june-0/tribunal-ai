@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agents.antigravity_builder import AntigravityBuilder
+from agents.antigravity_maker import AntigravityMaker
 from core.safety import SafetyPolicy
 from schemas.order import OrderSchema
 from tests.test_v0231_chat_stabilization import make_git_project
@@ -21,8 +21,8 @@ def test_bare_double_star_protect_with_no_allowed_paths_does_not_raise():
                          max_files_changed=0, max_diff_lines=0)
     with make_git_project() as proj:
         wt = Path(proj)
-        builder = AntigravityBuilder(executable="python")
-        scoped = builder._setup_scoped_permissions(wt, order)
+        maker = AntigravityMaker(executable="python")
+        scoped = maker._setup_scoped_permissions(wt, order)
         assert scoped["allow_writes"] == []
         assert not any(w.endswith("(**)") or w.endswith("/**)") for w in scoped["deny_writes"])
 
@@ -32,8 +32,8 @@ def test_bare_double_star_protect_still_denies_all_writes_via_hook():
                          max_files_changed=0, max_diff_lines=0)
     with make_git_project() as proj:
         wt = Path(proj)
-        builder = AntigravityBuilder(executable="python")
-        builder._setup_scoped_permissions(wt, order)
+        maker = AntigravityMaker(executable="python")
+        maker._setup_scoped_permissions(wt, order)
         guard = wt / ".agents" / "permission_guard.py"
         payload = json.dumps({"toolCall": {"name": "write_to_file",
                                             "args": {"TargetFile": str(wt / "src" / "anything.py")}}})
@@ -50,9 +50,9 @@ def test_wildcard_protect_still_fails_closed_when_a_grant_exists():
     order = OrderSchema(goal="g", allowed_paths=["src/"], protected_paths=["**"])
     with make_git_project() as proj:
         wt = Path(proj)
-        builder = AntigravityBuilder(executable="python")
+        maker = AntigravityMaker(executable="python")
         try:
-            builder._setup_scoped_permissions(wt, order)
+            maker._setup_scoped_permissions(wt, order)
             raised = False
         except ValueError as e:
             raised = True

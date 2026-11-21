@@ -2,7 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 class AgentProvenanceRecord(BaseModel):
-    agent: str = Field(..., description="Agent role: HEAD, BUILDER, or REVIEWER")
+    agent: str = Field(..., description="Agent role: ARCHITECT, MAKER, or INSPECTOR")
     provider: str = Field(..., description="Provider name: e.g. anthropic, google, codex, mock")
     runtime: str = Field(default="cli", description="Runtime identifier: claude-code-cli, antigravity-cli, codex-cli, mock")
     model: str = Field(..., description="Model name or CLI profile")

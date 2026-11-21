@@ -1,5 +1,5 @@
 """
-v3.0.6 HEAD PROXY AUTONOMY + GOAL MISSIONS (user decision 2026-09-29): HEAD decides on the user's behalf; the run
+v3.0.6 ARCHITECT PROXY AUTONOMY + GOAL MISSIONS (user decision 2026-09-29): ARCHITECT decides on the user's behalf; the run
 only stops for money / credentials / irreversible external actions or genuine security violations. Everything else is
 narrowed, retried, failed over or fed back into repair, and a request runs as a multi-milestone mission.
 """
@@ -10,18 +10,18 @@ from pathlib import Path
 
 import pytest
 
-from agents.mock_head import MockHead
+from agents.mock_architect import MockArchitect
 from core import autopilot
 from core.mission import MissionRunner, MissionStore, missions_to_resume
 from core.safety import SafetyPolicy
 from core.state_machine import State
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.decision import DecisionSchema
 from schemas.order import OrderSchema
 from schemas.review_result import ReviewResultSchema
 from tests.test_v0234_resume_parity import _mock_orch
 
-pytestmark = pytest.mark.head_proxy
+pytestmark = pytest.mark.architect_proxy
 
 PYTEST_CMD = "python -m pytest tests/"
 
@@ -29,7 +29,7 @@ PYTEST_CMD = "python -m pytest tests/"
 # ------------------------------------------------------------------ helpers
 
 def proxy_orch(max_repairs=2, **autonomy):
-    auto = {"enabled": True, "max_repairs": max_repairs, "head_proxy": True, "builder_attempts": 3}
+    auto = {"enabled": True, "max_repairs": max_repairs, "architect_proxy": True, "maker_attempts": 3}
     auto.update(autonomy)
     return _mock_orch(bootstrap={"enabled": True}, autonomy=auto, verification={"test_command": PYTEST_CMD})
 
@@ -50,11 +50,11 @@ def good_build(calls, files=None):
     files = files or {"feature.py": "def double(x):\n    return x * 2\n",
                       "tests/test_feature.py": "from feature import double\n\ndef test_double():\n    assert double(4) == 8\n"}
 
-    def build(order, worktree_path, builder_fn=None):
+    def build(order, worktree_path, maker_fn=None):
         calls.append(order.context or "")
         for rel, text in files.items():
             write(worktree_path, rel, text)
-        return BuilderResultSchema(status="COMPLETED", files_modified=list(files), summary="built")
+        return MakerResultSchema(status="COMPLETED", files_modified=list(files), summary="built")
     return build
 
 
@@ -62,9 +62,9 @@ def review_green(monkeypatch, orch):
     def review(rid, o, v, *a):
         r = ReviewResultSchema(verdict="pass" if v["passed"] else "changes_required",
                                p1=[] if v["passed"] else ["tests fail"], summary="review")
-        orch._save_json(rid, "review.json", r)          # like the real reviewer stage (resume reads it)
+        orch._save_json(rid, "review.json", r)          # like the real inspector stage (resume reads it)
         return r, None
-    monkeypatch.setattr(orch, "run_reviewer_with_failover", review)
+    monkeypatch.setattr(orch, "run_inspector_with_failover", review)
 
 
 def decide_by_tests(monkeypatch, orch):
@@ -87,7 +87,7 @@ def git_project(path, files):
     return str(path)
 
 
-class ProxyHead:
+class ProxyArchitect:
     provider = "mock"
 
     def __init__(self, decision="APPROVE", raises=False):
@@ -96,30 +96,30 @@ class ProxyHead:
     def proxy_decide(self, question, evidence, cwd=None):
         self.questions.append(question)
         if self.raises:
-            raise RuntimeError("HEAD CLI unreachable")
+            raise RuntimeError("ARCHITECT CLI unreachable")
         return {"decision": self.decision, "reason": "proxy says " + self.decision}
 
 
 # ------------------------------------------------------------------ ENTRY gate
 
-def test_entry_gate_narrows_scope_and_approves_high_risk_via_head(tmp_path):
+def test_entry_gate_narrows_scope_and_approves_high_risk_via_architect(tmp_path):
     proj = tmp_path / "p"
     proj.mkdir()
     order = OrderSchema(goal="backtest a new strategy", risk_level="HIGH",
                         allowed_paths=[str(proj / "src"), ".git/hooks", "tests/**", "../outside"],
                         protected_paths=["../AITOS/**", ".env", "tests/**"])
-    head = ProxyHead("APPROVE")
-    gate = autopilot.entry_gate(order, str(proj), head)
+    architect = ProxyArchitect("APPROVE")
+    gate = autopilot.entry_gate(order, str(proj), architect)
     assert gate["escalate"] is None
     assert gate["order"].allowed_paths == ["src"]          # absolute->relative; .git, outside, self-protected dropped
     assert "../AITOS/**" not in gate["order"].protected_paths and ".env" in gate["order"].protected_paths
-    assert head.questions and "HIGH_RISK" in head.questions[0]
+    assert architect.questions and "HIGH_RISK" in architect.questions[0]
     assert gate["notes"]
 
 
 def test_entry_gate_escalates_money_decision_as_approvable_user_decision(tmp_path):
     order = OrderSchema(goal="subscribe to the paid data plan", risk_level="HIGH", allowed_paths=["src/**"])
-    gate = autopilot.entry_gate(order, str(tmp_path), ProxyHead("ESCALATE"))
+    gate = autopilot.entry_gate(order, str(tmp_path), ProxyArchitect("ESCALATE"))
     assert gate["escalate"].startswith("APPROVAL_REQUIRED: USER_DECISION_REQUIRED")
     from dashboard_server import parse_approval_reason
     assert parse_approval_reason(gate["escalate"])["approvable"] is True
@@ -127,9 +127,9 @@ def test_entry_gate_escalates_money_decision_as_approvable_user_decision(tmp_pat
 
 @pytest.mark.parametrize("goal,escalates", [("Build a backtest report generator", False),
                                             ("Set up Stripe payment for the ebook", True)])
-def test_entry_gate_policy_fallback_when_head_unreachable(tmp_path, goal, escalates):
+def test_entry_gate_policy_fallback_when_architect_unreachable(tmp_path, goal, escalates):
     order = OrderSchema(goal=goal, risk_level="HIGH", allowed_paths=["src/**"], protected_paths=["credentials/**"])
-    gate = autopilot.entry_gate(order, str(tmp_path), ProxyHead(raises=True))
+    gate = autopilot.entry_gate(order, str(tmp_path), ProxyArchitect(raises=True))
     assert (gate["escalate"] is not None) is escalates      # protected 'credentials/**' alone never escalates
     assert any("policy fallback" in n for n in gate["notes"])
 
@@ -145,7 +145,7 @@ def test_whole_repo_scope_is_spelled_as_glob_and_control_plane_stays_denied(tmp_
 
 def test_empty_scope_is_derived_from_required_outputs(tmp_path):
     order = OrderSchema(goal="g", allowed_paths=[], required_outputs=["src/tool.py", "tests/test_tool.py"])
-    gate = autopilot.entry_gate(order, str(tmp_path), ProxyHead())
+    gate = autopilot.entry_gate(order, str(tmp_path), ProxyArchitect())
     assert gate["escalate"] is None and gate["order"].allowed_paths == ["src/tool.py", "tests/test_tool.py"]
 
 
@@ -178,37 +178,37 @@ def test_symbol_deletion_detection_ignores_edits(diff, flagged):
     assert any("Unauthorized deletion" in x for x in v) is flagged
 
 
-# ------------------------------------------------------------------ Builder resilience
+# ------------------------------------------------------------------ Maker resilience
 
-def test_builder_retries_with_concrete_feedback(tmp_path, monkeypatch):
+def test_maker_retries_with_concrete_feedback(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls, good = [], None
     good = good_build(calls)
 
-    def flaky(order, worktree_path, builder_fn=None):
-        if "BUILDER RETRY NOTICE" not in (order.context or ""):
+    def flaky(order, worktree_path, maker_fn=None):
+        if "MAKER RETRY NOTICE" not in (order.context or ""):
             calls.append(order.context)
             raise ValueError("Unterminated string starting at: line 25 column 18 (char 31122)")
         return good(order, worktree_path)
-    monkeypatch.setattr(orch.builder, "run", flaky)
+    monkeypatch.setattr(orch.maker, "run", flaky)
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
     assert out["final_state"] == State.PASS
     assert "not complete valid JSON" in calls[1]
-    assert len(orch._load_json(out["run_id"], "builder_attempts.json")) == 1
+    assert len(orch._load_json(out["run_id"], "maker_attempts.json")) == 1
 
 
-def test_builder_moves_to_another_provider_on_the_last_attempt(tmp_path, monkeypatch):
+def test_maker_moves_to_another_provider_on_the_last_attempt(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     seen, calls = [], []
 
-    def broken(order, worktree_path, builder_fn=None):
+    def broken(order, worktree_path, maker_fn=None):
         seen.append("primary")
         raise RuntimeError("GOOGLE_STREAM_EMPTY_RESPONSE")
-    monkeypatch.setattr(orch.builder, "run", broken)
+    monkeypatch.setattr(orch.maker, "run", broken)
 
     class Backup:
         provider = "anthropic"
@@ -217,23 +217,23 @@ def test_builder_moves_to_another_provider_on_the_last_attempt(tmp_path, monkeyp
 
     def swap(role, run_id, logger, tried, stage, why):
         swaps.append((role, stage))
-        orch.builder = Backup()
+        orch.maker = Backup()
         return True
     monkeypatch.setattr(orch, "_swap_agent", swap)
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
     assert out["final_state"] == State.PASS
-    assert seen == ["primary", "primary"] and swaps == [("builder", "BUILDING")] and len(calls) == 1
+    assert seen == ["primary", "primary"] and swaps == [("maker", "BUILDING")] and len(calls) == 1
 
 
-# ------------------------------------------------------------------ HEAD proxy decisions
+# ------------------------------------------------------------------ ARCHITECT proxy decisions
 
-def test_non_serious_head_escalation_becomes_a_repair(tmp_path, monkeypatch):
+def test_non_serious_architect_escalation_becomes_a_repair(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
     review_green(monkeypatch, orch)
     decisions = iter([DecisionSchema(decision="HUMAN_REQUIRED", rationale="Unclear whether to use JSON or CSV output",
                                      next_steps=["Use JSON output"]),
@@ -242,14 +242,14 @@ def test_non_serious_head_escalation_becomes_a_repair(tmp_path, monkeypatch):
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
     assert out["final_state"] == State.PASS and len(calls) == 2
     assert "Use JSON output" in calls[1]
-    assert "HEAD_ESCALATION_RESOLVED_BY_PROXY" in [a["action"] for a in orch.sm.get_audit_logs(out["run_id"])]
+    assert "ARCHITECT_ESCALATION_RESOLVED_BY_PROXY" in [a["action"] for a in orch.sm.get_audit_logs(out["run_id"])]
 
 
-def test_serious_head_escalation_still_stops(tmp_path, monkeypatch):
+def test_serious_architect_escalation_still_stops(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
     review_green(monkeypatch, orch)
     monkeypatch.setattr(orch, "run_decision_with_failover", lambda *a: (DecisionSchema(
         decision="HUMAN_REQUIRED", rationale="USER_DECISION: this requires buying a paid API key", next_steps=[]), None))
@@ -261,8 +261,8 @@ def test_unresolved_review_after_budget_is_fail_not_human(tmp_path, monkeypatch)
     orch = proxy_orch(max_repairs=2)
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
-    monkeypatch.setattr(orch, "run_reviewer_with_failover", lambda *a: (ReviewResultSchema(
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
+    monkeypatch.setattr(orch, "run_inspector_with_failover", lambda *a: (ReviewResultSchema(
         verdict="changes_required", p1=["still a real defect"], summary="still not happy"), None))
     monkeypatch.setattr(orch, "run_decision_with_failover", lambda *a: (DecisionSchema(
         decision="PASS", rationale="looks fine", next_steps=[]), None))
@@ -270,12 +270,12 @@ def test_unresolved_review_after_budget_is_fail_not_human(tmp_path, monkeypatch)
     assert out["final_state"] == State.FAIL and len(calls) == 3
 
 
-def test_same_family_head_and_reviewer_pass_with_recorded_note(monkeypatch):
+def test_same_family_architect_and_inspector_pass_with_recorded_note(monkeypatch):
     orch = proxy_orch()
 
     class A:
         provider = "claude"
-    orch.head, orch.reviewer = A(), A()
+    orch.architect, orch.inspector = A(), A()
     d = DecisionSchema(decision="PASS", rationale="green", next_steps=[])
     import logging
     state = orch.apply_final_pass_gate(d, ReviewResultSchema(verdict="pass", summary="ok"), logging.getLogger("t"))
@@ -290,7 +290,7 @@ def test_money_code_stops_before_tests_run(tmp_path, monkeypatch):
     calls = []
     files = {"feature.py": "import MetaTrader5 as mt5\n\ndef buy(req):\n    return mt5.order_send(req)\n",
              "tests/test_feature.py": "def test_x():\n    assert True\n"}
-    monkeypatch.setattr(orch.builder, "run", good_build(calls, files))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls, files))
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
@@ -300,34 +300,34 @@ def test_money_code_stops_before_tests_run(tmp_path, monkeypatch):
     assert st["stage"] == "POST_BUILD" and st["approvable"] is True
 
 
-def test_cap_overrun_is_waived_by_head_proxy(tmp_path, monkeypatch):
+def test_cap_overrun_is_waived_by_architect_proxy(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER, max_files_changed=1))
     assert out["final_state"] == State.PASS
-    assert "HEAD_PROXY_WAIVER" in [a["action"] for a in orch.sm.get_audit_logs(out["run_id"])]
+    assert "ARCHITECT_PROXY_WAIVER" in [a["action"] for a in orch.sm.get_audit_logs(out["run_id"])]
 
 
-def test_deleted_function_goes_back_to_the_builder(tmp_path, monkeypatch):
+def test_deleted_function_goes_back_to_the_maker(tmp_path, monkeypatch):
     proj = git_project(tmp_path / "proj", {"keep.py": "def keep():\n    return 1\n",
                                            "tests/test_keep.py": "from keep import keep\n\ndef test_keep():\n    assert keep() == 1\n"})
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
 
-    def build(order, worktree_path, builder_fn=None):
+    def build(order, worktree_path, maker_fn=None):
         calls.append(order.context or "")
         if len(calls) == 1:
             write(worktree_path, "keep.py", "def other():\n    return 2\n")
         else:
             write(worktree_path, "keep.py", "def keep():\n    return 1\n\ndef other():\n    return 2\n")
         write(worktree_path, "tests/test_other.py", "from keep import other\n\ndef test_other():\n    assert other() == 2\n")
-        return BuilderResultSchema(status="COMPLETED", files_modified=["keep.py"], summary="b")
-    monkeypatch.setattr(orch.builder, "run", build)
+        return MakerResultSchema(status="COMPLETED", files_modified=["keep.py"], summary="b")
+    monkeypatch.setattr(orch.maker, "run", build)
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(proj, "add other", order=OrderSchema(goal="add other", allowed_paths=["keep.py", "tests/**"]))
@@ -340,7 +340,7 @@ def test_preexisting_baseline_failure_does_not_block(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(proj, "double", order=OrderSchema(**ORDER))
@@ -350,19 +350,19 @@ def test_preexisting_baseline_failure_does_not_block(tmp_path, monkeypatch):
     assert orch._load_json(out["run_id"], "verification.json")["preexisting_failures"] == ["tests/test_old.py::test_old"]
 
 
-# ------------------------------------------------------------------ reviewer / HEAD provider resilience
+# ------------------------------------------------------------------ inspector / ARCHITECT provider resilience
 
-def test_reviewer_is_retried_then_replaced(tmp_path, monkeypatch):
+def test_inspector_is_retried_then_replaced(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
     attempts = []
 
     def crash(*a, **k):
         attempts.append(1)
-        raise RuntimeError("reviewer crashed")
-    monkeypatch.setattr(orch.reviewer, "review", crash)
+        raise RuntimeError("inspector crashed")
+    monkeypatch.setattr(orch.inspector, "review", crash)
 
     class Backup:
         provider = "anthropic"
@@ -371,21 +371,21 @@ def test_reviewer_is_retried_then_replaced(tmp_path, monkeypatch):
             return ReviewResultSchema(verdict="pass", summary="ok")
 
     def swap(role, run_id, logger, tried, stage, why):
-        orch.reviewer = Backup()
+        orch.inspector = Backup()
         return True
     monkeypatch.setattr(orch, "_swap_agent", swap)
-    monkeypatch.setattr(orch, "_reviewer_provenance", lambda *a: None)
+    monkeypatch.setattr(orch, "_inspector_provenance", lambda *a: None)
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
     assert out["final_state"] == State.PASS and len(attempts) == 2
 
 
-def test_unreachable_head_falls_back_to_evidence_decision(tmp_path, monkeypatch):
+def test_unreachable_architect_falls_back_to_evidence_decision(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
-    monkeypatch.setattr(orch.builder, "run", good_build([]))
+    monkeypatch.setattr(orch.maker, "run", good_build([]))
     review_green(monkeypatch, orch)
-    monkeypatch.setattr(orch.head, "decide", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("usage limit reached")))
+    monkeypatch.setattr(orch.architect, "decide", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("usage limit reached")))
     monkeypatch.setattr(orch, "_swap_agent", lambda *a: False)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
     assert out["final_state"] == State.PASS
@@ -398,7 +398,7 @@ def test_role_assignment_replaces_unusable_provider_visibly(monkeypatch):
     monkeypatch.setattr(orch.pm, "usable_domains", lambda candidates=None: ["ANTHROPIC", "GOOGLE"])
     import logging
     a = orch._autonomous_role_assignment("claude", "antigravity", "openai", "RUN-ROLES", logging.getLogger("t"))
-    assert a["can_proceed"] and a["reviewer_provider"] in ("claude", "antigravity") and a["head_provider"] == "claude"
+    assert a["can_proceed"] and a["inspector_provider"] in ("claude", "antigravity") and a["architect_provider"] == "claude"
     assert "FAILOVER" in [x["action"] for x in orch.sm.get_audit_logs("RUN-ROLES")]
     monkeypatch.setattr(orch.pm, "usable_domains", lambda candidates=None: [])
     assert orch._autonomous_role_assignment("claude", "antigravity", "openai", "RUN-ROLES", logging.getLogger("t"))["can_proceed"] is False
@@ -417,14 +417,14 @@ def mission_factory(monkeypatch, plans, builds):
         orch = proxy_orch()
         quiet(monkeypatch, orch)
 
-        def build(order, worktree_path, builder_fn=None):
+        def build(order, worktree_path, maker_fn=None):
             files = STEP2_FILES if order.goal == "quad" else None
             return good_build(builds, files)(order, worktree_path)
-        monkeypatch.setattr(orch.builder, "run", build)
+        monkeypatch.setattr(orch.maker, "run", build)
         review_green(monkeypatch, orch)
         decide_by_tests(monkeypatch, orch)
         return orch
-    monkeypatch.setattr(MockHead, "plan_next", lambda self, goal, history, ctx, cwd=None: plans.pop(0))
+    monkeypatch.setattr(MockArchitect, "plan_next", lambda self, goal, history, ctx, cwd=None: plans.pop(0))
     return factory
 
 
@@ -441,7 +441,7 @@ def test_mission_builds_milestones_on_each_other_until_done(tmp_path, monkeypatc
     step2 = Path(done["steps"][1]["result"]["worktree_path"])
     assert (step2 / "feature.py").exists() and (step2 / "feature2.py").exists()   # built on step 1
     assert done["base_worktree"] == str(step2) or Path(done["base_worktree"]) == step2
-    assert any(role == "HEAD" and "미션 완료" in text for role, text in messages)
+    assert any(role == "ARCHITECT" and "미션 완료" in text for role, text in messages)
     # v3.2: the finished deliverable is applied to the project (autonomy.auto_apply defaults to on_pass)
     assert (tmp_path / "proj" / "feature.py").exists() and (tmp_path / "proj" / "feature2.py").exists()
     assert done["applied"]["status"] == "applied" and "적용했습니다" in messages[-1][1]
@@ -452,7 +452,7 @@ def test_mission_blocks_only_on_a_delegated_exception(tmp_path, monkeypatch):
     plans = [{"status": "CONTINUE", "summary": "", "reason": "",
               "order": dict(STEP2, goal="connect the live account", risk_level="HIGH")}]
     factory = mission_factory(monkeypatch, plans, builds)
-    monkeypatch.setattr(MockHead, "proxy_decide", lambda self, q, e, cwd=None: {"decision": "ESCALATE", "reason": "live account"})
+    monkeypatch.setattr(MockArchitect, "proxy_decide", lambda self, q, e, cwd=None: {"decision": "ESCALATE", "reason": "live account"})
     runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
     done = runner.run(m["mission_id"])
@@ -483,7 +483,7 @@ def test_interrupted_mission_resumes_after_restart(tmp_path, monkeypatch):
 
 def test_chat_request_starts_a_mission_without_human_approval(monkeypatch):
     import dashboard_server
-    from tests.test_v0231_chat_stabilization import chat_env, make_git_project, HeadStub, _install_head, _order  # noqa: F401
+    from tests.test_v0231_chat_stabilization import chat_env, make_git_project, ArchitectStub, _install_architect, _order  # noqa: F401
     from core.chat_manager import ChatManager
     from core.provider_manager import ProviderManager
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
@@ -492,7 +492,7 @@ def test_chat_request_starts_a_mission_without_human_approval(monkeypatch):
     monkeypatch.setattr(dashboard_server, "_run_mission_thread", lambda sid, mid, key, reopen=False: started.append(mid))
     with make_git_project() as proj:
         # HIGH risk + absolute path + whole-repo scope: all used to stop for a human
-        _install_head(monkeypatch, HeadStub(_order(risk_level="HIGH", allowed_paths=[str(Path(proj) / "src"), "."])))
+        _install_architect(monkeypatch, ArchitectStub(_order(risk_level="HIGH", allowed_paths=[str(Path(proj) / "src"), "."])))
         ChatManager().set_project(dashboard_server.active_session_id(), proj)
         dashboard_server.handle_chat_message("build the backtest report")
         missions = MissionStore().all()
@@ -526,7 +526,7 @@ def test_approved_blocked_step_continues_the_mission_on_previous_work(tmp_path, 
     plans = [{"status": "CONTINUE", "summary": "", "reason": "", "order": dict(STEP2, risk_level="HIGH")},
              {"status": "DONE", "summary": "ok", "reason": "", "order": None}]
     factory = mission_factory(monkeypatch, plans, builds)
-    monkeypatch.setattr(MockHead, "proxy_decide", lambda self, q, e, cwd=None: {"decision": "ESCALATE", "reason": "needs user"})
+    monkeypatch.setattr(MockArchitect, "proxy_decide", lambda self, q, e, cwd=None: {"decision": "ESCALATE", "reason": "needs user"})
     runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
     blocked = runner.run(m["mission_id"])
@@ -549,10 +549,10 @@ def _review_sequence(monkeypatch, orch, verdicts):
         r = ReviewResultSchema(verdict=verdict, p2=["polish"] if verdict != "pass" else [], summary="r")
         orch._save_json(rid, "review.json", r)
         return r, None
-    monkeypatch.setattr(orch, "run_reviewer_with_failover", review)
+    monkeypatch.setattr(orch, "run_inspector_with_failover", review)
 
 
-def test_files_written_by_the_test_run_are_not_builder_changes(tmp_path, monkeypatch):
+def test_files_written_by_the_test_run_are_not_maker_changes(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
@@ -560,7 +560,7 @@ def test_files_written_by_the_test_run_are_not_builder_changes(tmp_path, monkeyp
              "tests/test_feature.py": "import json, pathlib\nfrom feature import double\n\n"
                                       "def test_double():\n    pathlib.Path('ledger.json').write_text(json.dumps({'v': double(2)}))\n"
                                       "    assert double(4) == 8\n"}
-    monkeypatch.setattr(orch.builder, "run", good_build(calls, files))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls, files))
     _review_sequence(monkeypatch, orch, ["changes_required", "pass"])     # forces a second scope check
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
@@ -580,7 +580,7 @@ def test_test_run_writing_into_the_control_plane_is_still_stopped(tmp_path, monk
              "tests/test_feature.py": "import pathlib\nfrom feature import double\n\n"
                                       "def test_double():\n    pathlib.Path('.agents').mkdir(exist_ok=True)\n"
                                       "    pathlib.Path('.agents/hooks.json').write_text('{}')\n    assert double(4) == 8\n"}
-    monkeypatch.setattr(orch.builder, "run", good_build(calls, files))
+    monkeypatch.setattr(orch.maker, "run", good_build(calls, files))
     _review_sequence(monkeypatch, orch, ["changes_required", "pass"])
     decide_by_tests(monkeypatch, orch)
     out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
@@ -607,12 +607,12 @@ def test_non_exception_halt_makes_the_mission_replan_not_block(tmp_path, monkeyp
     assert done["steps"][1]["result"]["final_state"] == "PASS"
 
 
-def _mission_with_head_stop(tmp_path, monkeypatch, detail, verdict):
+def _mission_with_architect_stop(tmp_path, monkeypatch, detail, verdict):
     builds, reviews = [], []
     plans = [{"status": "CONTINUE", "summary": "fix fixture too", "reason": "", "order": dict(ORDER)},
              {"status": "DONE", "summary": "ok", "reason": "", "order": None}]
     factory = mission_factory(monkeypatch, plans, builds)
-    monkeypatch.setattr(MockHead, "proxy_decide",
+    monkeypatch.setattr(MockArchitect, "proxy_decide",
                         lambda self, q, e, cwd=None: reviews.append(e["stop_detail"]) or {"decision": verdict, "reason": "r"})
     runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
@@ -625,21 +625,21 @@ def _mission_with_head_stop(tmp_path, monkeypatch, detail, verdict):
     return runner.run(m["mission_id"]), reviews
 
 
-@pytest.mark.head_proxy
-def test_head_user_decision_on_an_order_conflict_is_replanned(tmp_path, monkeypatch):
+@pytest.mark.architect_proxy
+def test_architect_user_decision_on_an_order_conflict_is_replanned(tmp_path, monkeypatch):
     detail = ("Final decision: USER_DECISION: This order cannot be met as written: protected tests share a 1x1 PNG "
               "fixture with a corrupt CRC")
-    done, reviews = _mission_with_head_stop(tmp_path, monkeypatch, detail, "APPROVE")
+    done, reviews = _mission_with_architect_stop(tmp_path, monkeypatch, detail, "APPROVE")
     assert reviews and done["status"] == "DONE"
     assert "not a delegated exception" in done["steps"][0]["result"]["treated_as"]
     assert done["steps"][0]["user_decision_review"] == "APPROVE"
 
 
-@pytest.mark.head_proxy
-def test_head_user_decision_blocks_when_the_proxy_escalates_or_money_is_involved(tmp_path, monkeypatch):
-    done, reviews = _mission_with_head_stop(tmp_path, monkeypatch, "Final decision: USER_DECISION: unclear", "ESCALATE")
+@pytest.mark.architect_proxy
+def test_architect_user_decision_blocks_when_the_proxy_escalates_or_money_is_involved(tmp_path, monkeypatch):
+    done, reviews = _mission_with_architect_stop(tmp_path, monkeypatch, "Final decision: USER_DECISION: unclear", "ESCALATE")
     assert done["status"] == "BLOCKED" and reviews
-    done, reviews = _mission_with_head_stop(tmp_path / "b", monkeypatch,
+    done, reviews = _mission_with_architect_stop(tmp_path / "b", monkeypatch,
                                             "Final decision: USER_DECISION: this needs a paid plan", "APPROVE")
     assert done["status"] == "BLOCKED" and not reviews                 # money: never second-guessed
 
@@ -651,8 +651,8 @@ def test_resumed_run_with_failed_verification_continues_to_repair(tmp_path, monk
     quiet(monkeypatch, orch)
     wrong = {"feature.py": "def double(x):\n    return x * 3\n",
              "tests/test_feature.py": "from feature import double\n\ndef test_double():\n    assert double(4) == 8\n"}
-    monkeypatch.setattr(orch.builder, "run", good_build([], wrong))
-    monkeypatch.setattr(orch, "run_reviewer_with_failover", lambda *a: (_ for _ in ()).throw(Crash()))
+    monkeypatch.setattr(orch.maker, "run", good_build([], wrong))
+    monkeypatch.setattr(orch, "run_inspector_with_failover", lambda *a: (_ for _ in ()).throw(Crash()))
     with pytest.raises(Crash):                                      # process dies during review (e.g. reboot)
         orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
     rid = orch.sm.list_runs()[0]["run_id"]
@@ -660,11 +660,11 @@ def test_resumed_run_with_failed_verification_continues_to_repair(tmp_path, monk
     orch2 = proxy_orch()
     quiet(monkeypatch, orch2)
     calls = []
-    monkeypatch.setattr(orch2.builder, "run", good_build(calls))
+    monkeypatch.setattr(orch2.maker, "run", good_build(calls))
     review_green(monkeypatch, orch2)
     decide_by_tests(monkeypatch, orch2)
     out = orch2.resume(rid)
-    assert out["final_state"] == State.PASS and len(calls) == 1      # failed tests -> review -> HEAD repair -> PASS
+    assert out["final_state"] == State.PASS and len(calls) == 1      # failed tests -> review -> ARCHITECT repair -> PASS
 
 
 def test_repo_relative_reference_paths_are_dropped_absolute_kept(tmp_path):
@@ -731,7 +731,7 @@ def test_ea_order_code_is_compiled_not_stopped_but_python_order_code_still_stops
     assert autopilot.money_code_findings(diff) == ["Live money code: backend/live.py"]
 
 
-def test_head_can_continue_from_a_failed_but_useful_attempt(tmp_path, monkeypatch):
+def test_architect_can_continue_from_a_failed_but_useful_attempt(tmp_path, monkeypatch):
     builds = []
     wrong = {"feature.py": "def double(x):\n    return x * 2\n",
              "tests/test_feature.py": "from feature import double\n\ndef test_double():\n    assert double(4) == 8\n"}
@@ -743,16 +743,16 @@ def test_head_can_continue_from_a_failed_but_useful_attempt(tmp_path, monkeypatc
         orch = proxy_orch(max_repairs=0)
         quiet(monkeypatch, orch)
 
-        def build(order, worktree_path, builder_fn=None):
+        def build(order, worktree_path, maker_fn=None):
             return good_build(builds, STEP2_FILES if order.goal == "quad" else wrong)(order, worktree_path)
-        monkeypatch.setattr(orch.builder, "run", build)
+        monkeypatch.setattr(orch.maker, "run", build)
         verdicts = iter(["changes_required"]) if not builds else iter([])
-        monkeypatch.setattr(orch, "run_reviewer_with_failover", lambda rid, o, v, *a: (
+        monkeypatch.setattr(orch, "run_inspector_with_failover", lambda rid, o, v, *a: (
             orch._save_json(rid, "review.json", ReviewResultSchema(verdict=next(verdicts, "pass"), summary="r")) or
             ReviewResultSchema(verdict="changes_required" if o.goal == "double" else "pass", summary="r"), None))
         decide_by_tests(monkeypatch, orch)
         return orch
-    monkeypatch.setattr(MockHead, "plan_next", lambda self, goal, history, ctx, cwd=None: plans.pop(0))
+    monkeypatch.setattr(MockArchitect, "plan_next", lambda self, goal, history, ctx, cwd=None: plans.pop(0))
     runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
     done = runner.run(m["mission_id"])
@@ -779,7 +779,7 @@ def test_annotated_required_outputs_are_read_as_paths(entry, path):
 def test_annotated_required_output_does_not_fail_verification(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
-    monkeypatch.setattr(orch.builder, "run", good_build([]))
+    monkeypatch.setattr(orch.maker, "run", good_build([]))
     review_green(monkeypatch, orch)
     decide_by_tests(monkeypatch, orch)
     order = OrderSchema(**ORDER, required_outputs=["feature.py (double implementation)", "tests/test_feature.py - tests"])
@@ -788,7 +788,7 @@ def test_annotated_required_output_does_not_fail_verification(tmp_path, monkeypa
     assert orch._load_json(out["run_id"], "verification.json")["required_outputs_missing"] == []
 
 
-def test_failures_head_keeps_building_on_do_not_end_the_mission(tmp_path, monkeypatch):
+def test_failures_architect_keeps_building_on_do_not_end_the_mission(tmp_path, monkeypatch):
     builds = []
     wrong = {"feature.py": "def double(x):\n    return x * 3\n",
              "tests/test_feature.py": "from feature import double\n\ndef test_double():\n    assert double(4) == 8\n"}
@@ -798,11 +798,11 @@ def test_failures_head_keeps_building_on_do_not_end_the_mission(tmp_path, monkey
     def factory():
         orch = proxy_orch(max_repairs=0)
         quiet(monkeypatch, orch)
-        monkeypatch.setattr(orch.builder, "run", lambda o, w, builder_fn=None: good_build(builds, wrong if len(builds) < 3 else None)(o, w))
+        monkeypatch.setattr(orch.maker, "run", lambda o, w, maker_fn=None: good_build(builds, wrong if len(builds) < 3 else None)(o, w))
         review_green(monkeypatch, orch)
         decide_by_tests(monkeypatch, orch)
         return orch
-    monkeypatch.setattr(MockHead, "plan_next", lambda self, goal, history, ctx, cwd=None: plans.pop(0))
+    monkeypatch.setattr(MockArchitect, "plan_next", lambda self, goal, history, ctx, cwd=None: plans.pop(0))
     runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={"autonomy": {"max_steps": 5}})
     done = runner.run(m["mission_id"])
@@ -824,23 +824,23 @@ def test_only_minor_review_findings_pass_with_recorded_follow_ups(tmp_path, monk
 
 def test_empty_proposal_is_only_accepted_in_a_correction_round(tmp_path, monkeypatch):
     import sys
-    from agents.proposal_builder import ProposalBuilder
+    from agents.proposal_maker import ProposalMaker
     from core.research_runner import TriadResearchRunner
     monkeypatch.setattr(TriadResearchRunner, "invoke", lambda *a: dict(output=json.dumps({"files": [], "summary": "already fixed"}),
                                                                        invocation="t", exit_code=0, duration_sec=0))
-    builder = ProposalBuilder(executable=sys.executable)
-    repair = OrderSchema(goal="g", allowed_paths=["src/**"], context='x\nHEAD REPAIR ORDER: {"round": 1}')
-    res = builder.run(repair, str(tmp_path))
+    maker = ProposalMaker(executable=sys.executable)
+    repair = OrderSchema(goal="g", allowed_paths=["src/**"], context='x\nARCHITECT REPAIR ORDER: {"round": 1}')
+    res = maker.run(repair, str(tmp_path))
     assert res.status == "COMPLETED" and res.files_modified == [] and "already fixed" in res.summary
     with pytest.raises(ValueError):
-        builder.run(OrderSchema(goal="g", allowed_paths=["src/**"]), str(tmp_path))
+        maker.run(OrderSchema(goal="g", allowed_paths=["src/**"]), str(tmp_path))
 
 
 def test_provider_that_failed_twice_this_run_is_not_rotated_back(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     orch.sm.create_run("RUN-HIST", str(tmp_path), "g")
-    orch._save_json("RUN-HIST", "builder_attempts.json", [
+    orch._save_json("RUN-HIST", "maker_attempts.json", [
         {"attempt": 1, "provider": "GOOGLE", "category": "UNKNOWN", "error": "GOOGLE_STREAM_EMPTY_RESPONSE"},
         {"attempt": 2, "provider": "GOOGLE", "category": "UNKNOWN", "error": "GOOGLE_STREAM_EMPTY_RESPONSE"}])
     swaps = []
@@ -851,19 +851,19 @@ def test_provider_that_failed_twice_this_run_is_not_rotated_back(tmp_path, monke
 
     def swap(role, run_id, logger, tried, stage, why):
         swaps.append(set(tried))
-        orch.builder = Other()
+        orch.maker = Other()
         return True
     monkeypatch.setattr(orch, "_swap_agent", swap)
     import logging
     (tmp_path / "tests").mkdir()
-    res, stop = orch._run_builder_autonomous("RUN-HIST", OrderSchema(**ORDER), str(tmp_path), logging.getLogger("t"), [])
+    res, stop = orch._run_maker_autonomous("RUN-HIST", OrderSchema(**ORDER), str(tmp_path), logging.getLogger("t"), [])
     assert stop is None and res.status == "COMPLETED"
     assert swaps and "GOOGLE" in swaps[0]                                   # swapped away before the first attempt
 
 
-def test_files_the_builder_must_edit_are_always_in_its_context(tmp_path, monkeypatch):
+def test_files_the_maker_must_edit_are_always_in_its_context(tmp_path, monkeypatch):
     import sys
-    from agents.proposal_builder import ProposalBuilder
+    from agents.proposal_maker import ProposalMaker
     from core.research_runner import TriadResearchRunner
     for i in range(4):                                                         # 4 x 60 KB of unrelated sources
         write(tmp_path, f"backend/big_{i}.py", "x = 1  # " + "a" * 60_000 + "\n")
@@ -876,26 +876,26 @@ def test_files_the_builder_must_edit_are_always_in_its_context(tmp_path, monkeyp
         return dict(output=json.dumps({"files": [{"path": "docs/SPEC.md", "content": "new\n"}]}),
                     invocation="t", exit_code=0, duration_sec=0)
     monkeypatch.setattr(TriadResearchRunner, "invoke", invoke)
-    builder = ProposalBuilder(executable=sys.executable)
-    builder.run(OrderSchema(goal="g", allowed_paths=["docs/SPEC.md", "ea/**"], required_outputs=["docs/SPEC.md (fix)"]), str(tmp_path))
+    maker = ProposalMaker(executable=sys.executable)
+    maker.run(OrderSchema(goal="g", allowed_paths=["docs/SPEC.md", "ea/**"], required_outputs=["docs/SPEC.md (fix)"]), str(tmp_path))
     assert "UNIQUE-SPEC-MARKER" in seen["prompt"] and "UNIQUE-EA-MARKER" in seen["prompt"]
-    assert builder.last_execution_info["context_files"][:2] == ["docs/SPEC.md", "ea/Bot.mq5"]
+    assert maker.last_execution_info["context_files"][:2] == ["docs/SPEC.md", "ea/Bot.mq5"]
 
 
 def test_proposal_followed_by_commentary_is_still_read():
-    from agents.proposal_builder import ProposalBuilder
-    parsed, repairs = ProposalBuilder.parse_proposal('{"files": [{"path": "a.py", "content": "x=1"}]}\n\nDone - notes follow {')
+    from agents.proposal_maker import ProposalMaker
+    parsed, repairs = ProposalMaker.parse_proposal('{"files": [{"path": "a.py", "content": "x=1"}]}\n\nDone - notes follow {')
     assert parsed["files"][0]["path"] == "a.py" and repairs
     with pytest.raises(json.JSONDecodeError):
-        ProposalBuilder.parse_proposal('{"files": [}')
+        ProposalMaker.parse_proposal('{"files": [}')
 
 
-def test_minor_findings_with_head_pass_spend_no_correction_round(tmp_path, monkeypatch):
+def test_minor_findings_with_architect_pass_spend_no_correction_round(tmp_path, monkeypatch):
     orch = proxy_orch()
     quiet(monkeypatch, orch)
     calls = []
-    monkeypatch.setattr(orch.builder, "run", good_build(calls))
-    monkeypatch.setattr(orch, "run_reviewer_with_failover", lambda *a: (ReviewResultSchema(
+    monkeypatch.setattr(orch.maker, "run", good_build(calls))
+    monkeypatch.setattr(orch, "run_inspector_with_failover", lambda *a: (ReviewResultSchema(
         verdict="changes_required", p2=["doc wording"], summary="minor"), None))
     monkeypatch.setattr(orch, "run_decision_with_failover", lambda *a: (DecisionSchema(
         decision="PASS", rationale="done", next_steps=["doc wording"]), None))
@@ -916,7 +916,7 @@ def test_pytest_node_ids_in_allowed_deletions_become_symbols(tmp_path):
     assert any("node ids rewritten" in n for n in notes)
 
 
-@pytest.mark.head_proxy
+@pytest.mark.architect_proxy
 def test_operator_replan_sends_a_security_stop_back_to_planning_without_approving_it(tmp_path, monkeypatch):
     builds = []
     plans = [{"status": "CONTINUE", "summary": "redo", "reason": "", "order": dict(ORDER)},

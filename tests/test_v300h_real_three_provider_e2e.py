@@ -6,10 +6,10 @@ Run explicitly with:
 The default regression deselects this file. No API key or SDK path is used.
 
 V3.0-H's acceptance bar is the failure-learning loop, not a lucky first-cycle PASS: real Independent
-Research -> Cross Critique -> Synthesis -> Experiment (real Builder/Verifier/Reviewer) -> Result
+Research -> Cross Critique -> Synthesis -> Experiment (real Maker/Verifier/Inspector) -> Result
 Interpretation -> Result Cross Critique -> Research Memory -> bounded Next Cycle, with every cycle run
 for real by Codex + Claude + Antigravity in one Research Session, until MILESTONE_COMPLETE or a bounded
-RESEARCH_STOPPED (cycle budget / no-progress) is reached. A Reviewer changes_required verdict on an
+RESEARCH_STOPPED (cycle budget / no-progress) is reached. A Inspector changes_required verdict on an
 ordinary in-scope defect is expected, real research data - it must route to Result Interpretation, never
 be silently forced to PASS and never immediately halt the whole session to HUMAN_REQUIRED. Any genuine
 safety/infra halt (Scope Guard, protected path, P0 blocker, provider/config failure, quota/auth) must
@@ -66,10 +66,10 @@ def test_v300h_real_three_provider_greenfield_cycle(tmp_path):
     artifact_root = SOURCE_ROOT / "research" / "v3h-e2e"
     runner = TriadResearchRunner(timeout=600, no_output_timeout=240, heartbeat_interval=30)
     config = {
-        "head": {"provider": "openai", "executable": None},
-        "builder": {"provider": "antigravity", "model": "antigravity-cli", "executable": None},
-        "reviewer": {"provider": "codex", "model": "codex-cli", "executable": None},
-        "timeouts": {"head": 600, "builder": 900, "reviewer": 600, "no_progress": 240, "heartbeat": 30},
+        "architect": {"provider": "openai", "executable": None},
+        "maker": {"provider": "antigravity", "model": "antigravity-cli", "executable": None},
+        "inspector": {"provider": "codex", "model": "codex-cli", "executable": None},
+        "timeouts": {"architect": 600, "maker": 900, "inspector": 600, "no_progress": 240, "heartbeat": 30},
         "safety": {"max_files_changed": 12, "max_diff_lines": 700,
                    "approved_commands": ["python", "pytest", "git"]},
         "verification": {"build_command": None, "test_command": "python -m pytest -q", "lint_command": None},
@@ -134,7 +134,7 @@ def test_v300h_real_three_provider_greenfield_cycle(tmp_path):
             serialized = json.dumps(prompt, ensure_ascii=False, sort_keys=True)
             assert "peer_proposals" not in serialized and "other_proposals" not in serialized
 
-        # STRICT: a Reviewer changes_required verdict must survive verbatim - never rewritten toward "pass".
+        # STRICT: a Inspector changes_required verdict must survive verbatim - never rewritten toward "pass".
         review = result.get("review") or {}
         if experiment["normal_final_state"] != "PASS":
             assert review.get("verdict") == "changes_required"
@@ -156,7 +156,7 @@ def test_v300h_real_three_provider_greenfield_cycle(tmp_path):
             assert record["authentication_mode"] == "subscription" and record["api_key_used"] == 0
 
         normal_provenance = (result.get("provenance") or {}).get("records") or []
-        assert any(r.get("agent") == "BUILDER" and r.get("exit_code") == 0 for r in normal_provenance)
+        assert any(r.get("agent") == "MAKER" and r.get("exit_code") == 0 for r in normal_provenance)
         assert all(r.get("api_key_used") is False for r in normal_provenance)
         assert all(r.get("authentication_mode") == "subscription" for r in normal_provenance)
 
@@ -169,8 +169,8 @@ def test_v300h_real_three_provider_greenfield_cycle(tmp_path):
             "normal_run_id": experiment.get("normal_run_id"),
             "normal_final_state": experiment["normal_final_state"],
             "experiment_status": experiment["status"],
-            "reviewer_verdict": review.get("verdict"), "reviewer_p0": review.get("p0"),
-            "reviewer_p1": review.get("p1"), "reviewer_p2": review.get("p2"),
+            "inspector_verdict": review.get("verdict"), "inspector_p0": review.get("p0"),
+            "inspector_p1": review.get("p1"), "inspector_p2": review.get("p2"),
             "verification_passed": (result.get("verification") or {}).get("passed"),
             "research_provenance": research_provenance, "normal_provenance": normal_provenance,
             "research_memory": memory_payload,
@@ -188,7 +188,7 @@ def test_v300h_real_three_provider_greenfield_cycle(tmp_path):
     assert final_stage in (ResearchState.MILESTONE_COMPLETE, ResearchState.RESEARCH_STOPPED), final_stage
 
     # If a second cycle ran, its independent-research prompts must carry only the compact memory fact from
-    # cycle 1 (hypothesis/lesson/next_direction/...), never cycle 1's raw reviewer findings or provenance.
+    # cycle 1 (hypothesis/lesson/next_direction/...), never cycle 1's raw inspector findings or provenance.
     if len(trajectory) > 1:
         cycle2_prompt_rows = orch.rsm.get_prompt_artifacts(trajectory[1]["cycle_id"], ResearchState.INDEPENDENT_RESEARCH)
         for row in cycle2_prompt_rows:
@@ -199,8 +199,8 @@ def test_v300h_real_three_provider_greenfield_cycle(tmp_path):
                 assert set(fact) == {"hypothesis", "result", "lesson", "do_not_repeat", "open_questions",
                                       "next_direction", "evidence_sha256"}
             serialized = json.dumps(prompt, ensure_ascii=False)
-            for p1_item in (trajectory[0]["reviewer_p1"] or []):
-                assert p1_item not in serialized, "cycle 1's raw reviewer finding text leaked into cycle 2's prompt"
+            for p1_item in (trajectory[0]["inspector_p1"] or []):
+                assert p1_item not in serialized, "cycle 1's raw inspector finding text leaked into cycle 2's prompt"
 
     baseline = orch.rsm.get_baseline_evidence(trajectory[0]["cycle_id"])
     assert baseline["baseline_state"] == BASELINE_NOT_APPLICABLE_GREENFIELD

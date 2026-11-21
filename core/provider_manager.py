@@ -127,7 +127,7 @@ class ProviderManager:
     """
 
     def __init__(self, timeouts: Optional[Dict[str, int]] = None, db_path: Optional[str] = None):
-        self.timeouts = timeouts or {"head": 300, "builder": 600, "reviewer": 300}
+        self.timeouts = timeouts or {"architect": 300, "maker": 600, "inspector": 300}
         
         from core.db_path import get_db_path
         if db_path is None:
@@ -153,6 +153,8 @@ class ProviderManager:
     def _sync_from_db(self):
         try:
             with self._get_conn() as conn:
+                from core.role_names import migrate_db
+                migrate_db(conn)
                 cursor = conn.cursor()
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS provider_health (
@@ -474,7 +476,7 @@ class ProviderManager:
     def get_effective_mode_for_next_run(self, only: Optional[List[str]] = None) -> Dict[str, Any]:
         """READ-ONLY preview of the mode the next chat/run gate will compute, using exactly the execution
         policy (mark_trial_candidates + get_failover_mode) without marking, claiming or probing anything.
-        `only` mirrors the caller: the chat path passes [HEAD domain]; a full run passes None (all).
+        `only` mirrors the caller: the chat path passes [ARCHITECT domain]; a full run passes None (all).
         Provider statuses are untouched: a RECOVERING candidate is reported as a trial, never as HEALTHY."""
         self._sync_from_db()
         cands = self.available_trial_candidates(only)
@@ -575,9 +577,9 @@ class ProviderManager:
 
     def resolve_roles(
         self,
-        requested_head: str = "openai",
-        requested_builder: str = "antigravity",
-        requested_reviewer: str = "codex",
+        requested_architect: str = "openai",
+        requested_maker: str = "antigravity",
+        requested_inspector: str = "codex",
         strict: bool = False
     ) -> Dict[str, Any]:
         mode, down = self.get_failover_mode()
@@ -585,9 +587,9 @@ class ProviderManager:
         assigned = {
             "mode": mode,
             "down_providers": down,
-            "head_provider": requested_head,
-            "builder_provider": requested_builder,
-            "reviewer_provider": requested_reviewer,
+            "architect_provider": requested_architect,
+            "maker_provider": requested_maker,
+            "inspector_provider": requested_inspector,
             "can_proceed": True,
             "reason": "All primary providers are healthy."
         }
@@ -606,27 +608,27 @@ class ProviderManager:
 
         if strict:
             from core.role_settings import ALIASES, DOMAINS
-            missing = [DOMAINS[ALIASES[p.lower()]] for p in (requested_head, requested_builder, requested_reviewer)
+            missing = [DOMAINS[ALIASES[p.lower()]] for p in (requested_architect, requested_maker, requested_inspector)
                        if DOMAINS[ALIASES[p.lower()]] not in usable]
             if missing:
                 assigned['can_proceed'] = False
                 assigned['reason'] = 'Manually selected CLI unavailable: ' + ', '.join(missing)
                 return assigned
         elif not openai_healthy:
-            # OpenAI down -> Claude steps in as HEAD & REVIEWER
-            assigned["head_provider"] = "claude"
-            assigned["reviewer_provider"] = "claude"
-            assigned["reason"] = "OpenAI unavailable. Degraded mode active: Claude acting as Head and Reviewer."
+            # OpenAI down -> Claude steps in as ARCHITECT & INSPECTOR
+            assigned["architect_provider"] = "claude"
+            assigned["inspector_provider"] = "claude"
+            assigned["reason"] = "OpenAI unavailable. Degraded mode active: Claude acting as Architect and Inspector."
         elif not google_healthy:
-            # Google down -> Codex steps in as Builder, Claude as Reviewer
-            assigned["builder_provider"] = "codex"
-            assigned["reviewer_provider"] = "claude"
-            assigned["reason"] = "Google unavailable. Degraded mode active: Codex acting as Builder."
+            # Google down -> Codex steps in as Maker, Claude as Inspector
+            assigned["maker_provider"] = "codex"
+            assigned["inspector_provider"] = "claude"
+            assigned["reason"] = "Google unavailable. Degraded mode active: Codex acting as Maker."
         elif not anthropic_healthy:
-            # Anthropic down -> OpenAI handles Head & Reviewer
-            assigned["head_provider"] = "openai"
-            assigned["reviewer_provider"] = "codex"
-            assigned["reason"] = "Anthropic unavailable. Degraded mode active: OpenAI handling Head & Reviewer."
+            # Anthropic down -> OpenAI handles Architect & Inspector
+            assigned["architect_provider"] = "openai"
+            assigned["inspector_provider"] = "codex"
+            assigned["reason"] = "Anthropic unavailable. Degraded mode active: OpenAI handling Architect & Inspector."
 
         # Update roles in DB
         try:
@@ -644,7 +646,7 @@ class ProviderManager:
                 }
                 
                 from core.role_settings import ALIASES, DOMAINS
-                for role in ('head', 'builder', 'reviewer'):
+                for role in ('architect', 'maker', 'inspector'):
                     role_map[DOMAINS[ALIASES[assigned[role + '_provider'].lower()]]].append(role.upper())
                     
                 for prov, roles in role_map.items():

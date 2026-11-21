@@ -64,7 +64,7 @@ class ProcessTreeRunner:
 
     @classmethod
     def kill_active(cls) -> List[int]:
-        """작업 정지: kill every CLI process the runner has alive (builder/reviewer/head). Returns the pids killed."""
+        """작업 정지: kill every CLI process the runner has alive (maker/inspector/architect). Returns the pids killed."""
         killed = []
         for pid in list(active_processes()):
             try:

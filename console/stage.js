@@ -6,22 +6,22 @@
 const T=(window.I18N&&window.I18N.t)||((s,...a)=>s.replace(/\{(\d+)\}/g,(m,i)=>i<a.length?String(a[i]):m)),LANG=window.I18N?window.I18N.lang:'ko';
 const $=id=>document.getElementById(id);
 const AI={ANTHROPIC:{name:'Claude',rgb:[1,.54,.36],css:'#ff8a5c'},OPENAI:{name:'Codex',rgb:[.24,.95,.75],css:'#3df2c0'},GOOGLE:{name:'Antigravity',rgb:[.42,.65,1],css:'#6aa5ff'}};
-const ROLES=['HEAD','BUILDER','REVIEWER'];
-const ROLE_KO={HEAD:T('HEAD · 지휘'),BUILDER:T('BUILDER · 구현'),REVIEWER:T('REVIEWER · 검수')};
-const DEFAULT_ASSIGN={HEAD:'ANTHROPIC',BUILDER:'GOOGLE',REVIEWER:'OPENAI'};
+const ROLES=['ARCHITECT','MAKER','INSPECTOR'];
+const ROLE_KO={ARCHITECT:T('ARCHITECT · 설계'),MAKER:T('MAKER · 제작'),INSPECTOR:T('INSPECTOR · 감리')};
+const DEFAULT_ASSIGN={ARCHITECT:'ANTHROPIC',MAKER:'GOOGLE',INSPECTOR:'OPENAI'};
 const PIPE=['PLANNING','BUILDING','VERIFYING','REVIEWING','DECIDING'];
 const PHASE={
   IDLE:{word:T('대기'),sub:T('세 AI가 지시를 기다립니다'),core:.18},
   BETWEEN:{word:T('준비'),sub:T('다음 AI 호출을 준비합니다'),core:.42},
-  PLANNING:{word:T('계획'),sub:T('HEAD가 할 일을 정합니다'),core:.56},
-  BUILDING:{word:T('구현'),sub:T('BUILDER가 코드를 씁니다'),core:.72},
+  PLANNING:{word:T('설계'),sub:T('ARCHITECT가 할 일을 정합니다'),core:.56},
+  BUILDING:{word:T('제작'),sub:T('MAKER가 코드를 씁니다'),core:.72},
   VERIFYING:{word:T('테스트'),sub:T('Director가 직접 실행해 확인합니다'),core:1},
-  REVIEWING:{word:T('검수'),sub:T('REVIEWER가 독립적으로 살핍니다'),core:.72},
-  DECIDING:{word:T('판단'),sub:T('HEAD가 통과 여부를 결정합니다'),core:.86}};
+  REVIEWING:{word:T('감리'),sub:T('INSPECTOR가 독립적으로 살핍니다'),core:.72},
+  DECIDING:{word:T('판단'),sub:T('ARCHITECT가 통과 여부를 결정합니다'),core:.86}};
 const STAGE_TEXT={CHAT:T('요청을 읽고 있습니다'),MISSION_PLANNING:T('다음 단계를 계획하고 있습니다'),PLANNING:T('작업 지시서를 쓰고 있습니다'),ORDER_READY:T('작업 지시서를 쓰고 있습니다'),
-  BUILDING:T('코드를 작성하고 있습니다'),REVIEWING:T('결과물을 검수하고 있습니다'),DECIDING:T('통과 여부를 판단하고 있습니다')};
-const SHORT={CHAT:T('요청 확인 중'),MISSION_PLANNING:T('다음 단계 계획 중'),PLANNING:T('지시서 작성 중'),ORDER_READY:T('지시서 작성 중'),BUILDING:T('코드 작성 중'),REVIEWING:T('검수 중'),DECIDING:T('판단 중')};
-const STAGE_LABEL={PLANNING:T('계획'),ORDER_READY:T('구현 준비'),BUILDING:T('코드 작성'),VERIFYING:T('테스트'),REVIEWING:T('독립 검토'),DECIDING:T('HEAD 판단'),PASS:T('통과'),FAIL:T('실패'),
+  BUILDING:T('코드를 작성하고 있습니다'),REVIEWING:T('결과물을 감리하고 있습니다'),DECIDING:T('통과 여부를 판단하고 있습니다')};
+const SHORT={CHAT:T('요청 확인 중'),MISSION_PLANNING:T('다음 단계 계획 중'),PLANNING:T('지시서 작성 중'),ORDER_READY:T('지시서 작성 중'),BUILDING:T('코드 작성 중'),REVIEWING:T('감리 중'),DECIDING:T('판단 중')};
+const STAGE_LABEL={PLANNING:T('설계'),ORDER_READY:T('제작 준비'),BUILDING:T('제작'),VERIFYING:T('테스트'),REVIEWING:T('감리'),DECIDING:T('판단'),PASS:T('통과'),FAIL:T('실패'),
   HUMAN_REQUIRED:T('사용자 확인'),TIMEOUT:T('시간 초과'),IDLE:T('대기'),MISSION_PLANNING:T('다음 단계 계획'),ENTRY_REVIEW:T('오더 검토'),CHAT:T('대화')};
 const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료')};
 const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
@@ -54,7 +54,7 @@ const CLI={claude:'ANTHROPIC',antigravity:'GOOGLE',openai:'OPENAI'},CLI_OF={ANTH
 let roleSettings=null,roleToken=null;                 // what the NEXT task will use (data/role_settings.json via /ops/roles)
 const pollRoles=guarded(async()=>{try{const r=await getJSON('/ops/roles');roleSettings=r.roles;roleToken=r.csrf;repaint();}catch(e){/* keep the last known roles */}});
 function assignment(){
-  if(roleSettings&&!isLiveNow())return {HEAD:CLI[roleSettings.head],BUILDER:CLI[roleSettings.builder],REVIEWER:CLI[roleSettings.reviewer]};
+  if(roleSettings&&!isLiveNow())return {ARCHITECT:CLI[roleSettings.architect],MAKER:CLI[roleSettings.maker],INSPECTOR:CLI[roleSettings.inspector]};
   const a={...DEFAULT_ASSIGN},prov=(status&&status.providers)||{};
   for(const [p,info] of Object.entries(prov))if(info&&AI[p])for(const r of String(info.role||'').split(/,\s*/))if(ROLES.includes(r))a[r]=p;   // one AI may hold several roles
   return a;
@@ -93,10 +93,10 @@ function openRoleMenu(label){
   menu.style.transform='translate('+Math.max(4,Math.min(r.left-c.left,c.width-menu.offsetWidth-4)).toFixed(0)+'px,'+(r.bottom-c.top+6+menu.offsetHeight>c.height?Math.max(4,r.top-c.top-menu.offsetHeight-6):r.bottom-c.top+6).toFixed(0)+'px)';   // no room below: open above the label
 }
 function phaseOf(working,verifying,live){
-  const w=working.find(x=>x.role==='BUILDER')||working.find(x=>x.role==='REVIEWER')||working[0];
+  const w=working.find(x=>x.role==='MAKER')||working.find(x=>x.role==='INSPECTOR')||working[0];
   if(w){
-    if(w.role==='BUILDER')return {phase:'BUILDING',w};
-    if(w.role==='REVIEWER')return {phase:'REVIEWING',w};
+    if(w.role==='MAKER')return {phase:'BUILDING',w};
+    if(w.role==='INSPECTOR')return {phase:'REVIEWING',w};
     return {phase:w.stage==='DECIDING'?'DECIDING':'PLANNING',w};
   }
   return {phase:verifying?'VERIFYING':live?'BETWEEN':'IDLE',w:null};
@@ -125,7 +125,7 @@ function liveModel(){
 // ------------------------------------------------------------------ painting
 function actorColor(m){return m.w?AI[m.w.provider]?.css||'#fff':m.phase==='VERIFYING'?'#b9ffe2':'#9fb4d8';}
 function sentence(m){
-  if(m.w){const name=(AI[m.w.provider]||{name:m.w.provider}).name;return [name,T('가 ')+(STAGE_TEXT[m.w.stage]||(m.w.role==='BUILDER'?STAGE_TEXT.BUILDING:m.w.role==='REVIEWER'?STAGE_TEXT.REVIEWING:T('생각하고 있습니다')))];}
+  if(m.w){const name=(AI[m.w.provider]||{name:m.w.provider}).name;return [name,T('가 ')+(STAGE_TEXT[m.w.stage]||(m.w.role==='MAKER'?STAGE_TEXT.BUILDING:m.w.role==='INSPECTOR'?STAGE_TEXT.REVIEWING:T('생각하고 있습니다')))];}
   if(m.phase==='VERIFYING')return ['Director',T('가 테스트를 실행하고 있습니다')];
   if(m.phase==='BETWEEN')return ['',T('다음 AI 호출을 준비하고 있습니다')];
   return ['',T('세 AI가 지시를 기다리고 있습니다')];
@@ -143,7 +143,7 @@ function paintNow(m){
   $('phase-word').textContent=PHASE[m.phase].word;$('phase-sub').textContent=PHASE[m.phase].sub;
   const at=PIPE.indexOf(m.phase);
   for(const li of $('pipeline').children){const i=PIPE.indexOf(li.dataset.stage);li.classList.toggle('on',i===at);li.classList.toggle('done',at>i&&at>=0);
-    const role=li.dataset.stage==='BUILDING'?'BUILDER':li.dataset.stage==='REVIEWING'?'REVIEWER':li.dataset.stage==='VERIFYING'?null:'HEAD';
+    const role=li.dataset.stage==='BUILDING'?'MAKER':li.dataset.stage==='REVIEWING'?'INSPECTOR':li.dataset.stage==='VERIFYING'?null:'ARCHITECT';
     li.style.setProperty('--c',i===at?actorColor(m):role?AI[m.assign[role]].css:'#b9ffe2');}
   const chip=$('top-live');chip.dataset.mode=m.mode==='replay'?'replay':(m.working.length||(ms&&ms.live))?'live':'idle';
   chip.lastElementChild.textContent=m.mode==='replay'?'REPLAY':chip.dataset.mode==='live'?'LIVE':'STANDBY';
@@ -249,8 +249,8 @@ function paintFeed(list,items,seen,render){
 }
 function stateColor(m,state){
   if(STEP_CLASS[state])return {ok:'#5ef2b0',bad:'#ff6b7a',warn:'#ffc46b'}[STEP_CLASS[state]];
-  if(state==='BUILDING')return AI[m.assign.BUILDER].css;if(state==='REVIEWING')return AI[m.assign.REVIEWER].css;
-  if(state==='VERIFYING')return '#b9ffe2';return AI[m.assign.HEAD].css;
+  if(state==='BUILDING')return AI[m.assign.MAKER].css;if(state==='REVIEWING')return AI[m.assign.INSPECTOR].css;
+  if(state==='VERIFYING')return '#b9ffe2';return AI[m.assign.ARCHITECT].css;
 }
 function paintFeeds(m){
   paintFeed($('event-feed'),m.events,seenFeed.event,(li,e)=>{li.style.setProperty('--dot',e.color||stateColor(m,e.state));li.append(el('b',e.label),el('span',e.sub||''),el('time',e.when||ago(e.at)));});
@@ -314,11 +314,11 @@ function paintScene(m){
     const label=document.querySelector('.slot-label[data-slot="'+i+'"]'),acting=w&&w.provider!==m.assign[role];
     label.style.setProperty('--c',(AI[p]||{}).css||'#fff');label.classList.toggle('busy',!!w);
     label.querySelector('.slot-name').textContent=((AI[p]||{name:p}).name)+(acting?T(' (대행)'):'');
-    label._work=w?{text:SHORT[w.stage]||(role==='BUILDER'?SHORT.BUILDING:role==='REVIEWER'?SHORT.REVIEWING:T('작업 중')),at:w.at,fixed:m.mode==='replay'?w.elapsed:null}:null;
+    label._work=w?{text:SHORT[w.stage]||(role==='MAKER'?SHORT.BUILDING:role==='INSPECTOR'?SHORT.REVIEWING:T('작업 중')),at:w.at,fixed:m.mode==='replay'?w.elapsed:null}:null;
     label.querySelector('.slot-status').textContent=label._work?label._work.text+' · '+clock(label._work.fixed!=null?label._work.fixed:(Date.now()-label._work.at)/1000):T('대기');
     label.querySelector('.slot-stat').textContent=m.stats[p]||'';
     const cfg=label.querySelector('.slot-cfg'),hot=m.mode==='live'&&!!alertOf(CLI_OF[p]);cfg.textContent=m.mode==='live'?cfgLine(p)+(hot?' · '+T('한도 임박'):''):'';cfg.classList.toggle('alert',hot);});
-  $('independence').hidden=!(m.mode==='live'&&roleSettings&&(roleSettings.reviewer===roleSettings.head||roleSettings.reviewer===roleSettings.builder));
+  $('independence').hidden=!(m.mode==='live'&&roleSettings&&(roleSettings.inspector===roleSettings.architect||roleSettings.inspector===roleSettings.maker));
   if(m.phase==='BUILDING')edge[0]=1;if(m.phase==='REVIEWING')edge[1]=1;if(m.phase==='DECIDING')edge[2]=1;
   if(m.phase==='VERIFYING')act[1]=.5;
   Trinity.set({act,edge,colors,core:PHASE[m.phase].core,verify:m.phase==='VERIFYING'?1:0});
@@ -344,14 +344,28 @@ function repaint(){
 }
 
 // ------------------------------------------------------------------ scene-pinned labels
+// ---- intro: the roll call sits on the scene's own three points and its lights fly to the scene's own core
+let introOn=!window.matchMedia||!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function placeIntro(f){
+  const box=$('intro');if(!introOn||!box)return;
+  box.style.setProperty('--cx',f.core[0].toFixed(1)+'px');box.style.setProperty('--cy',f.core[1].toFixed(1)+'px');
+  const roles=assignment();
+  box.querySelectorAll('.intro-call').forEach((n,i)=>{const [x,y]=f.slots[i],p=roles[ROLES[i]];
+    n.style.transform='translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)';
+    n.style.setProperty('--dx',(f.core[0]-x).toFixed(1)+'px');n.style.setProperty('--dy',(f.core[1]-y).toFixed(1)+'px');
+    n.style.setProperty('--c',(AI[p]||{}).css||'#fff');
+    const name=(AI[p]||{name:''}).name;if(n.children[2].textContent!==name){n.children[1].textContent=ROLE_KO[ROLES[i]];n.children[2].textContent=name;}});
+}
+function endIntro(){introOn=false;document.body.classList.remove('intro');const box=$('intro');if(box)box.remove();}
 function onFrame(f){
   center=$('stage-center').getBoundingClientRect();
   const W=window.innerWidth,H=window.innerHeight,foot=$('stage-foot').offsetHeight+10;
   Trinity.focus({x:center.left/W,y:center.top/H,w:center.width/W,h:Math.max(.2,(center.height-foot)/H)});
   const u=f.unit,labels=document.querySelectorAll('.slot-label');
   $('stage-center').classList.toggle('compact',u<185);              // small scene: labels drop their stat line
+  placeIntro(f);
   labels.forEach((n,i)=>{const [x,y]=f.slots[i],w=n.offsetWidth,h=n.offsetHeight;
-    let lx=i===0?x+u*.27:x-w/2,ly=i===0?y-h+4:y+u*.27;                 // HEAD: above-right; BUILDER/REVIEWER: centred below
+    let lx=i===0?x+u*.27:x-w/2,ly=i===0?y-h+4:y+u*.27;                 // ARCHITECT: above-right; MAKER/INSPECTOR: centred below
     lx=Math.min(Math.max(lx-center.left,2),center.width-w-2);ly=Math.max(ly-center.top,2);
     n.style.transform='translate('+lx.toFixed(1)+'px,'+ly.toFixed(1)+'px)';});
 }
@@ -538,7 +552,7 @@ async function startReplay(){
   if(!calls.length){notice(failed?T('다시보기 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'):T('다시 볼 미션 기록이 아직 없습니다.'));return;}
   let v=0,prevEnd=calls[0].t0,real=0;const gaps=[];
   calls.forEach((c,i)=>{const gap=Math.max(0,c.t0-prevEnd),vg=Math.min(gap,40);
-    if(vg>6&&i&&calls[i-1].role==='BUILDER')gaps.push([v,v+vg]);                       // Director ran the tests between build and review
+    if(vg>6&&i&&calls[i-1].role==='MAKER')gaps.push([v,v+vg]);                       // Director ran the tests between build and review
     v+=vg;c.v0=v;c.v1=v+c.dur;v=c.v1;real+=gap+c.dur;prevEnd=Math.max(prevEnd,c.t0+c.dur);});
   const stepOf=new Map((data.steps||[]).map(s=>[s.run_id,s])),lastCall=new Map();
   calls.forEach(c=>{if(stepOf.has(c.run_id))lastCall.set(c.run_id,c);});
@@ -581,13 +595,13 @@ function replayTick(){
   if(finished&&!r.finished){r.finished=true;if(r.data.status==='DONE')Trinity.pulse(PULSE.done);clearInterval(r.timer);setTimeout(()=>{if(replay===r)stopReplay();},6000);}
 }
 
-// ------------------------------------------------------------------ chat with HEAD
+// ------------------------------------------------------------------ chat with ARCHITECT
 let lastMsg=0,sending=false,chatFails=0;
 const pollChat=guarded(async()=>{
   try{const data=await getJSON('/chat/messages?after_id='+lastMsg),log=$('chat-log'),stick=log.scrollTop+log.clientHeight>=log.scrollHeight-40;
     chatFails=0;
-    for(const msg of data.messages||[]){if(msg.id<=lastMsg)continue;lastMsg=msg.id;const role=['USER','HEAD','SYSTEM'].includes(msg.role)?msg.role:'SYSTEM';
-      const node=el('div','','chat-msg '+role);if(role!=='SYSTEM')node.append(el('small',role==='USER'?T('나'):'HEAD'));const body=String(msg.content||'');node.append(role==='SYSTEM'&&body.length>260?body.slice(0,260)+'…':body);log.append(node);
+    for(const msg of data.messages||[]){if(msg.id<=lastMsg)continue;lastMsg=msg.id;const role=['USER','ARCHITECT','SYSTEM'].includes(msg.role)?msg.role:'SYSTEM';
+      const node=el('div','','chat-msg '+role);if(role!=='SYSTEM')node.append(el('small',role==='USER'?T('나'):'ARCHITECT'));const body=String(msg.content||'');node.append(role==='SYSTEM'&&body.length>260?body.slice(0,260)+'…':body);log.append(node);
       $('peek-role').textContent=role==='USER'?T('나'):role;$('peek-role').dataset.role=role;$('peek-text').textContent=String(msg.content||'').replace(/\s+/g,' ').slice(0,200);}
     while(log.children.length>80)log.firstChild.remove();
     if(stick)log.scrollTop=log.scrollHeight;
@@ -601,8 +615,8 @@ async function send(text){
     const pending=fetch('/chat',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     $('chat-text').value='';grow();setTimeout(pollChat,600);
     const res=await pending,out=await res.json().catch(()=>({}));
-    if(out.status==='busy'){restore(text);notice(T('HEAD가 이전 요청을 처리하고 있습니다. 잠시 뒤 다시 보내 주세요.'));}
-    else if(out.status==='error'||!res.ok)notice(T('HEAD가 응답하지 못했습니다 · ')+(out.error||res.status)+T(' · 보낸 내용은 대화 기록에 남아 있습니다'));
+    if(out.status==='busy'){restore(text);notice(T('ARCHITECT가 이전 요청을 처리하고 있습니다. 잠시 뒤 다시 보내 주세요.'));}
+    else if(out.status==='error'||!res.ok)notice(T('ARCHITECT가 응답하지 못했습니다 · ')+(out.error||res.status)+T(' · 보낸 내용은 대화 기록에 남아 있습니다'));
   }catch(e){restore(text);notice(T('전송 실패 · ')+e.message+T(' · 대화 기록에 이미 들어갔는지 확인한 뒤 다시 보내 주세요'));}
   finally{sending=false;btn.disabled=false;btn.textContent=T('보내기');pollChat();pollActivity();}
 }
@@ -628,7 +642,8 @@ function setBroadcast(on){
   try{if(on&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){/* fullscreen is optional */}
 }
 function start(){
-  Trinity.init($('trinity-canvas'),{onFrame});
+  if(introOn){document.body.classList.add('intro');setTimeout(()=>document.body.classList.remove('intro'),4300);setTimeout(endIntro,6400);}else endIntro();
+  Trinity.init($('trinity-canvas'),introOn?{onFrame,bootDelay:2.1,bootTime:1.7}:{onFrame});
   if(params.get('broadcast')==='1'||attract){document.body.classList.add('broadcast');$('btn-broadcast').textContent=T('방송 모드 끝내기');$('btn-broadcast').setAttribute('aria-pressed','true');}   // e.g. an OBS browser source: /?attract=1
   $('tab-stage').onclick=()=>setView('stage');$('tab-workshop').onclick=()=>setView('workshop');$('attention-go').onclick=()=>setView('workshop');
   $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled||replay)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');

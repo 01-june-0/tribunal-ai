@@ -14,7 +14,7 @@
 
 **세 개의 AI 코딩 CLI를 한 회사처럼 돌려, 목표 한 줄을 검증된 코드로 바꾸는 로컬 개발 감독관.**
 A local orchestrator that runs three subscription AI CLIs (Claude Code, OpenAI Codex, Google Antigravity) as
-HEAD / BUILDER / REVIEWER, and turns a one-line goal into tested, independently reviewed code — without a single
+ARCHITECT / MAKER / INSPECTOR, and turns a one-line goal into tested, independently reviewed code — without a single
 pay-per-use API call.
 
 > 상태: 개인 운영 환경에서 매일 쓰고 있는 코드를 그대로 공개한 것입니다. 윈도우 우선, 한국어 UI.
@@ -27,19 +27,19 @@ pay-per-use API call.
 ## 무엇을 하나 (What it does)
 
 ```
-   goal ──▶ HEAD (plans an ORDER) ──▶ BUILDER (proposes whole files as JSON)
+   goal ──▶ ARCHITECT (plans an ORDER) ──▶ MAKER (proposes whole files as JSON)
                  ▲                              │
                  │                              ▼
-          HEAD decision ◀── REVIEWER ◀── Verifier (build / tests in an isolated worktree)
+          ARCHITECT decision ◀── INSPECTOR ◀── Verifier (build / tests in an isolated worktree)
 ```
 
-- **NORMAL 파이프라인** — HEAD가 목표를 ORDER(허용 경로·파일 수·diff 상한이 명시된 작업 명세)로 만들고, BUILDER가
+- **NORMAL 파이프라인** — ARCHITECT가 목표를 ORDER(허용 경로·파일 수·diff 상한이 명시된 작업 명세)로 만들고, MAKER가
   파일 전체를 JSON으로 제출하면 Director가 Scope Guard로 검사한 뒤 **격리 작업본(git worktree)** 에 반영하고 테스트를
-  돌립니다. REVIEWER가 독립 검토하고 HEAD가 PASS/FAIL/수정 지시를 내립니다. 원본 프로젝트는 절대 직접 수정되지 않습니다.
-- **미션(Mission)** — 채팅 한 줄이 미션이 됩니다. HEAD가 마일스톤 ORDER를 하나씩 계획하고, 각 단계는 직전 PASS 작업본의
+  돌립니다. INSPECTOR가 독립 검토하고 ARCHITECT가 PASS/FAIL/수정 지시를 내립니다. 원본 프로젝트는 절대 직접 수정되지 않습니다.
+- **미션(Mission)** — 채팅 한 줄이 미션이 됩니다. ARCHITECT가 마일스톤 ORDER를 하나씩 계획하고, 각 단계는 직전 PASS 작업본의
   스냅샷에서 시작하며, 실제 증거(테스트·리뷰)를 보고 다시 계획합니다. 완료된 산출물은 설정에 따라 자동 반영되되
   사람이 그 사이 고친 파일은 덮어쓰지 않습니다.
-- **HEAD 프록시 자율 모드** — 결제·실계좌 주문·실제 자격증명·되돌릴 수 없는 외부 행동만 사람에게 묻고, 나머지
+- **ARCHITECT 프록시 자율 모드** — 결제·실계좌 주문·실제 자격증명·되돌릴 수 없는 외부 행동만 사람에게 묻고, 나머지
   마찰(빌더 JSON 깨짐, 토큰 한도, 경로 범위, 리뷰 지적, 한도 초과)은 재시도·공급자 교체·재계획으로 스스로 풉니다.
 - **TRIAD 연구 모드** — 세 AI가 독립 연구 → 상호 비판 → 종합 가설 → NORMAL 파이프라인으로 실험 구현 → 세 갈래
   해석 → 연구 메모리. 설계와 구현은 `docs/V3_TRIAD_RESEARCH_PLAN.md`.
@@ -95,7 +95,7 @@ chmod +x start-companion.sh stop-companion.sh
 ./stop-companion.sh
 ```
 
-Antigravity CLI(`agy`)가 그 플랫폼에 없으면 `config.yaml`에서 BUILDER를 `codex` 또는 `claude`로 바꾸면 됩니다. CLI 두 개로도 동작합니다.
+Antigravity CLI(`agy`)가 그 플랫폼에 없으면 `config.yaml`에서 MAKER를 `codex` 또는 `claude`로 바꾸면 됩니다. CLI 두 개로도 동작합니다.
 
 CLI로 바로 한 번 돌리기:
 
@@ -109,7 +109,7 @@ python director.py clean-worktrees -p D:/work/my_project --dry-run
 
 ## 설정 (Configuration)
 
-`config.yaml` 한 파일입니다. 역할별 공급자(`head/builder/reviewer`), 타임아웃, 안전 상한, 검증 명령,
+`config.yaml` 한 파일입니다. 역할별 공급자(`architect/maker/inspector`), 타임아웃, 안전 상한, 검증 명령,
 자율 모드(`autonomy`)와 프로필(`quick / standard / deep`), 프로젝트별 검증 명령(`projects`)을 둡니다.
 프로젝트별 검증 명령을 프로젝트 안이 아니라 여기에 두는 이유는 빌더가 그것을 약화시킬 수 없게 하기 위해서입니다.
 
@@ -122,10 +122,10 @@ python director.py clean-worktrees -p D:/work/my_project --dry-run
 director.py            CLI 진입점 (run / mission / do / status / resume / clean-worktrees)
 companion_server.py    8081 콘솔 서버 (정적 파일 허용 목록 + /ops/* API)
 dashboard_server.py    작업실(/classic)·채팅·미션 정지·상태 요약
-agents/                HEAD / BUILDER / REVIEWER 어댑터 (claude, codex, antigravity, google 역할, mock)
+agents/                ARCHITECT / MAKER / INSPECTOR 어댑터 (claude, codex, antigravity, google 역할, mock)
 core/                  orchestrator, mission, autopilot(정책), safety(Scope Guard), verifier, git_manager,
                        process_runner, provider_manager(장애 조치), research_*(TRIAD), usage(토큰 집계)
-schemas/               ORDER / BuilderResult / ReviewResult / Decision / Provenance (pydantic)
+schemas/               ORDER / MakerResult / ReviewResult / Decision / Provenance (pydantic)
 console/               TRINITY 무대와 작업실 프런트엔드 (의존성 없는 정적 파일)
 scripts/               폴더 선택 도우미, CLI 진단, 실패 run 재시도, 역할 smoke
 tests/                 604 tests (스텁 CLI로 격리, 로컬 설정 파일에 의존하지 않음; 실제 CLI 통합은 -m integration_cli 로 opt-in)
@@ -136,7 +136,7 @@ docs/                  설계·마일스톤 기록
 
 - 큰 변경도 "파일 전체 JSON 제안" 방식이라 CLI 출력 한도에 걸릴 수 있습니다. 한 번은 압축 재시도, 그 다음은 공급자 교체.
 - 각 CLI의 구독 한도(쿼터)에 그대로 종속됩니다. 한도가 끝나면 장애 조치 순서대로 다른 CLI로 넘어갑니다.
-- 리뷰어와 HEAD가 같은 공급자로 몰리면 `REDUCED_INDEPENDENCE` 표시와 함께 통과시킵니다(숨기지 않음).
+- 리뷰어와 ARCHITECT가 같은 공급자로 몰리면 `REDUCED_INDEPENDENCE` 표시와 함께 통과시킵니다(숨기지 않음).
 - 테스트는 로컬 스텁 CLI로 돕니다. 실제 세 CLI를 끝까지 태우는 E2E는 opt-in 마커로만 돌아갑니다.
 - macOS / Linux는 미검증입니다. 일부 테스트는 윈도우 드라이브 문자 경로(`C:/...`)를 전제로 해서 그 플랫폼에서는 실패할 수 있으며, 제품 동작과는 무관합니다.
 

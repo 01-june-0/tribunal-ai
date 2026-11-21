@@ -19,18 +19,18 @@ from core.process_runner import ProcessTreeRunner, RealCliCallDuringUnitTest
 from core.db_path import get_db_path, DEFAULT_DB_PATH
 from schemas.order import OrderSchema
 from schemas.decision import DecisionSchema
-from agents.mock_head import MockHead
-from agents.codex_reviewer import CodexReviewer
+from agents.mock_architect import MockArchitect
+from agents.codex_inspector import CodexInspector
 from tests.test_v0231_chat_stabilization import make_git_project
 from tests.test_v0234_resume_parity import _stuck_run, _mock_orch
 from tests.test_v0235_resume_closure import _details, _audit
 
 
-class PassHead(MockHead):
+class PassArchitect(MockArchitect):
     calls = []
     def decide(self, *a, **k):
-        PassHead.calls.append(1)
-        return DecisionSchema(decision="PASS", rationale="head pass", next_steps=[])
+        PassArchitect.calls.append(1)
+        return DecisionSchema(decision="PASS", rationale="architect pass", next_steps=[])
 
 
 def _deciding_run(proj, orch, order=None):
@@ -38,29 +38,29 @@ def _deciding_run(proj, orch, order=None):
     run_id, wt, sm = _stuck_run(proj, State.DECIDING, order)
     orch._save_json(run_id, "baseline_verification.json", {"passed": True, "test_counts": {"passed": 2}})
     orch._save_json(run_id, "verification.json", {"passed": True, "git_diff": "", "test_counts": {"passed": 3}})
-    orch._save_json(run_id, "builder.json", {"status": "COMPLETED", "files_modified": ["src/x.py"], "commands_run": [], "summary": "ok"})
+    orch._save_json(run_id, "maker.json", {"status": "COMPLETED", "files_modified": ["src/x.py"], "commands_run": [], "summary": "ok"})
     orch._save_json(run_id, "review.json", {"verdict": "pass", "p0": [], "p1": [], "p2": [], "summary": "clean"})
     return run_id, wt, sm
 
 
-def _orch_pass_head():
-    PassHead.calls = []
-    return Orchestrator(config={"head": {"provider": "mock"}, "reviewer": {"provider": "mock"}, "verification": {}},
-                        head_agent=PassHead(), reviewer_agent=CodexReviewer(provider="mock"))
+def _orch_pass_architect():
+    PassArchitect.calls = []
+    return Orchestrator(config={"architect": {"provider": "mock"}, "inspector": {"provider": "mock"}, "verification": {}},
+                        architect_agent=PassArchitect(), inspector_agent=CodexInspector(provider="mock"))
 
 
 # ------------------------------------------------------------------ TEST A: DECIDING + worktree_path NULL -> no PASS
 
 def test_a_deciding_worktree_null(isolate_provider_db):
     with make_git_project() as proj:
-        orch = _orch_pass_head()
+        orch = _orch_pass_architect()
         run_id, wt, sm = _deciding_run(proj, orch)
         with sm._get_conn() as conn:
             conn.execute("UPDATE runs SET worktree_path=NULL, branch_name=NULL WHERE run_id=?", (run_id,)); conn.commit()
         summary = orch.resume(run_id)
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert "WORKTREE_EVIDENCE_MISSING" in _details(sm, run_id)
-        assert PassHead.calls == []                                  # HEAD decision never invoked
+        assert PassArchitect.calls == []                                  # ARCHITECT decision never invoked
         assert "WORKTREE_EVIDENCE_MISSING" in _audit(sm, run_id)
         ev = orch.final_evidence(run_id, OrderSchema(goal="g", allowed_paths=["src/"]), None)
         assert ev["worktree"] == "MISSING" and ev["canonical_containment"] == "MISSING"
@@ -70,17 +70,17 @@ def test_a_deciding_worktree_null(isolate_provider_db):
 
 def test_b_deciding_worktree_deleted(isolate_provider_db):
     with make_git_project() as proj:
-        orch = _orch_pass_head()
+        orch = _orch_pass_architect()
         run_id, wt, sm = _deciding_run(proj, orch)
         shutil.rmtree(wt, ignore_errors=True)
         assert not Path(wt).exists()
         summary = orch.resume(run_id)
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert "WORKTREE_EVIDENCE_MISSING" in _details(sm, run_id)
-        assert PassHead.calls == []
-        # REVIEWING resume is blocked the same way (no reviewer call)
+        assert PassArchitect.calls == []
+        # REVIEWING resume is blocked the same way (no inspector call)
         run_id2, wt2, sm2 = _stuck_run(proj, State.REVIEWING, OrderSchema(goal="g", allowed_paths=["src/"]))
-        orch2 = _orch_pass_head()
+        orch2 = _orch_pass_architect()
         orch2._save_json(run_id2, "baseline_verification.json", {"passed": True, "test_counts": {"passed": 0}})
         orch2._save_json(run_id2, "verification.json", {"passed": True, "git_diff": "", "test_counts": {"passed": 0}})
         shutil.rmtree(wt2, ignore_errors=True)
@@ -93,14 +93,14 @@ def test_b_deciding_worktree_deleted(isolate_provider_db):
 
 def test_c_deciding_with_worktree_passes(isolate_provider_db):
     with make_git_project() as proj:
-        orch = _orch_pass_head()
+        orch = _orch_pass_architect()
         run_id, wt, sm = _deciding_run(proj, orch)
         summary = orch.resume(run_id)
         assert summary["final_state"] == State.PASS
         ev = json.loads((Path("runs") / run_id / "final_evidence.json").read_text(encoding="utf-8"))
         assert ev["worktree"] == "PRESENT" and ev["canonical_containment"] == "PASS"
         assert ev["baseline"] == "PASS" and ev["verification"] == "PASS" and ev["regression"] == "PASS"
-        assert ev["reasons"] == [] and ev["reviewer_verdict"] == "pass"
+        assert ev["reasons"] == [] and ev["inspector_verdict"] == "pass"
         assert "FINAL_GATE_BLOCK" not in _audit(sm, run_id)
 
         # lexical validity alone is NOT canonical PASS: without any recorded worktree the status is MISSING
@@ -113,18 +113,18 @@ def test_c_deciding_with_worktree_passes(isolate_provider_db):
         assert ev_fail["canonical_containment"] in ("PASS", "FAIL")      # explicit verdict, never MISSING with a worktree
 
         # fresh run: worktree is created before PASS and the persisted evidence says PASS/PRESENT
-        def _builder(b, o, w):
+        def _maker(b, o, w):
             (Path(w) / "src" / "n.py").write_text("z=1" + chr(10), encoding="utf-8")
             return ["src/n.py"]
-        summary2 = _mock_orch(verification={}).run(proj, "g", builder_fn=_builder, order=OrderSchema(goal="g", allowed_paths=["src/"]))
+        summary2 = _mock_orch(verification={}).run(proj, "g", maker_fn=_maker, order=OrderSchema(goal="g", allowed_paths=["src/"]))
         assert summary2["final_state"] == State.PASS
         ev3 = json.loads((Path("runs") / summary2["run_id"] / "final_evidence.json").read_text(encoding="utf-8"))
         assert ev3["worktree"] == "PRESENT" and ev3["canonical_containment"] == "PASS"
 
 
-# ------------------------------------------------------------------ TEST D: HEAD pre-exec exception + get_provenance exception
+# ------------------------------------------------------------------ TEST D: ARCHITECT pre-exec exception + get_provenance exception
 
-def test_d_head_double_exception_provenance(isolate_provider_db, monkeypatch):
+def test_d_architect_double_exception_provenance(isolate_provider_db, monkeypatch):
     StateMachine(); cm = ChatManager()
     monkeypatch.setattr(ProviderManager, "check_health", lambda self, force=False: self.status_map.copy())
 
@@ -135,15 +135,15 @@ def test_d_head_double_exception_provenance(isolate_provider_db, monkeypatch):
             raise RuntimeError("CONFIG_ERROR: Official Codex CLI not found")
         def get_provenance(self, exit_code=0):
             raise RuntimeError("provenance generation exploded")
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: DoubleFail())
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: DoubleFail())
 
     handle_chat_message("hello")
     rec = cm.get_provenance(GLOBAL_SESSION_ID)[-1]
     assert rec["exit_code"] is None and rec["duration_sec"] is None
     assert rec["executable"] is None and rec["version"] is None
     assert json.loads(rec["observed_fields"]) == []
-    assert rec["outcome"] == "HEAD_EXCEPTION"
-    rows = StateMachine()._get_conn().execute("SELECT payload FROM audit_logs WHERE action='HEAD_EXCEPTION'").fetchall()
+    assert rec["outcome"] == "ARCHITECT_EXCEPTION"
+    rows = StateMachine()._get_conn().execute("SELECT payload FROM audit_logs WHERE action='ARCHITECT_EXCEPTION'").fetchall()
     assert rows and "CONFIG_ERROR" in rows[-1]["payload"]
 
     # single (pre-exec) exception: nothing observed either -> [] and NULLs, configuration is not "observed"
@@ -155,9 +155,9 @@ def test_d_head_double_exception_provenance(isolate_provider_db, monkeypatch):
         def get_provenance(self, exit_code=0):
             from schemas.provenance import AgentProvenanceRecord
             from datetime import datetime
-            return AgentProvenanceRecord(agent="HEAD", provider="openai", model="m", executable="codex", invocation_command="codex",
+            return AgentProvenanceRecord(agent="ARCHITECT", provider="openai", model="m", executable="codex", invocation_command="codex",
                                          version="unknown", exit_code=exit_code, timestamp=datetime.utcnow().isoformat())
-    monkeypatch.setattr(Orchestrator, "_init_head", lambda self, p=None: PreExec())
+    monkeypatch.setattr(Orchestrator, "_init_architect", lambda self, p=None: PreExec())
     handle_chat_message("again")
     rec2 = cm.get_provenance(GLOBAL_SESSION_ID)[-1]
     assert rec2["exit_code"] is None and rec2["duration_sec"] is None and rec2["version"] is None
@@ -169,23 +169,23 @@ def test_d_head_double_exception_provenance(isolate_provider_db, monkeypatch):
 def test_e_explicit_empty_observed_fields_preserved(isolate_provider_db):
     StateMachine(); cm = ChatManager()
     cm.create_session(GLOBAL_SESSION_ID, "", "OPENAI")
-    cm.add_provenance(GLOBAL_SESSION_ID, {"agent": "HEAD", "provider": "openai", "observed_fields": [], "declared_fields": []})
+    cm.add_provenance(GLOBAL_SESSION_ID, {"agent": "ARCHITECT", "provider": "openai", "observed_fields": [], "declared_fields": []})
     rec = cm.get_provenance(GLOBAL_SESSION_ID)[-1]
     assert json.loads(rec["observed_fields"]) == [] and json.loads(rec["declared_fields"]) == []
-    cm.add_provenance(GLOBAL_SESSION_ID, {"agent": "HEAD", "provider": "openai"})           # None -> defaults
+    cm.add_provenance(GLOBAL_SESSION_ID, {"agent": "ARCHITECT", "provider": "openai"})           # None -> defaults
     rec2 = cm.get_provenance(GLOBAL_SESSION_ID)[-1]
     assert "exit_code" in json.loads(rec2["observed_fields"])
 
     class Rec:
         def model_dump(self):
-            return {"agent": "HEAD", "provider": "openai", "observed_fields": [], "executable": "x", "version": "v"}
+            return {"agent": "ARCHITECT", "provider": "openai", "observed_fields": [], "executable": "x", "version": "v"}
 
     class H:
         provider = "openai"
         last_execution_info = {"exit_code": 0, "execution_duration_sec": 1.0}
         def get_provenance(self, exit_code=0):
             return Rec()
-    out = dashboard_server._head_provenance_record(H())
+    out = dashboard_server._architect_provenance_record(H())
     assert out["observed_fields"] == []                                                # not replaced by defaults
 
 

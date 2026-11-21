@@ -13,18 +13,18 @@ from dashboard_server import render_html, parse_approval_reason, _record_human_r
 from core.safety import SafetyPolicy
 from core.state_machine import State
 from schemas.order import OrderSchema
-from agents.antigravity_builder import AntigravityBuilder
+from agents.antigravity_maker import AntigravityMaker
 from tests.test_v0231_chat_stabilization import make_git_project
 from tests.test_v0238_dashboard_ux import env, server, _get_json, _post  # noqa: F401
-from tests.test_v0243_approval import approval_env, ApprovingOrch, BUILDER_CALLS, _mock_orch, _wait_done  # noqa: F401
-from tests.test_v0244_human_actions import _run_to_post_build_halt, _dep_builder
+from tests.test_v0243_approval import approval_env, ApprovingOrch, MAKER_CALLS, _mock_orch, _wait_done  # noqa: F401
+from tests.test_v0244_human_actions import _run_to_post_build_halt, _dep_maker
 
 
 def _entry_halt(server, proj, reason, allowed=("src/",)):
     order = OrderSchema(goal="g", allowed_paths=list(allowed), protected_paths=[".git/"])
     orch = _mock_orch()
     run_id = _record_human_required(orch, str(proj), "g", reason, order)
-    dashboard_server._new_orchestrator = lambda: ApprovingOrch(_dep_builder)
+    dashboard_server._new_orchestrator = lambda: ApprovingOrch(_dep_maker)
     return run_id, orch
 
 
@@ -34,10 +34,10 @@ def _assert_non_approvable(server, orch, run_id, code):
     assert _get_json(server, "/status")[1]["approval"]["required"] is False
     html = render_html()
     assert 'id="approve-btn" class="approve" style="display:none;"' in html
-    calls_before = len(BUILDER_CALLS)
+    calls_before = len(MAKER_CALLS)
     resp_code, j = _post(server, "/run/approve", {"run_id": run_id, "request_id": "x-" + code})
     assert resp_code == 400 and j["status"] == "not_applicable"
-    assert len(BUILDER_CALLS) == calls_before
+    assert len(MAKER_CALLS) == calls_before
     assert [a["action"] for a in orch.sm.get_audit_logs(run_id)].count("HUMAN_APPROVAL") == 0
     assert orch.sm.get_run(run_id)["current_state"] == "HUMAN_REQUIRED"
     assert all(p["run_id"] != run_id for p in dashboard_server.pending_actions())
@@ -79,7 +79,7 @@ def test_5_control_plane_in_order_scope_halts_at_entry(approval_env, server, pat
     with make_git_project() as proj:
         orch = _mock_orch()
         run_id = _record_human_required(orch, str(proj), "g", "APPROVAL_REQUIRED: " + "; ".join(reasons), order)
-        dashboard_server._new_orchestrator = lambda: ApprovingOrch(_dep_builder)
+        dashboard_server._new_orchestrator = lambda: ApprovingOrch(_dep_maker)
         _assert_non_approvable(server, orch, run_id, "CONTROL_PLANE_IN_SCOPE")
 
 
@@ -88,7 +88,7 @@ def test_5b_git_in_order_scope_still_git_internals():
     assert any(r.startswith("GIT_INTERNALS_IN_SCOPE") for r in reasons)
 
 
-# ------------------------------------------------------------------ 6-8: builder modifies control plane -> detected post-build, non-approvable
+# ------------------------------------------------------------------ 6-8: maker modifies control plane -> detected post-build, non-approvable
 
 @pytest.mark.parametrize("rel,content", [
     (".agents/hooks.json", '{"hooks": {}}'),
@@ -97,8 +97,8 @@ def test_5b_git_in_order_scope_still_git_internals():
     (".agents/permission_guard.py", "print('allow')\n"),
 ])
 def test_6_8_control_plane_change_detected_post_build(approval_env, server, monkeypatch, rel, content):
-    def cp_builder(b, o, w):
-        BUILDER_CALLS.append(w)
+    def cp_maker(b, o, w):
+        MAKER_CALLS.append(w)
         p = Path(w) / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding="utf-8")
         (Path(w) / "src" / "n.py").write_text("z=1\n", encoding="utf-8")
         return ["src/n.py", rel]
@@ -106,7 +106,7 @@ def test_6_8_control_plane_change_detected_post_build(approval_env, server, monk
         order = OrderSchema(goal="g", allowed_paths=["src/", "requirements.txt"], protected_paths=[".git/"])
         orch = _mock_orch()
         run_id = _record_human_required(orch, str(proj), "g", "APPROVAL_REQUIRED: SENSITIVE_FILE_IN_SCOPE (requirements.txt)", order)
-        dashboard_server._new_orchestrator = lambda: ApprovingOrch(cp_builder)
+        dashboard_server._new_orchestrator = lambda: ApprovingOrch(cp_maker)
         assert _post(server, "/run/approve", {"run_id": run_id, "request_id": "cp-" + rel})[1]["status"] == "accepted"
         assert _wait_done(orch, run_id) == "HUMAN_REQUIRED"
         last = orch.sm.get_transitions(run_id)[-1]["details"]
@@ -117,7 +117,7 @@ def test_6_8_control_plane_change_detected_post_build(approval_env, server, monk
         # a waiver can never cover it
         remaining, waived = SafetyPolicy.apply_waivers([f"Control plane modified: {rel}"], [{"gate": "DEPENDENCY_CONFIGURATION_MODIFIED", "file": rel}])
         assert waived == [] and remaining
-        assert len(BUILDER_CALLS) == 1
+        assert len(MAKER_CALLS) == 1
 
 
 def test_6b_scope_guard_direct_control_plane_and_runtime_artifacts(tmp_path):
@@ -141,23 +141,23 @@ def test_9_pre_write_and_hook_deny_control_plane(tmp_path):
     ok, why = SafetyPolicy.check_pre_tool_file_write("src/ok.py", str(wt), order.allowed_paths, order.protected_paths)
     assert ok, why
     # settings and hook are generated from the same constant
-    b = AntigravityBuilder(executable="python")
+    b = AntigravityMaker(executable="python")
     scoped = b._setup_scoped_permissions(wt, order)
     for pat in SafetyPolicy.CONTROL_PLANE_PATTERNS:
         target = pat.replace("/**", "").replace("/*", "")
         assert f"write_file({target})" in scoped["deny_writes"]
-    src = Path("agents/antigravity_builder.py").read_text(encoding="utf-8")
+    src = Path("agents/antigravity_maker.py").read_text(encoding="utf-8")
     assert "SafetyPolicy.CONTROL_PLANE_PATTERNS" in src and "control_dirs" in src and "Director control-plane path is never writable" in src
     for pat in SafetyPolicy.CONTROL_PLANE_PATTERNS:
         target = pat.replace("/**", "").replace("/*", "")
-        assert f"write_file({target})" in AntigravityBuilder.SAFE_DEFAULT_SETTINGS["permissions"]["deny"]
+        assert f"write_file({target})" in AntigravityMaker.SAFE_DEFAULT_SETTINGS["permissions"]["deny"]
     assert SafetyPolicy.is_control_plane_path(".git/x") and SafetyPolicy.is_control_plane_path("GEMINI.md") and not SafetyPolicy.is_control_plane_path("docs/GEMINI.md")
 
 
 def test_9b_generated_hook_denies_control_plane(tmp_path):
     """Runs the actual generated permission-guard hook script against control-plane targets."""
     wt = tmp_path / "wt"; (wt / "src").mkdir(parents=True)
-    b = AntigravityBuilder(executable="python")
+    b = AntigravityMaker(executable="python")
     order = OrderSchema(goal="g", allowed_paths=["src/"])
     b._setup_scoped_permissions(wt, order)
     guard = wt / ".agents" / "permission_guard.py"
@@ -178,7 +178,7 @@ def test_10_12_requirements_two_stage_still_works_and_waiver_narrow(approval_env
         run_id, orch, state = _run_to_post_build_halt(server, proj)
         assert state == "HUMAN_REQUIRED" and orch.approval_state(run_id)["stage"] == "POST_BUILD"
         assert _post(server, "/run/approve", {"run_id": run_id, "request_id": "p2"})[1]["status"] == "accepted"
-        assert _wait_done(orch, run_id) == "PASS" and len(BUILDER_CALLS) == 1
+        assert _wait_done(orch, run_id) == "PASS" and len(MAKER_CALLS) == 1
         assert [json.loads(a["payload"])["approval_stage"] for a in orch.sm.get_audit_logs(run_id) if a["action"] == "HUMAN_APPROVAL"] == ["ENTRY", "POST_BUILD"]
     remaining, waived = SafetyPolicy.apply_waivers(
         ["Dependency configuration modified: requirements.txt", "Dependency configuration modified: pyproject.toml", "Control plane modified: .agents/hooks.json", "Protected path modified: .env"],
@@ -186,11 +186,11 @@ def test_10_12_requirements_two_stage_still_works_and_waiver_narrow(approval_env
     assert waived == ["Dependency configuration modified: requirements.txt"] and len(remaining) == 3
 
 
-# ------------------------------------------------------------------ builder-side snapshot (real CLI path, before cleanup)
+# ------------------------------------------------------------------ maker-side snapshot (real CLI path, before cleanup)
 
-def test_9c_builder_snapshot_detects_control_plane_edit(tmp_path):
+def test_9c_maker_snapshot_detects_control_plane_edit(tmp_path):
     wt = tmp_path / "wt"; (wt / "src").mkdir(parents=True)
-    b = AntigravityBuilder(executable="python")
+    b = AntigravityMaker(executable="python")
     order = OrderSchema(goal="g", allowed_paths=["src/"])
     b._setup_scoped_permissions(wt, order)
     before = b._control_plane_snapshot(wt)
@@ -201,5 +201,5 @@ def test_9c_builder_snapshot_detects_control_plane_edit(tmp_path):
     after = b._control_plane_snapshot(wt)
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     assert changed == [".agents/hooks.json", ".director_worktrees/x"]
-    src = Path("agents/antigravity_builder.py").read_text(encoding="utf-8")
+    src = Path("agents/antigravity_maker.py").read_text(encoding="utf-8")
     assert "CONTROL_PLANE_MODIFIED" in src and src.index("cp_after = self._control_plane_snapshot(wt)") < src.index("# Clean up temporary scoped permission rules")

@@ -56,7 +56,7 @@ def test_state_machine_fail_and_human_required():
         sm.transition_to(run_fail, State.PLANNING)
         sm.transition_to(run_fail, State.ORDER_READY)
         sm.transition_to(run_fail, State.BUILDING)
-        sm.transition_to(run_fail, State.FAIL, details="Builder error")
+        sm.transition_to(run_fail, State.FAIL, details="Maker error")
         assert sm.get_run(run_fail)["current_state"] == State.FAIL
 
         # Cannot transition once terminal

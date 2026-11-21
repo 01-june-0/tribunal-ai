@@ -12,15 +12,15 @@ from core.safety import SafetyPolicy, ScopeViolationError
 from core.verifier import Verifier
 from core.provider_manager import ProviderManager, ProviderStatus, FailoverMode, ErrorCategory
 from core import autopilot
-from agents.head import BaseHead
-from agents.claude_head import ClaudeHead
-from agents.codex_head import CodexHead
-from agents.mock_head import MockHead
-from agents.antigravity_builder import AntigravityBuilder
-from agents.codex_reviewer import CodexReviewer
-from agents.claude_reviewer import ClaudeReviewer
+from agents.architect import BaseArchitect
+from agents.claude_architect import ClaudeArchitect
+from agents.codex_architect import CodexArchitect
+from agents.mock_architect import MockArchitect
+from agents.antigravity_maker import AntigravityMaker
+from agents.codex_inspector import CodexInspector
+from agents.claude_inspector import ClaudeInspector
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 
@@ -44,73 +44,73 @@ class Orchestrator:
         self,
         config: Dict[str, Any],
         state_machine: Optional[StateMachine] = None,
-        head_agent: Optional[BaseHead] = None,
-        builder_agent: Optional[AntigravityBuilder] = None,
-        reviewer_agent: Optional[Any] = None
+        architect_agent: Optional[BaseArchitect] = None,
+        maker_agent: Optional[AntigravityMaker] = None,
+        inspector_agent: Optional[Any] = None
     ):
         self.config = config
         self.sm = state_machine or StateMachine()
-        self.timeouts = self.config.get("timeouts", {"head": 300, "builder": 600, "reviewer": 300})
+        self.timeouts = self.config.get("timeouts", {"architect": 300, "maker": 600, "inspector": 300})
         self.pm = ProviderManager(timeouts=self.timeouts)
         
         # User-supplied agents (e.g. for unit tests) or default initialization
-        self.head = head_agent or self._init_head()
-        self.builder = builder_agent or self._init_builder()
-        self.reviewer = reviewer_agent or self._init_reviewer()
+        self.architect = architect_agent or self._init_architect()
+        self.maker = maker_agent or self._init_maker()
+        self.inspector = inspector_agent or self._init_inspector()
 
-    def _init_head(self, provider_override: Optional[str] = None) -> BaseHead:
-        head_cfg = self.config.get("head", {})
-        provider = (provider_override or head_cfg.get("provider", "openai")).lower()
-        model = head_cfg.get("model", "cli-default")
-        executable = head_cfg.get("executable")
-        timeout = self.timeouts.get("head", 300)
+    def _init_architect(self, provider_override: Optional[str] = None) -> BaseArchitect:
+        architect_cfg = self.config.get("architect", {})
+        provider = (provider_override or architect_cfg.get("provider", "openai")).lower()
+        model = architect_cfg.get("model", "cli-default")
+        executable = architect_cfg.get("executable")
+        timeout = self.timeouts.get("architect", 300)
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
 
         if provider in ('google', 'antigravity'):
-            from agents.google_roles import GoogleHead
-            return GoogleHead(executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout)
+            from agents.google_roles import GoogleArchitect
+            return GoogleArchitect(executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout)
         if provider in ("claude", "anthropic"):
-            return ClaudeHead(executable=executable, model="claude-code-cli", timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
+            return ClaudeArchitect(executable=executable, model="claude-code-cli", timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
         elif provider in ("codex", "openai"):
-            return CodexHead(executable=executable, model=model, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
+            return CodexArchitect(executable=executable, model=model, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
         elif provider == "mock":
-            return MockHead(model=model)
+            return MockArchitect(model=model)
         else:
-            raise ValueError(f"Unknown head provider: {provider}")
+            raise ValueError(f"Unknown architect provider: {provider}")
 
-    def _init_builder(self, provider_override: Optional[str] = None) -> AntigravityBuilder:
-        b_cfg = self.config.get("builder", {})
+    def _init_maker(self, provider_override: Optional[str] = None) -> AntigravityMaker:
+        b_cfg = self.config.get("maker", {})
         model = b_cfg.get("model", "antigravity-cli")
         executable = b_cfg.get("executable")
         approved = self.config.get("safety", {}).get("approved_commands")
-        timeout = self.timeouts.get("builder", 600)
+        timeout = self.timeouts.get("maker", 600)
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
-        cls = AntigravityBuilder
+        cls = AntigravityMaker
         if b_cfg.get('mode') == 'proposal':
-            from agents.proposal_builder import ProposalBuilder
-            return ProposalBuilder(provider=provider_override or b_cfg.get('provider', 'google'), approved_commands=approved,
+            from agents.proposal_maker import ProposalMaker
+            return ProposalMaker(provider=provider_override or b_cfg.get('provider', 'google'), approved_commands=approved,
                 model=model, executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout,
                 heartbeat_interval=heartbeat_interval)
         return cls(approved_commands=approved, model=model, executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
 
-    def _init_reviewer(self, provider_override: Optional[str] = None) -> Any:
-        rev_cfg = self.config.get("reviewer", {})
+    def _init_inspector(self, provider_override: Optional[str] = None) -> Any:
+        rev_cfg = self.config.get("inspector", {})
         provider = (provider_override or rev_cfg.get("provider", "codex")).lower()
         model = rev_cfg.get("model", "codex-cli")
         executable = rev_cfg.get("executable")
-        timeout = self.timeouts.get("reviewer", 300)
+        timeout = self.timeouts.get("inspector", 300)
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
 
         if provider in ('google', 'antigravity'):
-            from agents.google_roles import GoogleReviewer
-            return GoogleReviewer(executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout)
+            from agents.google_roles import GoogleInspector
+            return GoogleInspector(executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout)
         if provider in ("claude", "anthropic"):
             c_model = "claude-code-cli" if model in ("codex-cli", "gpt-4o") else model
-            return ClaudeReviewer(provider="anthropic", model=c_model, executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
-        return CodexReviewer(provider="openai", model=model, executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
+            return ClaudeInspector(provider="anthropic", model=c_model, executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
+        return CodexInspector(provider="openai", model=model, executable=executable, timeout=timeout, no_progress_timeout=no_progress_timeout, heartbeat_interval=heartbeat_interval)
 
     def _get_run_dir(self, run_id: str) -> Path:
         base_dir = Path(__file__).resolve().parent.parent
@@ -130,11 +130,14 @@ class Orchestrator:
 
     def _load_json(self, run_id: str, filename: str) -> Optional[dict]:
         run_dir = self._get_run_dir(run_id)
+        from core.role_names import canon, old_file
         filepath = run_dir / filename
         if not filepath.exists():
-            return None
+            filepath = old_file(run_dir, filename)          # a run from before the role rename
+            if filepath is None:
+                return None
         with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return canon(json.load(f))
 
     def _read_project_context(self, project_path: str) -> Dict[str, Any]:
         proj = Path(project_path).resolve()
@@ -268,7 +271,7 @@ class Orchestrator:
         return self._build_run_summary(run_id, scope_violations=[stop_msg])
 
     # ==================================================================
-    # HEAD proxy autonomy (autonomy.head_proxy): retry / replace / re-route instead of halting.
+    # ARCHITECT proxy autonomy (autonomy.architect_proxy): retry / replace / re-route instead of halting.
     # ==================================================================
     def _proxy(self) -> bool:
         return autopilot.enabled(self.config)
@@ -288,58 +291,58 @@ class Orchestrator:
     def _domain_of(self, alias: str) -> str:
         return ProviderManager.domain_for_provider(alias)
 
-    def _autonomous_role_assignment(self, req_head: str, req_builder: str, req_reviewer: str,
+    def _autonomous_role_assignment(self, req_architect: str, req_maker: str, req_inspector: str,
                                     run_id: str, logger: logging.Logger) -> Dict[str, Any]:
         """Keeps the requested roles where their CLI is usable; replaces an unusable one with another usable
         provider (preferring one not already holding a role). Never silent: every swap is audited."""
         usable = set(self.pm.usable_domains())
-        roles = {"head": req_head, "builder": req_builder, "reviewer": req_reviewer}
+        roles = {"architect": req_architect, "maker": req_maker, "inspector": req_inspector}
         notes = []
-        for role in ("head", "reviewer", "builder"):
+        for role in ("architect", "inspector", "maker"):
             dom = self._domain_of(roles[role])
             if dom in usable or dom in ("MOCK", "UNKNOWN"):
                 continue
-            if role == "builder" and self.config.get("builder", {}).get("mode") != "proposal":
+            if role == "maker" and self.config.get("maker", {}).get("mode") != "proposal":
                 alt = None
             else:
                 others = {self._domain_of(roles[r]) for r in roles if r != role}
                 alt = autopilot.pick_alternative(self.pm, exclude={dom}, avoid=others)
             if alt is None:
                 return {"mode": FailoverMode.STOP, "down_providers": sorted(set(autopilot.DOMAIN_PREFERENCE) - usable),
-                        "head_provider": req_head, "builder_provider": req_builder, "reviewer_provider": req_reviewer,
+                        "architect_provider": req_architect, "maker_provider": req_maker, "inspector_provider": req_inspector,
                         "can_proceed": False,
                         "reason": f"No usable provider for {role.upper()} ({dom} unavailable; usable: {sorted(usable)})"}
             notes.append(f"{role.upper()}: {dom} -> {self._domain_of(alt)}")
             roles[role] = alt
         if notes:
-            msg = "HEAD proxy role failover (visible, not silent): " + "; ".join(notes)
+            msg = "ARCHITECT proxy role failover (visible, not silent): " + "; ".join(notes)
             logger.warning(msg)
             self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER", msg)
         try:   # dashboard role bookkeeping only
-            self.pm.resolve_roles(roles["head"], roles["builder"], roles["reviewer"], strict=True)
+            self.pm.resolve_roles(roles["architect"], roles["maker"], roles["inspector"], strict=True)
         except Exception:
             pass
         return {"mode": FailoverMode.DEGRADED if notes else FailoverMode.NORMAL,
                 "down_providers": sorted(set(autopilot.DOMAIN_PREFERENCE) - usable),
-                "head_provider": roles["head"], "builder_provider": roles["builder"],
-                "reviewer_provider": roles["reviewer"], "can_proceed": True,
+                "architect_provider": roles["architect"], "maker_provider": roles["maker"],
+                "inspector_provider": roles["inspector"], "can_proceed": True,
                 "reason": "; ".join(notes) or "All selected providers usable."}
 
     def _swap_agent(self, role: str, run_id: str, logger: logging.Logger, tried: set, stage: str, why: str) -> bool:
-        """Replace HEAD/BUILDER/REVIEWER with another usable provider. Returns False when none is left."""
-        others = {self._get_agent_domain(a) for r, a in (("head", self.head), ("builder", self.builder),
-                                                           ("reviewer", self.reviewer)) if r != role}
-        if role == "builder" and self.config.get("builder", {}).get("mode") != "proposal":
+        """Replace ARCHITECT/MAKER/INSPECTOR with another usable provider. Returns False when none is left."""
+        others = {self._get_agent_domain(a) for r, a in (("architect", self.architect), ("maker", self.maker),
+                                                           ("inspector", self.inspector)) if r != role}
+        if role == "maker" and self.config.get("maker", {}).get("mode") != "proposal":
             return False
         alt = autopilot.pick_alternative(self.pm, exclude=set(tried), avoid=others)
         if alt is None:
             return False
         old = self._get_agent_domain(getattr(self, role))
-        setattr(self, role, {"head": self._init_head, "builder": self._init_builder, "reviewer": self._init_reviewer}[role](alt))
-        if role == "head":
-            self.current_head_name = self._domain_of(alt)
-        if role == "reviewer":
-            self.current_reviewer_name = self._domain_of(alt)
+        setattr(self, role, {"architect": self._init_architect, "maker": self._init_maker, "inspector": self._init_inspector}[role](alt))
+        if role == "architect":
+            self.current_architect_name = self._domain_of(alt)
+        if role == "inspector":
+            self.current_inspector_name = self._domain_of(alt)
         tried.add(self._domain_of(alt))
         msg = f"{stage}: {role.upper()} {old} -> {self._domain_of(alt)} ({why[:200]})"
         logger.warning(f"[FAILOVER] {msg}")
@@ -407,7 +410,7 @@ class Orchestrator:
                 for field in ("allowed_paths", "protected_paths", "allowed_deletions", "required_outputs",
                               "reference_paths", "acceptance_criteria"):
                     setattr(order, field, getattr(fixed, field))
-                logger.info("[HEAD proxy] ORDER auto-repair: " + "; ".join(notes))
+                logger.info("[ARCHITECT proxy] ORDER auto-repair: " + "; ".join(notes))
                 self.sm.log_audit(run_id, "ORCHESTRATOR", "ORDER_AUTOREPAIR", "; ".join(notes))
         cap_notes = self.apply_safety_caps(order)
         if cap_notes:
@@ -429,7 +432,7 @@ class Orchestrator:
         return data
 
     def _worktree_is_pristine(self, worktree_path: Optional[str]) -> bool:
-        """True only when the worktree exists and git reports no modifications (proof that the builder has not run)."""
+        """True only when the worktree exists and git reports no modifications (proof that the maker has not run)."""
         try:
             if not worktree_path or not Path(worktree_path).exists():
                 return False
@@ -439,10 +442,10 @@ class Orchestrator:
 
     def run_baseline_if_required(self, run_id: str, worktree_path: str, logger: logging.Logger,
                                  provenance_records: list, force: bool = False, allow_measure: bool = True):
-        """Baseline verification on the clean worktree BEFORE the builder. Reuses persisted evidence unless force.
+        """Baseline verification on the clean worktree BEFORE the maker. Reuses persisted evidence unless force.
         Measuring is only allowed while the worktree is provably untouched (allow_measure and git status clean);
-        a worktree the builder may already have modified is never turned into a baseline.
-        A failing or missing baseline never lets the builder run. Returns (baseline_pass_count, stop)."""
+        a worktree the maker may already have modified is never turned into a baseline.
+        A failing or missing baseline never lets the maker run. Returns (baseline_pass_count, stop)."""
         baseline = None if force else self.baseline_evidence(run_id)
         if baseline is None:
             if not allow_measure:
@@ -452,7 +455,7 @@ class Orchestrator:
                 msg = "BASELINE_MISSING: worktree is not provably untouched (git status not clean); refusing to measure a baseline on possibly modified files."
                 return None, self._stop(run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "BASELINE_MISSING")
             build_cmd, test_cmd, lint_cmd = self._verification_cmds()
-            logger.info("[Baseline Gate] Running tests on clean worktree before builder execution...")
+            logger.info("[Baseline Gate] Running tests on clean worktree before maker execution...")
             if self.config.get('bootstrap', {}).get('enabled') and (test_cmd == 'python -m pytest tests/' or isinstance(test_cmd, list) and test_cmd[1:] == ['-m', 'pytest', 'tests/']):
                 from core.bootstrap import bootstrap_tests
                 created = bootstrap_tests(worktree_path)
@@ -468,19 +471,19 @@ class Orchestrator:
                 # lose passing tests (validate_post_build / final_evidence enforce that against this baseline).
                 failing = sorted(autopilot.failing_tests(baseline))
                 msg = f"BASELINE_PREEXISTING_FAILURES: {baseline.get('summary')}; failing: {', '.join(failing[:20]) or 'unparsed'}"
-                logger.warning("[HEAD proxy] " + msg)
+                logger.warning("[ARCHITECT proxy] " + msg)
                 self.sm.log_audit(run_id, "ORCHESTRATOR", "BASELINE_PREEXISTING_FAILURES", msg)
                 return int((baseline.get("test_counts") or {}).get("passed", 0) or 0), None
-            msg = f"BASELINE_FAILED: baseline verification failed on the untouched worktree ({baseline.get('summary')}). Builder not executed."
+            msg = f"BASELINE_FAILED: baseline verification failed on the untouched worktree ({baseline.get('summary')}). Maker not executed."
             return None, self._stop(run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "BASELINE_FAILED")
         count = int((baseline.get("test_counts") or {}).get("passed", 0) or 0)
         logger.info(f"[Baseline Gate] Baseline tests passed: {count}")
         return count, None
 
-    def run_builder_stage(self, run_id: str, order: OrderSchema, worktree_path: str, builder_fn, logger: logging.Logger,
+    def run_maker_stage(self, run_id: str, order: OrderSchema, worktree_path: str, maker_fn, logger: logging.Logger,
                           provenance_records: list):
-        """Trial claim (real builder only), builder execution, provenance, BUSY/PERMISSION/provider failure handling.
-        Returns (builder_result, stop)."""
+        """Trial claim (real maker only), maker execution, provenance, BUSY/PERMISSION/provider failure handling.
+        Returns (maker_result, stop)."""
         bootstrap = self._load_json(run_id, 'bootstrap.json') or {}
         if bootstrap.get('test_path'):
             if bootstrap['test_path'] not in order.protected_paths:
@@ -497,121 +500,121 @@ class Orchestrator:
             if note not in order.acceptance_criteria:
                 order.acceptance_criteria.append(note)
                 self._save_json(run_id, 'order.json', order)
-        if builder_fn is None and self._proxy():
-            return self._run_builder_autonomous(run_id, order, worktree_path, logger, provenance_records)
-        if builder_fn is None:
-            stop_trial = self._claim_trial_for(self.builder, run_id, "BUILDING", logger)
+        if maker_fn is None and self._proxy():
+            return self._run_maker_autonomous(run_id, order, worktree_path, logger, provenance_records)
+        if maker_fn is None:
+            stop_trial = self._claim_trial_for(self.maker, run_id, "BUILDING", logger)
             if stop_trial:
                 return None, stop_trial
         try:
-            builder_result = self.builder.run(order, worktree_path, builder_fn=builder_fn)
+            maker_result = self.maker.run(order, worktree_path, maker_fn=maker_fn)
         except Exception as e:
-            builder_result = BuilderResultSchema(status="FAILED", files_modified=[], commands_run=[],
-                                                 summary="Builder raised an exception", error=f"BUILDER_EXCEPTION: {str(e)[:300]}")
-        self._save_json(run_id, "builder.json", builder_result)
-        cli_evidence = getattr(self.builder, 'last_execution_info', None)
-        if cli_evidence and builder_fn is None:
-            self._save_json(run_id, 'builder_cli.json', cli_evidence)
-        self.sm.log_audit(run_id, getattr(self.builder, 'provider', 'google').upper(), "BUILDER_EXECUTION", json.dumps(builder_result.model_dump()))
+            maker_result = MakerResultSchema(status="FAILED", files_modified=[], commands_run=[],
+                                                 summary="Maker raised an exception", error=f"MAKER_EXCEPTION: {str(e)[:300]}")
+        self._save_json(run_id, "maker.json", maker_result)
+        cli_evidence = getattr(self.maker, 'last_execution_info', None)
+        if cli_evidence and maker_fn is None:
+            self._save_json(run_id, 'maker_cli.json', cli_evidence)
+        self.sm.log_audit(run_id, getattr(self.maker, 'provider', 'google').upper(), "MAKER_EXECUTION", json.dumps(maker_result.model_dump()))
 
-        if builder_fn is not None:
+        if maker_fn is not None:
             provenance_records.append({
-                "agent": "BUILDER", "provider": "custom", "runtime": "builder_fn", "model": "builder_fn",
-                "executable": "none", "invocation_command": "builder_fn", "version": "n/a",
-                "exit_code": 0 if builder_result.status == "COMPLETED" else 1, "duration_sec": 0.0,
+                "agent": "MAKER", "provider": "custom", "runtime": "maker_fn", "model": "maker_fn",
+                "executable": "none", "invocation_command": "maker_fn", "version": "n/a",
+                "exit_code": 0 if maker_result.status == "COMPLETED" else 1, "duration_sec": 0.0,
                 "authentication_mode": "mock", "api_key_policy": "disabled", "api_key_used": False,
                 "observed_fields": [], "declared_fields": ["authentication_mode", "api_key_policy", "api_key_used"],
                 "timestamp": datetime.utcnow().isoformat()
             })
         else:
-            b_exit_code = 0 if builder_result.status == "COMPLETED" else 1
-            if hasattr(self.builder, "get_provenance"):
-                prov = self.builder.get_provenance(exit_code=b_exit_code)
+            b_exit_code = 0 if maker_result.status == "COMPLETED" else 1
+            if hasattr(self.maker, "get_provenance"):
+                prov = self.maker.get_provenance(exit_code=b_exit_code)
                 provenance_records.append(prov.model_dump())
                 if getattr(prov, "duration_sec", None) is not None:
-                    self.pm.update_latency(getattr(self.builder, "provider", "GOOGLE"), prov.duration_sec)
-            if builder_result.status == "COMPLETED":
-                self._record_provider_success(self.builder)
+                    self.pm.update_latency(getattr(self.maker, "provider", "GOOGLE"), prov.duration_sec)
+            if maker_result.status == "COMPLETED":
+                self._record_provider_success(self.maker)
 
-        err = str(builder_result.error or "")
-        if builder_result.status != "COMPLETED":
+        err = str(maker_result.error or "")
+        if maker_result.status != "COMPLETED":
             if err.startswith("PERMISSION_"):
                 action = "PERMISSION_RESTORE_FAILED" if err.startswith("PERMISSION_RESTORE_FAILED") else "PERMISSION_SETUP_FAILED"
-                return builder_result, self._stop(run_id, State.HUMAN_REQUIRED, err, logger, provenance_records, action)
-            if err.startswith("BUILDER_BUSY"):
-                return builder_result, self._stop(run_id, State.HUMAN_REQUIRED, f"BUILDER_BUSY: {err}", logger, provenance_records, "BUILDER_BUSY")
-            logger.warning(f"Builder failed: {err}")
-            stop_summary = self._handle_provider_failure(getattr(self.builder, 'provider', 'google').upper(), err or "Builder failed", run_id, "BUILDING", logger, provenance_records)
+                return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, err, logger, provenance_records, action)
+            if err.startswith("MAKER_BUSY"):
+                return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, f"MAKER_BUSY: {err}", logger, provenance_records, "MAKER_BUSY")
+            logger.warning(f"Maker failed: {err}")
+            stop_summary = self._handle_provider_failure(getattr(self.maker, 'provider', 'google').upper(), err or "Maker failed", run_id, "BUILDING", logger, provenance_records)
             if stop_summary:
-                return builder_result, stop_summary
+                return maker_result, stop_summary
             state = State.TIMEOUT if "TIMEOUT" in err else State.FAIL
-            return builder_result, self._stop(run_id, state, f"Builder {'timeout' if state == State.TIMEOUT else 'failed'}: {err}", logger, provenance_records)
-        return builder_result, None
+            return maker_result, self._stop(run_id, state, f"Maker {'timeout' if state == State.TIMEOUT else 'failed'}: {err}", logger, provenance_records)
+        return maker_result, None
 
     PROVIDER_DOWN = (ErrorCategory.QUOTA, ErrorCategory.AUTH, ErrorCategory.PROVIDER_UNAVAILABLE, ErrorCategory.CONFIG_ERROR)
 
-    def _run_builder_autonomous(self, run_id: str, order: OrderSchema, worktree_path: str, logger: logging.Logger,
+    def _run_maker_autonomous(self, run_id: str, order: OrderSchema, worktree_path: str, logger: logging.Logger,
                                 provenance_records: list):
-        """HEAD proxy Builder stage: a malformed/empty/truncated proposal or a timeout is retried with concrete
-        feedback; an unavailable provider (or the final attempt) moves the Builder to another provider.
+        """ARCHITECT proxy Maker stage: a malformed/empty/truncated proposal or a timeout is retried with concrete
+        feedback; an unavailable provider (or the final attempt) moves the Maker to another provider.
         The proposal is still validated as one batch before any write, so a failed attempt leaves no files."""
-        attempts = max(1, int(autopilot.setting(self.config, "builder_attempts", 3)))
+        attempts = max(1, int(autopilot.setting(self.config, "maker_attempts", 3)))
         # Attempt history is cumulative over the run's correction rounds, so a provider that already failed twice in
         # this run is not rotated back in while another provider is still untried.
-        history = list(self._load_json(run_id, "builder_attempts.json") or [])
+        history = list(self._load_json(run_id, "maker_attempts.json") or [])
         failures = {}
         for h in history:
             if h.get("category") != "ORDER_INPUT":
                 failures[h.get("provider")] = failures.get(h.get("provider"), 0) + 1
-        tried = {self._get_agent_domain(self.builder)} | {d for d, n in failures.items() if n >= 2}
-        if failures.get(self._get_agent_domain(self.builder), 0) >= 2:
-            self._swap_agent("builder", run_id, logger, tried, "BUILDING", "failed repeatedly earlier in this run")
+        tried = {self._get_agent_domain(self.maker)} | {d for d, n in failures.items() if n >= 2}
+        if failures.get(self._get_agent_domain(self.maker), 0) >= 2:
+            self._swap_agent("maker", run_id, logger, tried, "BUILDING", "failed repeatedly earlier in this run")
         round_start = len(history)
-        builder_result = None
+        maker_result = None
         for attempt in range(1, attempts + 1):
             attempt_order = order
             if len(history) > round_start:
                 attempt_order = order.model_copy(deep=True)
-                attempt_order.context = (order.context or "") + "\n" + autopilot.builder_retry_feedback(history[-1]["error"], order)
-            domain = self._get_agent_domain(self.builder)
-            if not self._provider_ready(self.builder, run_id, "BUILDING", logger):
-                builder_result = BuilderResultSchema(status="FAILED", files_modified=[], commands_run=[],
+                attempt_order.context = (order.context or "") + "\n" + autopilot.maker_retry_feedback(history[-1]["error"], order)
+            domain = self._get_agent_domain(self.maker)
+            if not self._provider_ready(self.maker, run_id, "BUILDING", logger):
+                maker_result = MakerResultSchema(status="FAILED", files_modified=[], commands_run=[],
                                                      summary="Provider not ready", error=f"PROVIDER_UNAVAILABLE: {domain} recovering, no trial")
             else:
                 try:
-                    builder_result = self.builder.run(attempt_order, worktree_path, builder_fn=None)
+                    maker_result = self.maker.run(attempt_order, worktree_path, maker_fn=None)
                 except Exception as e:
-                    builder_result = BuilderResultSchema(status="FAILED", files_modified=[], commands_run=[],
-                                                         summary="Builder raised an exception", error=f"BUILDER_EXCEPTION: {str(e)[:300]}")
-                cli_evidence = getattr(self.builder, 'last_execution_info', None)
+                    maker_result = MakerResultSchema(status="FAILED", files_modified=[], commands_run=[],
+                                                         summary="Maker raised an exception", error=f"MAKER_EXCEPTION: {str(e)[:300]}")
+                cli_evidence = getattr(self.maker, 'last_execution_info', None)
                 if cli_evidence:
-                    self._save_json(run_id, 'builder_cli.json', cli_evidence)
-                    every = list(self._load_json(run_id, 'builder_cli_attempts.json') or [])
-                    every.append({"provider": domain, "status": builder_result.status, "error": builder_result.error,
+                    self._save_json(run_id, 'maker_cli.json', cli_evidence)
+                    every = list(self._load_json(run_id, 'maker_cli_attempts.json') or [])
+                    every.append({"provider": domain, "status": maker_result.status, "error": maker_result.error,
                                   **{k: v for k, v in cli_evidence.items() if k != "attempts"},
                                   "output": str(cli_evidence.get("output") or "")[:4000]})
-                    self._save_json(run_id, 'builder_cli_attempts.json', every)
-                if hasattr(self.builder, "get_provenance"):
-                    prov = self.builder.get_provenance(exit_code=0 if builder_result.status == "COMPLETED" else 1)
+                    self._save_json(run_id, 'maker_cli_attempts.json', every)
+                if hasattr(self.maker, "get_provenance"):
+                    prov = self.maker.get_provenance(exit_code=0 if maker_result.status == "COMPLETED" else 1)
                     provenance_records.append(prov.model_dump())
                     if getattr(prov, "duration_sec", None) is not None:
-                        self.pm.update_latency(getattr(self.builder, "provider", "GOOGLE"), prov.duration_sec)
-            if builder_result.status == "COMPLETED":
-                self._record_provider_success(self.builder)
+                        self.pm.update_latency(getattr(self.maker, "provider", "GOOGLE"), prov.duration_sec)
+            if maker_result.status == "COMPLETED":
+                self._record_provider_success(self.maker)
                 break
-            err = str(builder_result.error or "")
-            if err.startswith("PERMISSION_") or err.startswith("BUILDER_BUSY"):
+            err = str(maker_result.error or "")
+            if err.startswith("PERMISSION_") or err.startswith("MAKER_BUSY"):
                 break
             if "REFERENCE_INPUT_UNAVAILABLE" in err:
-                # a defect of the ORDER itself: no retry or provider can fix it; fail fast so HEAD re-plans
+                # a defect of the ORDER itself: no retry or provider can fix it; fail fast so ARCHITECT re-plans
                 history.append({"attempt": attempt, "provider": domain, "category": "ORDER_INPUT", "error": err[:800]})
-                self._save_json(run_id, "builder_attempts.json", history)
+                self._save_json(run_id, "maker_attempts.json", history)
                 break
             cat = self.pm.classify_error(err)
             history.append({"attempt": attempt, "provider": domain, "category": cat.value, "error": err[:800]})
-            self._save_json(run_id, "builder_attempts.json", history)
-            self.sm.log_audit(run_id, "ORCHESTRATOR", "BUILDER_RETRY", json.dumps(history[-1], ensure_ascii=False))
-            logger.warning(f"[HEAD proxy] Builder attempt {attempt}/{attempts} on {domain} failed ({cat.value}): {err[:200]}")
+            self._save_json(run_id, "maker_attempts.json", history)
+            self.sm.log_audit(run_id, "ORCHESTRATOR", "MAKER_RETRY", json.dumps(history[-1], ensure_ascii=False))
+            logger.warning(f"[ARCHITECT proxy] Maker attempt {attempt}/{attempts} on {domain} failed ({cat.value}): {err[:200]}")
             if attempt == attempts:
                 break
             if cat in self.PROVIDER_DOWN:
@@ -620,21 +623,21 @@ class Orchestrator:
                 except Exception:
                     pass
             if cat in self.PROVIDER_DOWN or attempt == attempts - 1 or "PROVIDER_UNAVAILABLE" in err:
-                if not self._swap_agent("builder", run_id, logger, tried, "BUILDING", err) and cat in self.PROVIDER_DOWN:
+                if not self._swap_agent("maker", run_id, logger, tried, "BUILDING", err) and cat in self.PROVIDER_DOWN:
                     break
 
-        self._save_json(run_id, "builder.json", builder_result)
-        self.sm.log_audit(run_id, getattr(self.builder, 'provider', 'google').upper(), "BUILDER_EXECUTION", json.dumps(builder_result.model_dump()))
-        if builder_result.status == "COMPLETED":
-            return builder_result, None
-        err = str(builder_result.error or "")
+        self._save_json(run_id, "maker.json", maker_result)
+        self.sm.log_audit(run_id, getattr(self.maker, 'provider', 'google').upper(), "MAKER_EXECUTION", json.dumps(maker_result.model_dump()))
+        if maker_result.status == "COMPLETED":
+            return maker_result, None
+        err = str(maker_result.error or "")
         if err.startswith("PERMISSION_"):
             action = "PERMISSION_RESTORE_FAILED" if err.startswith("PERMISSION_RESTORE_FAILED") else "PERMISSION_SETUP_FAILED"
-            return builder_result, self._stop(run_id, State.HUMAN_REQUIRED, err, logger, provenance_records, action)
-        if err.startswith("BUILDER_BUSY"):
-            return builder_result, self._stop(run_id, State.HUMAN_REQUIRED, f"BUILDER_BUSY: {err}", logger, provenance_records, "BUILDER_BUSY")
+            return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, err, logger, provenance_records, action)
+        if err.startswith("MAKER_BUSY"):
+            return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, f"MAKER_BUSY: {err}", logger, provenance_records, "MAKER_BUSY")
         state = State.TIMEOUT if "TIMEOUT" in err else State.FAIL
-        return builder_result, self._stop(run_id, state, f"Builder failed after {len(history) - round_start} attempt(s) across "
+        return maker_result, self._stop(run_id, state, f"Maker failed after {len(history) - round_start} attempt(s) across "
                                           f"{', '.join(sorted(tried))}: {err}", logger, provenance_records)
 
     @staticmethod
@@ -659,9 +662,9 @@ class Orchestrator:
         return state
 
     def _verify(self, run_id: str, worktree_path: str) -> Dict[str, Any]:
-        """Director verification. In HEAD proxy mode, files the verification run itself created or changed (a CLI
+        """Director verification. In ARCHITECT proxy mode, files the verification run itself created or changed (a CLI
         under test writing its data file, report output, ...) are recorded as verification artifacts: they are the
-        product's runtime output, not Builder changes, and must not later read as out-of-scope Builder edits."""
+        product's runtime output, not Maker changes, and must not later read as out-of-scope Maker edits."""
         build_cmd, test_cmd, lint_cmd = self._verification_cmds()
         before = self._dirty_state(worktree_path) if self._proxy() else None
         result = Verifier.verify(worktree_path=worktree_path, build_cmd=build_cmd, test_cmd=test_cmd, lint_cmd=lint_cmd)
@@ -669,7 +672,7 @@ class Orchestrator:
             after = self._dirty_state(worktree_path)
             changed = {p for p, sig in after.items() if before.get(p, "absent") != sig and not SafetyPolicy.is_runtime_artifact(p)}
             # Files the test run CREATED are moved out of the worktree into the run record: otherwise the next
-            # review/diff/snapshot presents them as the Builder's deliverable (a Builder cannot remove them, so the
+            # review/diff/snapshot presents them as the Maker's deliverable (a Maker cannot remove them, so the
             # review never converges). Files that already existed and were only modified stay, recorded as artifacts.
             created = sorted(p for p in changed if p not in before and after.get(p) is not None
                              and not SafetyPolicy.is_control_plane_path(p))
@@ -723,13 +726,13 @@ class Orchestrator:
         deleted_files = GitManager.get_deleted_files(worktree_path)
         artifacts = set(self._load_json(run_id, "verification_artifacts.json") or []) if self._proxy() else set()
         if artifacts:
-            def builder_change(p):
+            def maker_change(p):
                 p = str(p).replace("\\", "/")
                 return (p not in artifacts or SafetyPolicy.is_control_plane_path(p)
                         or SafetyPolicy.is_path_protected(p, order.protected_paths))
-            numstat = [n for n in numstat if builder_change(n[2])]
-            untracked = [u for u in untracked if builder_change(u)]
-            deleted_files = [d for d in (deleted_files or []) if builder_change(d)]
+            numstat = [n for n in numstat if maker_change(n[2])]
+            untracked = [u for u in untracked if maker_change(u)]
+            deleted_files = [d for d in (deleted_files or []) if maker_change(d)]
         approvals = self._load_json(run_id, "approvals.json") or {}
         waivers = list(approvals.get("post_build") or [])          # explicit human waivers: gate + file only
         fs_hits = self._control_plane_fs_hits(worktree_path)      # git-invisible control-plane files (info/exclude)
@@ -746,8 +749,8 @@ class Orchestrator:
             triage = autopilot.split_post_build(scope_violations)
             if not triage["serious"]:
                 if triage["waivable"]:
-                    self.sm.log_audit(run_id, "HEAD", "HEAD_PROXY_WAIVER", json.dumps(triage["waivable"], ensure_ascii=False))
-                    logger.info("[HEAD proxy] waived on the user's behalf: " + "; ".join(triage["waivable"]))
+                    self.sm.log_audit(run_id, "ARCHITECT", "ARCHITECT_PROXY_WAIVER", json.dumps(triage["waivable"], ensure_ascii=False))
+                    logger.info("[ARCHITECT proxy] waived on the user's behalf: " + "; ".join(triage["waivable"]))
                 repairable = triage["repairable"]
                 scope_ok = True
                 scope_violations = []
@@ -820,43 +823,43 @@ class Orchestrator:
             return verification, self._build_run_summary(run_id, verification=verification, scope_violations=[msg])
         return verification, None
 
-    def _reviewer_provenance(self, exit_code: int, provenance_records: list) -> None:
-        if hasattr(self.reviewer, "get_provenance"):
-            prov = self.reviewer.get_provenance(exit_code=exit_code)
+    def _inspector_provenance(self, exit_code: int, provenance_records: list) -> None:
+        if hasattr(self.inspector, "get_provenance"):
+            prov = self.inspector.get_provenance(exit_code=exit_code)
             provenance_records.append(prov.model_dump())
             if getattr(prov, "duration_sec", None) is not None:
-                self.pm.update_latency(getattr(self.reviewer, "provider", "ANTHROPIC"), prov.duration_sec)
+                self.pm.update_latency(getattr(self.inspector, "provider", "ANTHROPIC"), prov.duration_sec)
 
-    def run_reviewer_with_failover(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
+    def run_inspector_with_failover(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
                                    project_context: Dict[str, Any], worktree_path: str, logger: logging.Logger,
                                    provenance_records: list):
         """Trial claim -> review (exceptions recorded, never left uncaught) -> unparseable/CLI-failure handling ->
         provider failover -> provenance. Returns (review_result, stop)."""
         if self._proxy():
-            return self._run_reviewer_autonomous(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
+            return self._run_inspector_autonomous(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
         git_diff = verification.get("git_diff", "") if verification else ""
-        stop_trial = self._claim_trial_for(self.reviewer, run_id, "REVIEWING", logger)
+        stop_trial = self._claim_trial_for(self.inspector, run_id, "REVIEWING", logger)
         if stop_trial:
             return None, stop_trial
 
         rev_exception = None
         try:
-            review_result = self.reviewer.review(order, git_diff, verification, project_context, worktree_path=worktree_path)
+            review_result = self.inspector.review(order, git_diff, verification, project_context, worktree_path=worktree_path)
         except Exception as e:
             rev_exception = str(e)
-            logger.error(f"Reviewer raised an exception: {rev_exception}")
-            self.sm.log_audit(run_id, getattr(self, "current_reviewer_name", "CODEX"), "REVIEWER_EXCEPTION", rev_exception[:500])
-            review_result = ReviewResultSchema(verdict="changes_required", p0=[f"REVIEWER_EXCEPTION: {rev_exception[:300]}"], p1=[], p2=[],
-                                               summary=f"REVIEWER_EXCEPTION: {rev_exception[:300]}")
-            self._reviewer_provenance(1, provenance_records)
+            logger.error(f"Inspector raised an exception: {rev_exception}")
+            self.sm.log_audit(run_id, getattr(self, "current_inspector_name", "CODEX"), "INSPECTOR_EXCEPTION", rev_exception[:500])
+            review_result = ReviewResultSchema(verdict="changes_required", p0=[f"INSPECTOR_EXCEPTION: {rev_exception[:300]}"], p1=[], p2=[],
+                                               summary=f"INSPECTOR_EXCEPTION: {rev_exception[:300]}")
+            self._inspector_provenance(1, provenance_records)
 
-        rev_domain = self._get_agent_domain(self.reviewer)
-        rev_info = getattr(self.reviewer, "last_execution_info", {}) or {}
+        rev_domain = self._get_agent_domain(self.inspector)
+        rev_info = getattr(self.inspector, "last_execution_info", {}) or {}
         rev_exit = rev_info.get("exit_code", 0)
         if rev_exception is not None:
             rev_exit = rev_info.get("exit_code") if rev_info.get("exit_code") not in (None, 0) else 1
         if rev_exception is None and rev_info.get("exit_code") == 0:
-            self._record_provider_success(self.reviewer)
+            self._record_provider_success(self.inspector)
         rev_stderr = rev_info.get("stderr", "") or ""
         if rev_exception is not None and not rev_stderr:
             rev_stderr = rev_exception
@@ -864,10 +867,10 @@ class Orchestrator:
 
         is_unparseable = any("unparseable_review" in s.lower() for s in (review_result.p0 + [review_result.summary]))
         if is_unparseable:
-            fail_msg = f"REVIEWER_EXECUTION_FAILURE: Unparseable review output ({review_result.summary})"
-            self.sm.log_audit(run_id, getattr(self, "current_reviewer_name", "CODEX"), "REVIEW_PARSE_FAILED", fail_msg)
+            fail_msg = f"INSPECTOR_EXECUTION_FAILURE: Unparseable review output ({review_result.summary})"
+            self.sm.log_audit(run_id, getattr(self, "current_inspector_name", "CODEX"), "REVIEW_PARSE_FAILED", fail_msg)
             self._save_json(run_id, "review.json", review_result)
-            self._reviewer_provenance(1, provenance_records)
+            self._inspector_provenance(1, provenance_records)
             return review_result, self._stop(run_id, State.FAIL, fail_msg, logger, provenance_records)
 
         if rev_exit != 0 or rev_timed_out:
@@ -882,73 +885,73 @@ class Orchestrator:
                 if stop_summary:
                     return review_result, stop_summary
                 if rev_domain == "OPENAI":
-                    logger.warning(f"[FAILOVER TRIGGERED] Primary Reviewer (Codex) failed ({cat.value}). Switching to backup Reviewer (Claude)...")
-                    assigned = self.pm.resolve_roles(requested_head=getattr(self.head, "provider", "openai"), requested_builder="antigravity", requested_reviewer="claude")
+                    logger.warning(f"[FAILOVER TRIGGERED] Primary Inspector (Codex) failed ({cat.value}). Switching to backup Inspector (Claude)...")
+                    assigned = self.pm.resolve_roles(requested_architect=getattr(self.architect, "provider", "openai"), requested_maker="antigravity", requested_inspector="claude")
                     if assigned["can_proceed"]:
                         self.current_failover_mode = assigned["mode"]
-                        self.current_reviewer_name = "CLAUDE"
-                        self.reviewer = self._init_reviewer("claude")
-                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_REVIEWER", f"Switched to Claude Reviewer due to {cli_err}")
-                        stop_trial = self._claim_trial_for(self.reviewer, run_id, "REVIEWING_BACKUP", logger)
+                        self.current_inspector_name = "CLAUDE"
+                        self.inspector = self._init_inspector("claude")
+                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_INSPECTOR", f"Switched to Claude Inspector due to {cli_err}")
+                        stop_trial = self._claim_trial_for(self.inspector, run_id, "REVIEWING_BACKUP", logger)
                         if stop_trial:
                             return review_result, stop_trial
                         try:
-                            review_result = self.reviewer.review(order, git_diff, verification, project_context, worktree_path=worktree_path)
-                            if (getattr(self.reviewer, "last_execution_info", {}) or {}).get("exit_code") == 0:
-                                self._record_provider_success(self.reviewer)
+                            review_result = self.inspector.review(order, git_diff, verification, project_context, worktree_path=worktree_path)
+                            if (getattr(self.inspector, "last_execution_info", {}) or {}).get("exit_code") == 0:
+                                self._record_provider_success(self.inspector)
                         except Exception as e2:
-                            fail_msg = f"REVIEWER_EXCEPTION (backup reviewer): {str(e2)[:300]}"
-                            self.sm.log_audit(run_id, "ORCHESTRATOR", "REVIEWER_EXCEPTION", fail_msg)
-                            self._reviewer_provenance(1, provenance_records)
+                            fail_msg = f"INSPECTOR_EXCEPTION (backup inspector): {str(e2)[:300]}"
+                            self.sm.log_audit(run_id, "ORCHESTRATOR", "INSPECTOR_EXCEPTION", fail_msg)
+                            self._inspector_provenance(1, provenance_records)
                             return review_result, self._stop(run_id, State.FAIL, fail_msg, logger, provenance_records)
                     else:
                         return review_result, self._stop(run_id, State.HUMAN_REQUIRED, f"PROVIDER_FAILURE: {assigned['reason']}", logger, provenance_records)
             elif rev_exception is not None:
-                # non-provider reviewer exception: fail closed, terminal state guaranteed
-                fail_msg = f"REVIEWER_EXCEPTION: {rev_exception[:300]}"
+                # non-provider inspector exception: fail closed, terminal state guaranteed
+                fail_msg = f"INSPECTOR_EXCEPTION: {rev_exception[:300]}"
                 self._save_json(run_id, "review.json", review_result)
                 return review_result, self._stop(run_id, State.FAIL, fail_msg, logger, provenance_records)
 
         self._save_json(run_id, "review.json", review_result)
-        self.sm.log_audit(run_id, getattr(self, "current_reviewer_name", "CODEX"), "CODE_REVIEW", json.dumps(review_result.model_dump()))
+        self.sm.log_audit(run_id, getattr(self, "current_inspector_name", "CODEX"), "CODE_REVIEW", json.dumps(review_result.model_dump()))
         if rev_exception is None:
-            self._reviewer_provenance(0 if review_result.verdict == "pass" else 1, provenance_records)
+            self._inspector_provenance(0 if review_result.verdict == "pass" else 1, provenance_records)
         return review_result, None
 
-    def run_decision_with_failover(self, run_id: str, order: OrderSchema, builder_result: BuilderResultSchema,
+    def run_decision_with_failover(self, run_id: str, order: OrderSchema, maker_result: MakerResultSchema,
                                    verification: Dict[str, Any], review_result: ReviewResultSchema, worktree_path: str,
                                    logger: logging.Logger, provenance_records: list):
-        """HEAD decision with provider failure handling / Claude failover. Returns (decision, stop)."""
+        """ARCHITECT decision with provider failure handling / Claude failover. Returns (decision, stop)."""
         if self._proxy():
-            return self._run_decision_autonomous(run_id, order, builder_result, verification, review_result,
+            return self._run_decision_autonomous(run_id, order, maker_result, verification, review_result,
                                                  worktree_path, logger, provenance_records)
-        stop_trial = self._claim_trial_for(self.head, run_id, "DECIDING", logger)
+        stop_trial = self._claim_trial_for(self.architect, run_id, "DECIDING", logger)
         if stop_trial:
             return None, stop_trial
-        head_domain = self._get_agent_domain(self.head)
+        architect_domain = self._get_agent_domain(self.architect)
         try:
-            decision = self.head.decide(order, builder_result, verification, review_result, cwd=worktree_path)
-            self._record_provider_success(self.head)
+            decision = self.architect.decide(order, maker_result, verification, review_result, cwd=worktree_path)
+            self._record_provider_success(self.architect)
             return decision, None
         except Exception as e:
             err_str = str(e)
-            logger.error(f"Decision failed with {head_domain}: {err_str}")
-            stop_summary = self._handle_provider_failure(head_domain, err_str, run_id, "DECIDING", logger, provenance_records)
+            logger.error(f"Decision failed with {architect_domain}: {err_str}")
+            stop_summary = self._handle_provider_failure(architect_domain, err_str, run_id, "DECIDING", logger, provenance_records)
             if stop_summary:
                 return None, stop_summary
-            head_prov = getattr(self.head, "provider", "openai").lower()
-            if head_prov in ("openai", "codex"):
-                logger.warning("[FAILOVER TRIGGERED] Primary HEAD decision failed. Switching to Claude HEAD...")
-                assigned = self.pm.resolve_roles(requested_head="claude", requested_builder="antigravity", requested_reviewer=getattr(self.reviewer, "provider", "claude"))
+            architect_prov = getattr(self.architect, "provider", "openai").lower()
+            if architect_prov in ("openai", "codex"):
+                logger.warning("[FAILOVER TRIGGERED] Primary ARCHITECT decision failed. Switching to Claude ARCHITECT...")
+                assigned = self.pm.resolve_roles(requested_architect="claude", requested_maker="antigravity", requested_inspector=getattr(self.inspector, "provider", "claude"))
                 if assigned["can_proceed"]:
-                    self.head = self._init_head("claude")
-                    self.current_head_name = "CLAUDE"
-                    stop_trial = self._claim_trial_for(self.head, run_id, "DECIDING_BACKUP", logger)
+                    self.architect = self._init_architect("claude")
+                    self.current_architect_name = "CLAUDE"
+                    stop_trial = self._claim_trial_for(self.architect, run_id, "DECIDING_BACKUP", logger)
                     if stop_trial:
                         return None, stop_trial
                     try:
-                        decision = self.head.decide(order, builder_result, verification, review_result, cwd=worktree_path)
-                        self._record_provider_success(self.head)
+                        decision = self.architect.decide(order, maker_result, verification, review_result, cwd=worktree_path)
+                        self._record_provider_success(self.architect)
                         return decision, None
                     except Exception as e2:
                         err_str2 = str(e2)
@@ -960,42 +963,42 @@ class Orchestrator:
             state = State.TIMEOUT if ("timeout" in err_str.lower() or isinstance(e, TimeoutError)) else State.FAIL
             return None, self._stop(run_id, state, f"Decision {'timeout' if state == State.TIMEOUT else 'error'}: {err_str}", logger, provenance_records)
 
-    def _run_reviewer_autonomous(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
+    def _run_inspector_autonomous(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
                                  project_context: Dict[str, Any], worktree_path: str, logger: logging.Logger,
                                  provenance_records: list):
-        """HEAD proxy review: a crashed/unparseable/timed-out review is retried once, then another provider reviews.
+        """ARCHITECT proxy review: a crashed/unparseable/timed-out review is retried once, then another provider reviews.
         A review is never fabricated: if nobody can review, the run FAILs (and the mission re-plans)."""
         git_diff = verification.get("git_diff", "") if verification else ""
         tried, last_err = set(), None
         for attempt in range(4):
-            domain = self._get_agent_domain(self.reviewer)
+            domain = self._get_agent_domain(self.inspector)
             tried.add(domain)
             err = None
-            if not self._provider_ready(self.reviewer, run_id, "REVIEWING", logger):
+            if not self._provider_ready(self.inspector, run_id, "REVIEWING", logger):
                 err = f"PROVIDER_UNAVAILABLE: {domain} recovering without an available trial"
             else:
                 try:
-                    review = self.reviewer.review(order, git_diff, verification, project_context, worktree_path=worktree_path)
-                    info = getattr(self.reviewer, "last_execution_info", {}) or {}
+                    review = self.inspector.review(order, git_diff, verification, project_context, worktree_path=worktree_path)
+                    info = getattr(self.inspector, "last_execution_info", {}) or {}
                     exit_code = info.get("exit_code")
                     unparseable = any("unparseable_review" in s.lower() for s in (review.p0 + [review.summary]))
                     timed_out = any("TIMEOUT:" in p for p in review.p0)
                     if unparseable or timed_out or exit_code not in (0, None):
-                        err = (info.get("stderr") or review.summary or "reviewer failure")[:800]
+                        err = (info.get("stderr") or review.summary or "inspector failure")[:800]
                     else:
-                        self._record_provider_success(self.reviewer)
+                        self._record_provider_success(self.inspector)
                         self._save_json(run_id, "review.json", review)
-                        self.sm.log_audit(run_id, getattr(self, "current_reviewer_name", domain), "CODE_REVIEW", json.dumps(review.model_dump()))
-                        self._reviewer_provenance(0 if review.verdict == "pass" else 1, provenance_records)
+                        self.sm.log_audit(run_id, getattr(self, "current_inspector_name", domain), "CODE_REVIEW", json.dumps(review.model_dump()))
+                        self._inspector_provenance(0 if review.verdict == "pass" else 1, provenance_records)
                         return review, None
                 except Exception as e:
                     err = str(e)[:800]
-                self._reviewer_provenance(1, provenance_records)
+                self._inspector_provenance(1, provenance_records)
             last_err = err
             cat = self.pm.classify_error(err)
-            self.sm.log_audit(run_id, "ORCHESTRATOR", "REVIEWER_RETRY",
+            self.sm.log_audit(run_id, "ORCHESTRATOR", "INSPECTOR_RETRY",
                               json.dumps({"attempt": attempt + 1, "provider": domain, "category": cat.value, "error": _clip_error(err)}, ensure_ascii=False))
-            logger.warning(f"[HEAD proxy] review attempt {attempt + 1} on {domain} failed ({cat.value}): {err[:200]}")
+            logger.warning(f"[ARCHITECT proxy] review attempt {attempt + 1} on {domain} failed ({cat.value}): {err[:200]}")
             if cat in self.PROVIDER_DOWN:
                 try:
                     self.pm.parse_cli_error(domain, err)
@@ -1003,24 +1006,24 @@ class Orchestrator:
                     pass
             elif attempt == 0:
                 continue
-            if not self._swap_agent("reviewer", run_id, logger, tried, "REVIEWING", err):
+            if not self._swap_agent("inspector", run_id, logger, tried, "REVIEWING", err):
                 break
-        return None, self._stop(run_id, State.FAIL, f"REVIEWER_UNAVAILABLE: no provider produced a valid review ({last_err})",
-                                logger, provenance_records, "REVIEWER_UNAVAILABLE")
+        return None, self._stop(run_id, State.FAIL, f"INSPECTOR_UNAVAILABLE: no provider produced a valid review ({last_err})",
+                                logger, provenance_records, "INSPECTOR_UNAVAILABLE")
 
-    def _run_decision_autonomous(self, run_id: str, order: OrderSchema, builder_result: BuilderResultSchema,
+    def _run_decision_autonomous(self, run_id: str, order: OrderSchema, maker_result: MakerResultSchema,
                                  verification: Dict[str, Any], review_result: ReviewResultSchema, worktree_path: str,
                                  logger: logging.Logger, provenance_records: list):
-        """HEAD proxy decision: retry, then another provider plays HEAD. If no HEAD can be reached, the user's delegated
+        """ARCHITECT proxy decision: retry, then another provider plays ARCHITECT. If no ARCHITECT can be reached, the user's delegated
         rule decides from hard evidence only (tests + independent review), and says so in the rationale."""
         tried, last_err = set(), None
         for attempt in range(4):
-            domain = self._get_agent_domain(self.head)
+            domain = self._get_agent_domain(self.architect)
             tried.add(domain)
-            if self._provider_ready(self.head, run_id, "DECIDING", logger):
+            if self._provider_ready(self.architect, run_id, "DECIDING", logger):
                 try:
-                    decision = self.head.decide(order, builder_result, verification, review_result, cwd=worktree_path)
-                    self._record_provider_success(self.head)
+                    decision = self.architect.decide(order, maker_result, verification, review_result, cwd=worktree_path)
+                    self._record_provider_success(self.architect)
                     return decision, None
                 except Exception as e:
                     last_err = str(e)[:800]
@@ -1036,12 +1039,12 @@ class Orchestrator:
                     pass
             elif attempt == 0:
                 continue
-            if not self._swap_agent("head", run_id, logger, tried, "DECIDING", last_err):
+            if not self._swap_agent("architect", run_id, logger, tried, "DECIDING", last_err):
                 break
         green = bool(verification.get("passed")) and review_result.verdict == "pass" and not review_result.p0 and not review_result.p1
         decision = DecisionSchema(
             decision="PASS" if green else "FAIL",
-            rationale=("HEAD unavailable on every provider (" + str(last_err)[:200] + "); delegated rule applied to hard "
+            rationale=("ARCHITECT unavailable on every provider (" + str(last_err)[:200] + "); delegated rule applied to hard "
                        "evidence: " + ("tests passed and the independent review passed" if green else
                                        "tests and/or independent review did not pass")),
             next_steps=list(review_result.p0) + list(review_result.p1) + list(review_result.p2)
@@ -1051,61 +1054,61 @@ class Orchestrator:
 
     def apply_final_pass_gate(self, decision: DecisionSchema, review_result: ReviewResultSchema, logger: logging.Logger) -> str:
         """Orchestrator-level strict PASS rules (identical for run and resume). Mutates decision; returns final state.
-        PASS survives only when: no P0, reviewer verdict == 'pass', no P1/deletion warning, HEAD and REVIEWER are
+        PASS survives only when: no P0, inspector verdict == 'pass', no P1/deletion warning, ARCHITECT and INSPECTOR are
         independent (not both Claude / same agent family)."""
-        reviewer_has_p0 = len(review_result.p0) > 0
-        reviewer_has_p1 = len(review_result.p1) > 0
+        inspector_has_p0 = len(review_result.p0) > 0
+        inspector_has_p1 = len(review_result.p1) > 0
         has_deletion_warning = any("remove" in s.lower() or "delet" in s.lower() for s in (review_result.p1 + review_result.p2))
         final_state = decision.decision
         if final_state != State.PASS:
             return final_state
-        if reviewer_has_p0:
-            logger.warning("Overriding Head PASS to FAIL due to Reviewer P0 blocker")
+        if inspector_has_p0:
+            logger.warning("Overriding Architect PASS to FAIL due to Inspector P0 blocker")
             decision.decision = "FAIL"
-            decision.rationale = f"Overridden by Orchestrator: Reviewer reported P0 blocker: {'; '.join(review_result.p0)}"
+            decision.rationale = f"Overridden by Orchestrator: Inspector reported P0 blocker: {'; '.join(review_result.p0)}"
             return State.FAIL
-        # HEAD proxy: unresolved review findings after the repair budget are a FAIL the mission re-plans from,
+        # ARCHITECT proxy: unresolved review findings after the repair budget are a FAIL the mission re-plans from,
         # not a question for the user.
         blocked_state = State.FAIL if self._proxy() else State.HUMAN_REQUIRED
-        if (self._proxy() and getattr(review_result, "verdict", None) != "pass" and not reviewer_has_p1
+        if (self._proxy() and getattr(review_result, "verdict", None) != "pass" and not inspector_has_p1
                 and not has_deletion_warning and review_result.p2):
-            # The reviewer itself rated everything left as minor: PASS, with the P2 items recorded as follow-ups.
+            # The inspector itself rated everything left as minor: PASS, with the P2 items recorded as follow-ups.
             decision.rationale = (decision.rationale or "") + " [P2 FOLLOW-UPS: " + "; ".join(review_result.p2)[:1500] + "]"
-            logger.info("[HEAD proxy] only P2 (minor) review findings remain: PASS with recorded follow-ups")
+            logger.info("[ARCHITECT proxy] only P2 (minor) review findings remain: PASS with recorded follow-ups")
         elif getattr(review_result, "verdict", None) != "pass":
-            logger.warning(f"Overriding Head PASS to {blocked_state}: reviewer verdict is {getattr(review_result, 'verdict', None)!r}, not 'pass'")
+            logger.warning(f"Overriding Architect PASS to {blocked_state}: inspector verdict is {getattr(review_result, 'verdict', None)!r}, not 'pass'")
             decision.decision = blocked_state
-            decision.rationale = f"Overridden by Orchestrator: reviewer verdict {getattr(review_result, 'verdict', None)!r} is not 'pass' ({review_result.summary})"
+            decision.rationale = f"Overridden by Orchestrator: inspector verdict {getattr(review_result, 'verdict', None)!r} is not 'pass' ({review_result.summary})"
             return blocked_state
-        if reviewer_has_p1 or has_deletion_warning:
-            logger.warning(f"Overriding Head PASS to {blocked_state} due to existing behavior loss or P1 issue")
+        if inspector_has_p1 or has_deletion_warning:
+            logger.warning(f"Overriding Architect PASS to {blocked_state} due to existing behavior loss or P1 issue")
             decision.decision = blocked_state
-            decision.rationale = f"Overridden by Orchestrator: Reviewer reported existing behavior loss or P1 concerns: {review_result.summary}"
+            decision.rationale = f"Overridden by Orchestrator: Inspector reported existing behavior loss or P1 concerns: {review_result.summary}"
             return blocked_state
-        head_prov = getattr(self.head, "provider", "").lower()
-        rev_prov = getattr(self.reviewer, "provider", "").lower()
-        head_family = getattr(self.head, "agent_family", head_prov).lower()
-        rev_family = getattr(self.reviewer, "agent_family", rev_prov).lower()
-        is_both_claude = (head_prov in ("claude", "anthropic") and rev_prov in ("claude", "anthropic"))
-        is_same_family = (head_family == rev_family and head_family not in ("mock", "unknown", "openai"))
+        architect_prov = getattr(self.architect, "provider", "").lower()
+        rev_prov = getattr(self.inspector, "provider", "").lower()
+        architect_family = getattr(self.architect, "agent_family", architect_prov).lower()
+        rev_family = getattr(self.inspector, "agent_family", rev_prov).lower()
+        is_both_claude = (architect_prov in ("claude", "anthropic") and rev_prov in ("claude", "anthropic"))
+        is_same_family = (architect_family == rev_family and architect_family not in ("mock", "unknown", "openai"))
         if self.config.get("manual_roles"):
-            # Roles set in the console may repeat an AI. The review is independent only when REVIEWER is a different
-            # AI from both HEAD and BUILDER (core.role_settings.independence says the same thing to the console).
-            rev_dom = self._get_agent_domain(self.reviewer)
-            shared = [name for name, agent in (("HEAD", self.head), ("BUILDER", self.builder))
+            # Roles set in the console may repeat an AI. The review is independent only when INSPECTOR is a different
+            # AI from both ARCHITECT and MAKER (core.role_settings.independence says the same thing to the console).
+            rev_dom = self._get_agent_domain(self.inspector)
+            shared = [name for name, agent in (("ARCHITECT", self.architect), ("MAKER", self.maker))
                       if rev_dom not in ("MOCK", "UNKNOWN") and self._get_agent_domain(agent) == rev_dom]
             if shared:
                 is_same_family = True
-                head_family = f"{rev_dom.lower()}; REVIEWER is the same AI as {' and '.join(shared)}"
+                architect_family = f"{rev_dom.lower()}; INSPECTOR is the same AI as {' and '.join(shared)}"
         if (is_both_claude or is_same_family) and self._proxy():
-            logger.warning(f"Reduced independence: HEAD ({head_prov}) and REVIEWER ({rev_prov}) share a provider after failover; "
+            logger.warning(f"Reduced independence: ARCHITECT ({architect_prov}) and INSPECTOR ({rev_prov}) share a provider after failover; "
                            "PASS kept on the user's delegated policy (tests + review green), recorded in the rationale.")
-            decision.rationale = (decision.rationale or "") + f" [REDUCED_INDEPENDENCE: HEAD and REVIEWER both {head_family} after provider failover]"
+            decision.rationale = (decision.rationale or "") + f" [REDUCED_INDEPENDENCE: ARCHITECT and INSPECTOR both {architect_family} after provider failover]"
             return State.PASS
         if is_both_claude or is_same_family:
-            logger.warning(f"Same-Provider Independence Guard: HEAD ({head_prov}) and REVIEWER ({rev_prov}) share the same provider/family. Demoting PASS to HUMAN_REQUIRED.")
+            logger.warning(f"Same-Provider Independence Guard: ARCHITECT ({architect_prov}) and INSPECTOR ({rev_prov}) share the same provider/family. Demoting PASS to HUMAN_REQUIRED.")
             decision.decision = "HUMAN_REQUIRED"
-            decision.rationale = f"Same-Provider Independence Guard: HEAD and REVIEWER share same runtime/agent family ({head_family}). Automated PASS forbidden without human review."
+            decision.rationale = f"Same-Provider Independence Guard: ARCHITECT and INSPECTOR share same runtime/agent family ({architect_family}). Automated PASS forbidden without human review."
             return State.HUMAN_REQUIRED
         return State.PASS
 
@@ -1220,15 +1223,15 @@ class Orchestrator:
         return reasons
 
     def _finalize(self, run_id: str, decision: DecisionSchema, review_result: ReviewResultSchema, logger: logging.Logger,
-                  provenance_records: list, order=None, builder_result=None, verification=None, worktree_path=None) -> Dict[str, Any]:
+                  provenance_records: list, order=None, maker_result=None, verification=None, worktree_path=None) -> Dict[str, Any]:
         if (self._proxy() and decision.decision == "HUMAN_REQUIRED"
                 and not autopilot.is_serious_text(f"{decision.rationale} {' '.join(decision.next_steps or [])}")):
-            # The user delegated everything but money/credentials/irreversible external actions: HEAD resolves it.
-            self.sm.log_audit(run_id, "HEAD", "HEAD_ESCALATION_RESOLVED_BY_PROXY", decision.rationale[:1000])
-            logger.info("[HEAD proxy] HEAD escalation is not a delegated exception; converted to a repair instruction")
+            # The user delegated everything but money/credentials/irreversible external actions: ARCHITECT resolves it.
+            self.sm.log_audit(run_id, "ARCHITECT", "ARCHITECT_ESCALATION_RESOLVED_BY_PROXY", decision.rationale[:1000])
+            logger.info("[ARCHITECT proxy] ARCHITECT escalation is not a delegated exception; converted to a repair instruction")
             decision.decision = "FAIL"
             decision.next_steps = list(decision.next_steps or []) or [decision.rationale]
-        # HEAD proxy: with HEAD's PASS, green verification and only P2 (minor) findings left, no correction round is
+        # ARCHITECT proxy: with ARCHITECT's PASS, green verification and only P2 (minor) findings left, no correction round is
         # spent - the final gate passes it and records the P2 items as follow-ups.
         minor_only = (self._proxy() and decision.decision == 'PASS' and verification is not None
                       and verification.get('passed') and not review_result.p0 and not review_result.p1)
@@ -1238,22 +1241,22 @@ class Orchestrator:
                      or review_result.verdict != 'pass' or review_result.p0 or review_result.p1)):
             rounds = self._load_json(run_id, 'repair_history.json') or []
             if len(rounds) < self.config.get('autonomy', {}).get('max_repairs', 3):
-                feedback = {'round': len(rounds) + 1, 'head': decision.model_dump(),
+                feedback = {'round': len(rounds) + 1, 'architect': decision.model_dump(),
                             'review': review_result.model_dump(), 'verification': verification}
                 rounds.append(feedback)
                 self._save_json(run_id, 'repair_history.json', rounds)
-                repair_order = {'round': len(rounds), 'head': decision.model_dump(),
+                repair_order = {'round': len(rounds), 'architect': decision.model_dump(),
                                 'review': review_result.model_dump(),
                                 'test_summary': verification.get('summary'),
                                 'test_output': (verification.get('test', {}).get('output') or '')[-12000:]}
-                marker = '\nHEAD REPAIR ORDER: '
-                order.context = (order.context or '').split(marker, 1)[0] + marker + json.dumps(repair_order, ensure_ascii=False)
+                marker = '\nARCHITECT REPAIR ORDER: '
+                order.context = (order.context or '').split(marker, 1)[0].split('\nHEAD REPAIR ORDER: ', 1)[0] + marker + json.dumps(repair_order, ensure_ascii=False)   # (the marker's name before the rename)
                 self._save_json(run_id, 'order.json', order)
-                self.sm.transition_to(run_id, State.BUILDING, details='HEAD requested correction round ' + str(len(rounds)))
+                self.sm.transition_to(run_id, State.BUILDING, details='ARCHITECT requested correction round ' + str(len(rounds)))
                 logger.info('State -> BUILDING (automatic correction round %s)', len(rounds))
-                built, stop = self.run_builder_stage(run_id, order, worktree_path, None, logger, provenance_records)
+                built, stop = self.run_maker_stage(run_id, order, worktree_path, None, logger, provenance_records)
                 if stop: return stop
-                self.sm.transition_to(run_id, State.VERIFYING, details='Testing HEAD correction')
+                self.sm.transition_to(run_id, State.VERIFYING, details='Testing ARCHITECT correction')
                 logger.info('State -> VERIFYING (automatic correction)')
                 baseline = self.baseline_evidence(run_id) or {}
                 verified, stop = self.validate_post_build(run_id, order, worktree_path,
@@ -1261,18 +1264,18 @@ class Orchestrator:
                 if stop: return stop
                 self.sm.transition_to(run_id, State.REVIEWING, details='Independent review of correction')
                 logger.info('State -> REVIEWING (automatic correction)')
-                reviewed, stop = self.run_reviewer_with_failover(run_id, order, verified, {}, worktree_path, logger, provenance_records)
+                reviewed, stop = self.run_inspector_with_failover(run_id, order, verified, {}, worktree_path, logger, provenance_records)
                 if stop: return stop
-                self.sm.transition_to(run_id, State.DECIDING, details='HEAD evaluates correction')
+                self.sm.transition_to(run_id, State.DECIDING, details='ARCHITECT evaluates correction')
                 logger.info('State -> DECIDING (automatic correction)')
                 decided, stop = self.run_decision_with_failover(run_id, order, built, verified, reviewed, worktree_path, logger, provenance_records)
                 if stop: return stop
                 return self._finalize(run_id, decided, reviewed, logger, provenance_records,
-                    order=order, builder_result=built, verification=verified, worktree_path=worktree_path)
+                    order=order, maker_result=built, verification=verified, worktree_path=worktree_path)
         final_state = self.apply_final_pass_gate(decision, review_result, logger)
         evidence = self.final_evidence(run_id, order, worktree_path)
-        evidence["head_decision"] = decision.decision
-        evidence["reviewer_verdict"] = getattr(review_result, "verdict", None)
+        evidence["architect_decision"] = decision.decision
+        evidence["inspector_verdict"] = getattr(review_result, "verdict", None)
         self._save_json(run_id, "final_evidence.json", evidence)
         if final_state == State.PASS:
             reasons = list(evidence["reasons"])
@@ -1286,7 +1289,7 @@ class Orchestrator:
                 decision.rationale = f"Overridden by Orchestrator: {msg}"
                 final_state = State.HUMAN_REQUIRED
         self._save_json(run_id, "decision.json", decision)
-        self.sm.log_audit(run_id, "HEAD", "FINAL_DECISION", json.dumps(decision.model_dump()))
+        self.sm.log_audit(run_id, "ARCHITECT", "FINAL_DECISION", json.dumps(decision.model_dump()))
         self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
         self.sm.transition_to(run_id, final_state, details=f"Final decision: {decision.rationale}")
         logger.info(f"Final State -> {final_state}")
@@ -1297,13 +1300,13 @@ class Orchestrator:
                 ResultManager(self.sm, self.config).record_summary(run_id)
             except Exception as e:
                 logger.warning(f"result summary not persisted: {e}")
-        return self._build_run_summary(run_id=run_id, order=order, builder_result=builder_result, verification=verification,
+        return self._build_run_summary(run_id=run_id, order=order, maker_result=maker_result, verification=verification,
                                        review_result=review_result, decision=decision)
 
     def _is_mock_run(self) -> bool:
         return (
-            (getattr(self.head, "provider", "") == "mock" or isinstance(self.head, MockHead)) and
-            (getattr(self.reviewer, "provider", "") == "mock" or getattr(self.reviewer, "provider", "") == "")
+            (getattr(self.architect, "provider", "") == "mock" or isinstance(self.architect, MockArchitect)) and
+            (getattr(self.inspector, "provider", "") == "mock" or getattr(self.inspector, "provider", "") == "")
         )
 
     def run(
@@ -1311,9 +1314,9 @@ class Orchestrator:
         project_path: str,
         goal: str,
         run_id: Optional[str] = None,
-        builder_fn: Optional[Callable[[AntigravityBuilder, OrderSchema, str], list]] = None,
+        maker_fn: Optional[Callable[[AntigravityMaker, OrderSchema, str], list]] = None,
         order: Optional[OrderSchema] = None,
-        head_provenance: Optional[Dict[str, Any]] = None,
+        architect_provenance: Optional[Dict[str, Any]] = None,
         base_worktree: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -1334,13 +1337,13 @@ class Orchestrator:
         provenance_records = []
 
         is_mock_run = (
-            (getattr(self.head, "provider", "") == "mock" or isinstance(self.head, MockHead)) and
-            (getattr(self.reviewer, "provider", "") == "mock" or getattr(self.reviewer, "provider", "") == "")
+            (getattr(self.architect, "provider", "") == "mock" or isinstance(self.architect, MockArchitect)) and
+            (getattr(self.inspector, "provider", "") == "mock" or getattr(self.inspector, "provider", "") == "")
         )
 
-        req_head = self.config.get("head", {}).get("provider", "openai")
-        req_builder = self.config.get("builder", {}).get("provider", "antigravity")
-        req_reviewer = self.config.get("reviewer", {}).get("provider", "codex")
+        req_architect = self.config.get("architect", {}).get("provider", "openai")
+        req_maker = self.config.get("maker", {}).get("provider", "antigravity")
+        req_inspector = self.config.get("inspector", {}).get("provider", "codex")
 
         if not is_mock_run:
             self.pm.check_health()
@@ -1349,26 +1352,26 @@ class Orchestrator:
             if cands:
                 logger.warning(f"[Recovery Trial] candidates (claimed only when actually called): {', '.join(cands)}")
             if self._proxy():
-                assigned = self._autonomous_role_assignment(req_head, req_builder, req_reviewer, run_id, logger)
+                assigned = self._autonomous_role_assignment(req_architect, req_maker, req_inspector, run_id, logger)
             elif self.config.get('manual_roles'):
-                assigned = self.pm.resolve_roles(req_head, req_builder, req_reviewer, strict=True)
+                assigned = self.pm.resolve_roles(req_architect, req_maker, req_inspector, strict=True)
                 if not assigned['can_proceed']:
                     # Refresh stale probe failures once while preserving independent role assignments.
                     self.pm.check_health(force=True)
                     self.pm.mark_trial_candidates()
-                    assigned = self.pm.resolve_roles(req_head, req_builder, req_reviewer, strict=True)
+                    assigned = self.pm.resolve_roles(req_architect, req_maker, req_inspector, strict=True)
             else:
-                assigned = self.pm.resolve_roles(req_head, req_builder, req_reviewer)
+                assigned = self.pm.resolve_roles(req_architect, req_maker, req_inspector)
             
-            new_head_prov = assigned["head_provider"]
-            if not self._proxy() and req_head.lower() == "openai" and new_head_prov == "ANTHROPIC":
-                self.head = self._init_head("claude")
-                self.reviewer = self._init_reviewer("claude")
-                self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER", "Both HEAD and REVIEWER switched to Claude Code due to OPENAI unavailable")
+            new_architect_prov = assigned["architect_provider"]
+            if not self._proxy() and req_architect.lower() == "openai" and new_architect_prov == "ANTHROPIC":
+                self.architect = self._init_architect("claude")
+                self.inspector = self._init_inspector("claude")
+                self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER", "Both ARCHITECT and INSPECTOR switched to Claude Code due to OPENAI unavailable")
 
             self.current_failover_mode = assigned["mode"]
-            self.current_head_name = assigned["head_provider"].upper()
-            self.current_reviewer_name = assigned["reviewer_provider"].upper()
+            self.current_architect_name = assigned["architect_provider"].upper()
+            self.current_inspector_name = assigned["inspector_provider"].upper()
 
             if not assigned["can_proceed"]:
                 stop_msg = f"PROVIDER_FAILURE: {assigned['reason']}"
@@ -1382,20 +1385,20 @@ class Orchestrator:
                 logger.warning(deg_msg)
                 self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_DEGRADED", deg_msg)
                 # Re-assign healthy providers
-                if assigned["head_provider"] != req_head:
-                    self.head = self._init_head(assigned["head_provider"])
-                if assigned["reviewer_provider"] != req_reviewer:
-                    self.reviewer = self._init_reviewer(assigned["reviewer_provider"])
-                if assigned['builder_provider'] != req_builder:
-                    self.builder = self._init_builder(assigned['builder_provider'])
+                if assigned["architect_provider"] != req_architect:
+                    self.architect = self._init_architect(assigned["architect_provider"])
+                if assigned["inspector_provider"] != req_inspector:
+                    self.inspector = self._init_inspector(assigned["inspector_provider"])
+                if assigned['maker_provider'] != req_maker:
+                    self.maker = self._init_maker(assigned['maker_provider'])
         else:
             self.current_failover_mode = FailoverMode.NORMAL
-            self.current_head_name = getattr(self.head, "provider", "HEAD").upper()
-            self.current_reviewer_name = getattr(self.reviewer, "provider", "CODEX").upper()
+            self.current_architect_name = getattr(self.architect, "provider", "ARCHITECT").upper()
+            self.current_inspector_name = getattr(self.inspector, "provider", "CODEX").upper()
 
         # 0.2 Sanity check for assigned agents
-        if not is_mock_run and builder_fn is None:
-            for role_name in ("HEAD", "BUILDER", "REVIEWER"):
+        if not is_mock_run and maker_fn is None:
+            for role_name in ("ARCHITECT", "MAKER", "INSPECTOR"):
                 agent = getattr(self, role_name.lower())
                 exe = getattr(agent, "executable", None)
                 ver = agent.get_version() if hasattr(agent, "get_version") else "unknown"
@@ -1415,7 +1418,7 @@ class Orchestrator:
                     return self._build_run_summary(run_id, scope_violations=[err_msg])
 
         # 1. State: IDLE -> PLANNING
-        self.sm.transition_to(run_id, State.PLANNING, details="Head generating ORDER.json")
+        self.sm.transition_to(run_id, State.PLANNING, details="Architect generating ORDER.json")
         logger.info("State -> PLANNING")
     
         project_context = self._read_project_context(proj_path)
@@ -1425,73 +1428,73 @@ class Orchestrator:
                 logger.warning(f"[Safety Cap] {'; '.join(cap_notes)}")
                 self.sm.log_audit(run_id, "ORCHESTRATOR", "SAFETY_CAP_APPLIED", "; ".join(cap_notes))
             self._save_json(run_id, "order.json", order)
-            self.sm.log_audit(run_id, "HEAD", "PROVIDED_ORDER", json.dumps(order.model_dump()))
-            if head_provenance:
-                provenance_records.append(dict(head_provenance))
+            self.sm.log_audit(run_id, "ARCHITECT", "PROVIDED_ORDER", json.dumps(order.model_dump()))
+            if architect_provenance:
+                provenance_records.append(dict(architect_provenance))
         else:
-            stop_trial = self._claim_trial_for(self.head, run_id, "PLANNING", logger)
+            stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING", logger)
             if stop_trial:
                 return stop_trial
             try:
-                head_prov = getattr(self.head, "provider", "OPENAI")
-                order = self.head.create_order(goal, project_context)
-                self._record_provider_success(self.head)
+                architect_prov = getattr(self.architect, "provider", "OPENAI")
+                order = self.architect.create_order(goal, project_context)
+                self._record_provider_success(self.architect)
                 self._save_json(run_id, "order.json", order)
-                self.sm.log_audit(run_id, "HEAD", "CREATED_ORDER", json.dumps(order.model_dump()))
-                if hasattr(self.head, "get_provenance"):
-                    prov = self.head.get_provenance(exit_code=0)
+                self.sm.log_audit(run_id, "ARCHITECT", "CREATED_ORDER", json.dumps(order.model_dump()))
+                if hasattr(self.architect, "get_provenance"):
+                    prov = self.architect.get_provenance(exit_code=0)
                     provenance_records.append(prov.model_dump())
                     if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
-                        self.pm.update_latency(head_prov, prov.duration_sec)
+                        self.pm.update_latency(architect_prov, prov.duration_sec)
             except Exception as e:
                 err_str = str(e)
                 is_timeout = ("timeout" in err_str.lower() or isinstance(e, TimeoutError))
-                head_prov = getattr(self.head, "provider", "OPENAI")
-                head_domain = self._get_agent_domain(self.head)
-                logger.error(f"Planning failed with {head_domain}: {err_str}")
-                if hasattr(self.head, "get_provenance"):
-                    prov = self.head.get_provenance(exit_code=1)
+                architect_prov = getattr(self.architect, "provider", "OPENAI")
+                architect_domain = self._get_agent_domain(self.architect)
+                logger.error(f"Planning failed with {architect_domain}: {err_str}")
+                if hasattr(self.architect, "get_provenance"):
+                    prov = self.architect.get_provenance(exit_code=1)
                     provenance_records.append(prov.model_dump())
                     if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
-                        self.pm.update_latency(head_prov, prov.duration_sec)
+                        self.pm.update_latency(architect_prov, prov.duration_sec)
     
-                stop_summary = self._handle_provider_failure(head_domain, err_str, run_id, "PLANNING", logger, provenance_records)
+                stop_summary = self._handle_provider_failure(architect_domain, err_str, run_id, "PLANNING", logger, provenance_records)
                 if stop_summary:
                     return stop_summary
     
-                if head_prov.lower() in ("openai", "codex"):
-                    logger.warning("[FAILOVER TRIGGERED] Primary HEAD failed. Switching to backup provider (Claude)...")
-                    assigned = self.pm.resolve_roles(requested_head="claude", requested_builder="antigravity", requested_reviewer="claude")
+                if architect_prov.lower() in ("openai", "codex"):
+                    logger.warning("[FAILOVER TRIGGERED] Primary ARCHITECT failed. Switching to backup provider (Claude)...")
+                    assigned = self.pm.resolve_roles(requested_architect="claude", requested_maker="antigravity", requested_inspector="claude")
                     if assigned["can_proceed"]:
                         self.current_failover_mode = assigned["mode"]
-                        self.current_head_name = assigned["head_provider"].upper()
-                        self.current_reviewer_name = assigned["reviewer_provider"].upper()
-                        self.head = self._init_head("claude")
-                        self.reviewer = self._init_reviewer("claude")
-                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_HEAD", f"Switched to Claude HEAD due to {err_str}")
-                        stop_trial = self._claim_trial_for(self.head, run_id, "PLANNING_BACKUP", logger)
+                        self.current_architect_name = assigned["architect_provider"].upper()
+                        self.current_inspector_name = assigned["inspector_provider"].upper()
+                        self.architect = self._init_architect("claude")
+                        self.inspector = self._init_inspector("claude")
+                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_ARCHITECT", f"Switched to Claude ARCHITECT due to {err_str}")
+                        stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING_BACKUP", logger)
                         if stop_trial:
                             return stop_trial
                         try:
-                            order = self.head.create_order(goal, project_context)
-                            self._record_provider_success(self.head)
+                            order = self.architect.create_order(goal, project_context)
+                            self._record_provider_success(self.architect)
                             self._save_json(run_id, "order.json", order)
-                            self.sm.log_audit(run_id, "HEAD", "CREATED_ORDER", json.dumps(order.model_dump()))
-                            if hasattr(self.head, "get_provenance"):
-                                head_prov = getattr(self.head, "provider", "ANTHROPIC")
-                                prov = self.head.get_provenance(exit_code=0)
+                            self.sm.log_audit(run_id, "ARCHITECT", "CREATED_ORDER", json.dumps(order.model_dump()))
+                            if hasattr(self.architect, "get_provenance"):
+                                architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
+                                prov = self.architect.get_provenance(exit_code=0)
                                 provenance_records.append(prov.model_dump())
                                 if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
-                                    self.pm.update_latency(head_prov, prov.duration_sec)
+                                    self.pm.update_latency(architect_prov, prov.duration_sec)
                         except Exception as e2:
                             err_str2 = str(e2)
                             logger.error(f"Backup Planning failed on Claude: {err_str2}")
-                            if hasattr(self.head, "get_provenance"):
-                                head_prov = getattr(self.head, "provider", "ANTHROPIC")
-                                prov = self.head.get_provenance(exit_code=1)
+                            if hasattr(self.architect, "get_provenance"):
+                                architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
+                                prov = self.architect.get_provenance(exit_code=1)
                                 provenance_records.append(prov.model_dump())
                                 if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
-                                    self.pm.update_latency(head_prov, prov.duration_sec)
+                                    self.pm.update_latency(architect_prov, prov.duration_sec)
                             stop2 = self._handle_provider_failure("ANTHROPIC", err_str2, run_id, "PLANNING_BACKUP", logger, provenance_records)
                             if stop2:
                                 return stop2
@@ -1543,7 +1546,7 @@ class Orchestrator:
         if stop:
             return stop
 
-        # 3.1 BASELINE REGRESSION GATE: run existing tests BEFORE the Builder touches anything
+        # 3.1 BASELINE REGRESSION GATE: run existing tests BEFORE the Maker touches anything
         baseline_pass_count, stop = self.run_baseline_if_required(run_id, worktree_path, logger, provenance_records, force=True)
         if stop:
             return stop
@@ -1551,7 +1554,7 @@ class Orchestrator:
         # 4. State: ORDER_READY -> BUILDING
         self.sm.transition_to(run_id, State.BUILDING, details="Antigravity executing in worktree")
         logger.info("State -> BUILDING")
-        builder_result, stop = self.run_builder_stage(run_id, order, worktree_path, builder_fn, logger, provenance_records)
+        maker_result, stop = self.run_maker_stage(run_id, order, worktree_path, maker_fn, logger, provenance_records)
         if stop:
             return stop
 
@@ -1563,22 +1566,22 @@ class Orchestrator:
             return stop
 
         # 6. State: VERIFYING -> REVIEWING
-        self.sm.transition_to(run_id, State.REVIEWING, details="Reviewer inspecting diff and evidence")
+        self.sm.transition_to(run_id, State.REVIEWING, details="Inspector inspecting diff and evidence")
         logger.info("State -> REVIEWING")
-        review_result, stop = self.run_reviewer_with_failover(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
+        review_result, stop = self.run_inspector_with_failover(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
         if stop:
             return stop
 
         # 7. State: REVIEWING -> DECIDING
-        self.sm.transition_to(run_id, State.DECIDING, details=f"{getattr(self, 'current_head_name', 'HEAD')} deciding final verdict")
+        self.sm.transition_to(run_id, State.DECIDING, details=f"{getattr(self, 'current_architect_name', 'ARCHITECT')} deciding final verdict")
         logger.info("State -> DECIDING")
-        decision, stop = self.run_decision_with_failover(run_id, order, builder_result, verification, review_result, worktree_path, logger, provenance_records)
+        decision, stop = self.run_decision_with_failover(run_id, order, maker_result, verification, review_result, worktree_path, logger, provenance_records)
         if stop:
             return stop
 
         # 8. Final verdict (strict PASS gate identical for run/resume)
         return self._finalize(run_id, decision, review_result, logger, provenance_records,
-                              order=order, builder_result=builder_result, verification=verification, worktree_path=worktree_path)
+                              order=order, maker_result=maker_result, verification=verification, worktree_path=worktree_path)
 
     APPROVAL_PREFIX = "APPROVAL_REQUIRED"
     SCOPE_PREFIX = "Scope violation: "
@@ -1589,7 +1592,7 @@ class Orchestrator:
         - stage POST_BUILD : 'Scope violation: ...' after the build, approvable ONLY when every violation is in
                              SafetyPolicy.APPROVABLE_POST_BUILD (e.g. Dependency configuration modified: <file>)
         - anything else (traversal, canonical/symlink escape, outside allowed_paths, regression, missing evidence,
-          reviewer/final gate, provider) : NOT approvable.
+          inspector/final gate, provider) : NOT approvable.
         A decision (HUMAN_APPROVAL / HUMAN_REJECTED) counts only if it was recorded after the latest HUMAN_REQUIRED
         transition, so entry and post-build approvals are separate records and never inherited."""
         run = self.sm.get_run(run_id)
@@ -1602,11 +1605,11 @@ class Orchestrator:
         audits = self.sm.get_audit_logs(run_id) if hasattr(self.sm, "get_audit_logs") else []
         after = [a for a in audits if (a.get("timestamp") or "") >= last_ts]
         decided = {a.get("action") for a in after}
-        builder_ran = self._load_json(run_id, "builder.json") is not None or bool(run.get("worktree_path"))
+        maker_ran = self._load_json(run_id, "maker.json") is not None or bool(run.get("worktree_path"))
         info = {
             "run_id": run_id, "state": run["current_state"], "reason": last, "stage": None, "items": [], "blocking": [],
             "rejected": "HUMAN_REJECTED" in decided, "approved": "HUMAN_APPROVAL" in decided,
-            "builder_ran": builder_ran, "order_present": self._load_json(run_id, "order.json") is not None,
+            "maker_ran": maker_ran, "order_present": self._load_json(run_id, "order.json") is not None,
             "approvals_so_far": [a for a in audits if a.get("action") in ("HUMAN_APPROVAL", "HUMAN_REJECTED")],
         }
         if run["current_state"] != State.HUMAN_REQUIRED:
@@ -1620,13 +1623,13 @@ class Orchestrator:
                 file = part[len(code):].strip().strip("()").strip() if "(" in part else ""
                 # DEFAULT DENY: only codes in SafetyPolicy.APPROVABLE_ENTRY are approvable; unknown codes block
                 (info["items"] if code in SafetyPolicy.APPROVABLE_ENTRY else info["blocking"]).append({"gate": code, "file": file, "text": part})
-            info["approvable"] = (bool(info["items"]) and not info["blocking"] and info["order_present"] and not builder_ran
+            info["approvable"] = (bool(info["items"]) and not info["blocking"] and info["order_present"] and not maker_ran
                                   and not info["rejected"] and not info["approved"])
         elif last.startswith(self.SCOPE_PREFIX):
             info["stage"] = "POST_BUILD"
             cls = SafetyPolicy.classify_post_build_violations([v.strip() for v in last[len(self.SCOPE_PREFIX):].split(";") if v.strip()])
             info["items"] = cls["approvable"]; info["blocking"] = cls["blocking"]
-            info["approvable"] = (bool(info["items"]) and not info["blocking"] and builder_ran and info["order_present"]
+            info["approvable"] = (bool(info["items"]) and not info["blocking"] and maker_ran and info["order_present"]
                                   and bool(run.get("worktree_path")) and Path(run["worktree_path"]).exists()
                                   and not info["rejected"] and not info["approved"])
         else:
@@ -1634,10 +1637,10 @@ class Orchestrator:
         return info
 
     def approve_and_resume(self, run_id: str, approver: str = "HUMAN", note: str = "", request_id: str = "",
-                           builder_fn: Optional[Callable[[AntigravityBuilder, OrderSchema, str], list]] = None) -> Dict[str, Any]:
+                           maker_fn: Optional[Callable[[AntigravityMaker, OrderSchema, str], list]] = None) -> Dict[str, Any]:
         """Explicit human approval of an approvable HUMAN_REQUIRED halt. Records a stage-specific HUMAN_APPROVAL,
         reopens the SAME run (ENTRY -> ORDER_READY, POST_BUILD -> VERIFYING with a narrow per-file waiver) and
-        continues through resume(): the builder is never re-run for POST_BUILD, every deterministic gate still applies."""
+        continues through resume(): the maker is never re-run for POST_BUILD, every deterministic gate still applies."""
         st = self.approval_state(run_id)
         if not st.get("approvable"):
             return {"run_id": run_id, "status": "APPROVAL_NOT_APPLICABLE", "final_state": st.get("state"), "error": st}
@@ -1649,7 +1652,7 @@ class Orchestrator:
                   "approved_gates": [i["gate"] for i in st["items"]],
                   "approved_scope": order.get("allowed_paths", []), "note": note[:300],
                   "covers": ("entry APPROVAL_REQUIRED only" if stage == "ENTRY" else "listed post-build gate+file pairs only") +
-                            "; canonical containment / traversal / outside-scope / regression / reviewer / final gate unchanged"}
+                            "; canonical containment / traversal / outside-scope / regression / inspector / final gate unchanged"}
         self.sm.log_audit(run_id, "HUMAN", "HUMAN_APPROVAL", json.dumps(record, ensure_ascii=False))
         if stage == "POST_BUILD":
             approvals = self._load_json(run_id, "approvals.json") or {}
@@ -1667,7 +1670,7 @@ class Orchestrator:
             self.sm.mark_human_action_resolved(run_id)
         except Exception:
             pass
-        return self.resume(run_id, builder_fn=builder_fn)
+        return self.resume(run_id, maker_fn=maker_fn)
 
     def reject_human_required(self, run_id: str, rejecter: str = "HUMAN", note: str = "") -> Dict[str, Any]:
         """Explicit rejection: the run stays terminal HUMAN_REQUIRED, worktree preserved, nothing executes."""
@@ -1686,12 +1689,12 @@ class Orchestrator:
     def resume(
         self,
         run_id: str,
-        builder_fn: Optional[Callable[[AntigravityBuilder, OrderSchema, str], list]] = None
+        maker_fn: Optional[Callable[[AntigravityMaker, OrderSchema, str], list]] = None
     ) -> Dict[str, Any]:
         """
         Resumes a paused or interrupted run from its last recorded state using the SAME safety pipeline as run():
-        order caps + path validation, canonical containment, baseline gate, builder stage, post-build scope guard,
-        regression gate, reviewer failover, decision failover and the strict final PASS gate.
+        order caps + path validation, canonical containment, baseline gate, maker stage, post-build scope guard,
+        regression gate, inspector failover, decision failover and the strict final PASS gate.
         """
         run = self.sm.get_run(run_id)
         if not run:
@@ -1717,7 +1720,7 @@ class Orchestrator:
         provenance_records = list(prov_file.get("records", [])) if isinstance(prov_file, dict) else []
 
         if curr_state == State.IDLE:
-            return self.run(project_path, run["goal"], run_id=run_id, builder_fn=builder_fn)
+            return self.run(project_path, run["goal"], run_id=run_id, maker_fn=maker_fn)
 
         if not self._is_mock_run():
             try:
@@ -1731,20 +1734,20 @@ class Orchestrator:
         project_context = self._read_project_context(project_path)
 
         if curr_state == State.PLANNING:
-            stop_trial = self._claim_trial_for(self.head, run_id, "PLANNING", logger)
+            stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING", logger)
             if stop_trial:
                 return stop_trial
             try:
-                order = self.head.create_order(run["goal"], project_context)
-                self._record_provider_success(self.head)
-                self.sm.log_audit(run_id, "HEAD", "CREATED_ORDER", json.dumps(order.model_dump()))
-                if hasattr(self.head, "get_provenance"):
-                    provenance_records.append(self.head.get_provenance(exit_code=0).model_dump())
+                order = self.architect.create_order(run["goal"], project_context)
+                self._record_provider_success(self.architect)
+                self.sm.log_audit(run_id, "ARCHITECT", "CREATED_ORDER", json.dumps(order.model_dump()))
+                if hasattr(self.architect, "get_provenance"):
+                    provenance_records.append(self.architect.get_provenance(exit_code=0).model_dump())
             except Exception as e:
                 err_str = str(e)
-                if hasattr(self.head, "get_provenance"):
-                    provenance_records.append(self.head.get_provenance(exit_code=1).model_dump())
-                stop_summary = self._handle_provider_failure(self._get_agent_domain(self.head), err_str, run_id, "PLANNING", logger, provenance_records)
+                if hasattr(self.architect, "get_provenance"):
+                    provenance_records.append(self.architect.get_provenance(exit_code=1).model_dump())
+                stop_summary = self._handle_provider_failure(self._get_agent_domain(self.architect), err_str, run_id, "PLANNING", logger, provenance_records)
                 if stop_summary:
                     return stop_summary
                 state = State.TIMEOUT if ("timeout" in err_str.lower() or isinstance(e, TimeoutError)) else State.FAIL
@@ -1766,7 +1769,7 @@ class Orchestrator:
         baseline_pass_count = None
 
         # Safety preflight for EVERY non-terminal state: once a worktree exists, ORDER paths must also resolve
-        # canonically inside it (symlink/junction escapes) before any later stage (reviewer / HEAD decision) runs.
+        # canonically inside it (symlink/junction escapes) before any later stage (inspector / ARCHITECT decision) runs.
         if worktree_path and Path(worktree_path).exists():
             stop = self.prepare_order_for_execution(run_id, order, logger, provenance_records, worktree_path=worktree_path)
             if stop:
@@ -1796,7 +1799,7 @@ class Orchestrator:
             baseline_pass_count, stop = self.run_baseline_if_required(run_id, worktree_path, logger, provenance_records, allow_measure=True)
             if stop:
                 return stop
-            self.sm.transition_to(run_id, State.BUILDING, details="Resumed: Starting builder")
+            self.sm.transition_to(run_id, State.BUILDING, details="Resumed: Starting maker")
             curr_state = State.BUILDING
 
         if curr_state in (State.BUILDING, State.VERIFYING, State.REVIEWING, State.DECIDING):
@@ -1812,11 +1815,11 @@ class Orchestrator:
             if stop:
                 return stop
             if baseline_pass_count is None:
-                # BUILDING: the builder may already have modified the worktree -> persisted evidence only, never re-measure
+                # BUILDING: the maker may already have modified the worktree -> persisted evidence only, never re-measure
                 baseline_pass_count, stop = self.run_baseline_if_required(run_id, worktree_path, logger, provenance_records, allow_measure=False)
                 if stop:
                     return stop
-            builder_result, stop = self.run_builder_stage(run_id, order, worktree_path, builder_fn, logger, provenance_records)
+            maker_result, stop = self.run_maker_stage(run_id, order, worktree_path, maker_fn, logger, provenance_records)
             if stop:
                 return stop
             self.sm.transition_to(run_id, State.VERIFYING, details="Resumed: Verifying")
@@ -1830,7 +1833,7 @@ class Orchestrator:
                 elif base is not None:
                     return self._stop(run_id, State.HUMAN_REQUIRED, f"BASELINE_FAILED: persisted baseline did not pass ({base.get('summary')})", logger, provenance_records, "BASELINE_FAILED")
                 else:
-                    return self._stop(run_id, State.HUMAN_REQUIRED, "BASELINE_MISSING: no persisted baseline evidence; a baseline cannot be measured after the builder modified the worktree.", logger, provenance_records, "BASELINE_MISSING")
+                    return self._stop(run_id, State.HUMAN_REQUIRED, "BASELINE_MISSING: no persisted baseline evidence; a baseline cannot be measured after the maker modified the worktree.", logger, provenance_records, "BASELINE_MISSING")
             verification, stop = self.validate_post_build(run_id, order, worktree_path, baseline_pass_count, logger, provenance_records)
             if stop:
                 return stop
@@ -1842,7 +1845,7 @@ class Orchestrator:
             missing = [r for r in self.final_evidence_reasons(run_id, order, worktree_path)
                        if not r.startswith("ORDER_PATH_VIOLATION") and not r.startswith("CANONICAL_CONTAINMENT=FAIL")]
             if self.config.get('autonomy', {}).get('enabled'):
-                # Parity with run(): a verification that EXISTS but failed goes to review/HEAD/repair, it is not
+                # Parity with run(): a verification that EXISTS but failed goes to review/ARCHITECT/repair, it is not
                 # missing evidence. (The final gate still refuses PASS on it.)
                 missing = [r for r in missing if r != "VERIFICATION_FAILED" and not r.startswith("REGRESSION")]
             if missing:
@@ -1851,24 +1854,24 @@ class Orchestrator:
 
         if curr_state == State.REVIEWING:
             verification = self._load_json(run_id, "verification.json") or {}
-            review_result, stop = self.run_reviewer_with_failover(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
+            review_result, stop = self.run_inspector_with_failover(run_id, order, verification, project_context, worktree_path, logger, provenance_records)
             if stop:
                 return stop
             self.sm.transition_to(run_id, State.DECIDING, details="Resumed: Deciding")
             curr_state = State.DECIDING
 
         if curr_state == State.DECIDING:
-            builder_result = BuilderResultSchema.model_validate(self._load_json(run_id, "builder.json") or {"status": "UNKNOWN", "summary": "n/a"})
+            maker_result = MakerResultSchema.model_validate(self._load_json(run_id, "maker.json") or {"status": "UNKNOWN", "summary": "n/a"})
             verification = self._load_json(run_id, "verification.json") or {}
             review_data = self._load_json(run_id, "review.json")
             if not review_data:
                 return self._stop(run_id, State.FAIL, "RESUME_FAILED: review.json is missing for DECIDING run", logger, provenance_records)
             review_result = ReviewResultSchema.model_validate(review_data)
-            decision, stop = self.run_decision_with_failover(run_id, order, builder_result, verification, review_result, worktree_path, logger, provenance_records)
+            decision, stop = self.run_decision_with_failover(run_id, order, maker_result, verification, review_result, worktree_path, logger, provenance_records)
             if stop:
                 return stop
             return self._finalize(run_id, decision, review_result, logger, provenance_records,
-                                  order=order, builder_result=builder_result, verification=verification, worktree_path=worktree_path)
+                                  order=order, maker_result=maker_result, verification=verification, worktree_path=worktree_path)
 
         return self._build_run_summary(run_id)
 
@@ -1876,7 +1879,7 @@ class Orchestrator:
         self,
         run_id: str,
         order: Optional[OrderSchema] = None,
-        builder_result: Optional[BuilderResultSchema] = None,
+        maker_result: Optional[MakerResultSchema] = None,
         verification: Optional[Dict[str, Any]] = None,
         review_result: Optional[ReviewResultSchema] = None,
         decision: Optional[DecisionSchema] = None,
@@ -1901,12 +1904,12 @@ class Orchestrator:
             "files_changed": files_changed,
             "scope_violations": len(scope_violations or []),
             "failover_mode": getattr(self, "current_failover_mode", "NORMAL"),
-            "head_label": getattr(self, "current_head_name", "HEAD"),
-            "reviewer_label": getattr(self, "current_reviewer_name", "CODEX"),
+            "architect_label": getattr(self, "current_architect_name", "ARCHITECT"),
+            "inspector_label": getattr(self, "current_inspector_name", "CODEX"),
             "order": order.model_dump() if order else self._load_json(run_id, "order.json"),
             "provenance": self._load_json(run_id, "provenance.json"),
             "baseline_verification": self._load_json(run_id, "baseline_verification.json"),
-            "builder": builder_result.model_dump() if builder_result else self._load_json(run_id, "builder.json"),
+            "maker": maker_result.model_dump() if maker_result else self._load_json(run_id, "maker.json"),
             "verification": verification or self._load_json(run_id, "verification.json"),
             "review": review_result.model_dump() if review_result else self._load_json(run_id, "review.json"),
             "decision": decision.model_dump() if decision else self._load_json(run_id, "decision.json")

@@ -47,7 +47,7 @@ def fake_run(proj, run_id, base_ref, base_worktree=None, evidence_ok=True, state
     (d / "source_snapshot.json").write_text(json.dumps({"base_ref": base_ref, "source_head_unchanged": True, "base_worktree": base_worktree}), encoding="utf-8")
     if evidence_ok:
         (d / "final_evidence.json").write_text(json.dumps({"reasons": [], "canonical_containment": "PASS", "verification": "PASS",
-                                                           "baseline": "PASS", "regression": "PASS", "reviewer_verdict": "pass"}), encoding="utf-8")
+                                                           "baseline": "PASS", "regression": "PASS", "inspector_verdict": "pass"}), encoding="utf-8")
         (d / "verification.json").write_text(json.dumps({"test_counts": {"passed": 0}}), encoding="utf-8")
     return Path(wt)
 

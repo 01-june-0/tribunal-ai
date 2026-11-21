@@ -5,7 +5,7 @@ from core.orchestrator import Orchestrator
 from core.state_machine import StateMachine, State
 from core.safety import SafetyPolicy, ScopeViolationError
 from schemas.order import OrderSchema
-from agents.antigravity_builder import AntigravityBuilder
+from agents.antigravity_maker import AntigravityMaker
 
 def _init_brake_repo(repo_path: Path):
     subprocess.run(["git", "init"], cwd=str(repo_path), check=True, stdout=subprocess.PIPE)
@@ -42,12 +42,12 @@ def test_brake_pre_tool_use_blocks_protected_path():
             max_diff_lines=100
         )
 
-        builder = AntigravityBuilder()
+        maker = AntigravityMaker()
 
-        # Builder attempts to write to protected path: config.yaml
+        # Maker attempts to write to protected path: config.yaml
         caught_violation = False
         try:
-            builder.pre_tool_write_file("config.yaml", "timeout: 99\n", str(repo_path), order)
+            maker.pre_tool_write_file("config.yaml", "timeout: 99\n", str(repo_path), order)
         except ScopeViolationError as e:
             caught_violation = True
             assert "protected_paths" in str(e) or "not in allowed_paths" in str(e)
@@ -73,11 +73,11 @@ def test_brake_pre_tool_use_blocks_unauthorized_dependency_file():
             max_diff_lines=100
         )
 
-        builder = AntigravityBuilder()
+        maker = AntigravityMaker()
 
         caught_violation = False
         try:
-            builder.pre_tool_write_file("requirements.txt", "requests==2.31.0\n", str(repo_path), order)
+            maker.pre_tool_write_file("requirements.txt", "requests==2.31.0\n", str(repo_path), order)
         except ScopeViolationError as e:
             caught_violation = True
             assert "not in allowed_paths" in str(e) or "dependency" in str(e)
@@ -87,7 +87,7 @@ def test_brake_pre_tool_use_blocks_unauthorized_dependency_file():
 
 def test_brake_orchestrator_scope_guard_triggers_human_required():
     """
-    Verifies that if unauthorized file modification bypasses builder
+    Verifies that if unauthorized file modification bypasses maker
     (e.g. created outside pre_tool_write), Post-Build Scope Guard catches it
     and triggers HUMAN_REQUIRED.
     """
@@ -100,22 +100,22 @@ def test_brake_orchestrator_scope_guard_triggers_human_required():
         sm = StateMachine(str(db_path))
 
         config = {
-            "head": {"provider": "mock"},
-            "reviewer": {"provider": "mock"},
+            "architect": {"provider": "mock"},
+            "inspector": {"provider": "mock"},
             "verification": {"test_command": "python -m pytest tests/"}
         }
 
         orchestrator = Orchestrator(config=config, state_machine=sm)
 
-        # Custom rogue builder that directly writes unauthorized config
-        def rogue_builder(builder: AntigravityBuilder, order, wt_path):
+        # Custom rogue maker that directly writes unauthorized config
+        def rogue_maker(maker: AntigravityMaker, order, wt_path):
             (Path(wt_path) / "config.yaml").write_text("timeout: 999\n", encoding="utf-8")
             return ["config.yaml"]
 
         summary = orchestrator.run(
             project_path=str(repo_path),
             goal="Rogue config change",
-            builder_fn=rogue_builder
+            maker_fn=rogue_maker
         )
 
         assert summary["final_state"] == State.HUMAN_REQUIRED

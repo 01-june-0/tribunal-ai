@@ -156,17 +156,37 @@ body.broadcast .slot-role::after,body.replaying .slot-role::after{content:""}
 #role-menu button small{margin-left:auto;color:var(--muted);font-size:12px}
 #role-menu button:disabled{opacity:.5;cursor:wait}
 
-/* ---------- stinger: a title card each time the pipeline moves on; intro: the first three seconds */
+/* ---------- stinger: a title card each time the pipeline moves on */
 #stinger{--c:#fff;position:absolute;left:0;right:0;top:34%;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;opacity:0}
 #stinger small{font:700 13px var(--num);letter-spacing:.42em;color:var(--c);text-shadow:0 0 18px var(--c)}
 #stinger strong{font:800 clamp(54px,7.2vw,124px)/1 var(--body);letter-spacing:.04em;color:#fff;text-shadow:0 0 44px var(--c),0 0 120px var(--c),0 4px 30px #000}
 #stinger.show{animation:stinger 2.1s cubic-bezier(.2,.8,.2,1) both}
 @keyframes stinger{0%{opacity:0;transform:scale(1.5);filter:blur(16px)}16%{opacity:1;transform:scale(1);filter:blur(0)}68%{opacity:1;transform:scale(.98)}100%{opacity:0;transform:scale(.9);filter:blur(10px)}}
-#intro{position:fixed;z-index:8;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none;background:radial-gradient(circle,#04060c00 30%,#04060c 78%);animation:introout 3.4s ease both}
-#intro span{font:600 15px var(--num);letter-spacing:.9em;margin-right:-.9em;color:#c6d2e8;animation:introtext 3.4s ease both}
-#intro strong{font:800 clamp(44px,6.4vw,104px)/1 var(--num);letter-spacing:.18em;margin-right:-.18em;background:linear-gradient(90deg,var(--claude),#fff 50%,var(--codex) 75%,var(--agy));-webkit-background-clip:text;background-clip:text;color:transparent;animation:introtext 3.4s .12s ease both}
+/* intro: a roll call (each of the three lights up at its own place and answers), the lights gather into the core while
+   the dust assembles, and the title blurs in over a soft bloom. About six seconds; positions come from the scene. */
+#intro{position:fixed;z-index:8;inset:0;pointer-events:none;background:radial-gradient(circle,#04060c00 28%,#04060c 78%);animation:introout 6.2s ease both}
+.intro-title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.intro-title span{font:600 15px var(--num);letter-spacing:.9em;margin-right:-.9em;color:#c6d2e8;opacity:0;animation:introtext 3s 3.25s ease both}
+.intro-title strong{font:800 clamp(40px,6vw,100px)/1.05 var(--num);letter-spacing:.16em;margin-right:-.16em;background:linear-gradient(90deg,var(--claude),#fff 50%,var(--codex) 75%,var(--agy));-webkit-background-clip:text;background-clip:text;color:transparent;opacity:0;animation:introtext 3s 3.37s ease both}
+.intro-call{--c:#fff;--d:0s;--dx:0px;--dy:0px;position:absolute;left:0;top:0;width:0;height:0}
+.intro-call[data-slot="0"]{--d:.15s}.intro-call[data-slot="1"]{--d:.65s}.intro-call[data-slot="2"]{--d:1.15s}
+.intro-call i{position:absolute;left:-13px;top:-13px;width:26px;height:26px;border-radius:50%;background:var(--c);box-shadow:0 0 40px 10px var(--c);opacity:0;
+  animation:introlight .55s var(--d) cubic-bezier(.2,1.5,.4,1) both,introgather 1.35s 2.15s cubic-bezier(.6,0,.3,1) forwards}
+.intro-call span,.intro-call b,.intro-call em{position:absolute;left:0;translate:-50% 0;white-space:nowrap;opacity:0;animation:introcall .45s var(--d) ease both,introcallout .3s 1.95s ease forwards}
+.intro-call span{top:26px;font:700 12px var(--num);letter-spacing:.2em;color:var(--muted)}
+.intro-call b{top:44px;font:650 20px/1.2 var(--body);color:var(--c);text-shadow:0 0 24px color-mix(in srgb,var(--c) 60%,transparent)}
+.intro-call em{top:72px;font:600 12px ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-style:normal;letter-spacing:.08em;color:var(--ok);animation-delay:calc(var(--d) + .3s),1.95s}
+.intro-bloom{position:absolute;left:var(--cx,50%);top:var(--cy,46%);width:220px;height:220px;margin:-110px;border-radius:50%;background:conic-gradient(from 210deg,var(--claude),var(--agy),var(--codex),var(--claude));filter:blur(46px);opacity:0;animation:introbloom 3.2s 3s ease both}
+@keyframes introlight{from{opacity:0;scale:.2}to{opacity:1;scale:1}}
+@keyframes introgather{0%{opacity:1;scale:1}85%{opacity:1}100%{translate:var(--dx) var(--dy);opacity:0;scale:.5}}
+@keyframes introcall{from{opacity:0;margin-top:10px}to{opacity:1;margin-top:0}}
+@keyframes introcallout{to{opacity:0}}
+@keyframes introbloom{0%{opacity:0;scale:.3}30%{opacity:.55;scale:1}70%{opacity:.4;scale:1.5}100%{opacity:0;scale:2.2}}
 @keyframes introtext{0%{opacity:0;filter:blur(12px);transform:scale(1.25)}28%{opacity:1;filter:blur(0);transform:scale(1)}72%{opacity:1}100%{opacity:0;filter:blur(8px)}}
-@keyframes introout{0%,70%{opacity:1}100%{opacity:0;visibility:hidden}}
+@keyframes introout{0%,72%{opacity:1}100%{opacity:0;visibility:hidden}}
+body.intro .slot-label{opacity:0!important}      /* the real labels wait until the roll call has gathered */
+#stage,#composer{transition:opacity .9s ease}
+body.intro #stage,body.intro #composer{opacity:0}   /* only the three lights and the sky during the roll call */
 
 /* ---------- pipeline */
 #stage-foot{position:absolute;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px 22px;pointer-events:none}
@@ -205,7 +225,7 @@ body.replaying #top-project{display:none}
 #chat-peek{display:flex;gap:10px;align-items:center;min-width:0;height:48px;padding:0 14px;border-radius:12px;border:1px solid transparent;background:transparent;text-align:left}
 #chat-peek:hover{border-color:var(--line);background:rgba(255,255,255,.04)}
 #peek-role{flex:none;font:700 12px var(--num);letter-spacing:.16em;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,.1);color:var(--muted)}
-#peek-role[data-role="HEAD"]{background:color-mix(in srgb,var(--claude) 22%,transparent);color:var(--claude)}
+#peek-role[data-role="ARCHITECT"]{background:color-mix(in srgb,var(--claude) 22%,transparent);color:var(--claude)}
 #peek-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c6d2e8;font-size:13px}
 #chat-form{display:flex;gap:8px;align-items:center}
 #chat-text{flex:1;height:48px;max-height:160px;resize:none;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--line2) transparent;padding:13px 16px;border-radius:12px;border:1px solid var(--line2);background:rgba(4,7,14,.7);color:var(--text);font:14px/1.5 var(--body)}
@@ -219,7 +239,7 @@ body.replaying #top-project{display:none}
 .chat-msg{max-width:88%;padding:10px 13px;border-radius:13px;background:rgba(255,255,255,.05);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
 .chat-msg small{display:block;font:700 12px var(--num);letter-spacing:.16em;color:var(--muted);margin-bottom:3px}
 .chat-msg.USER{align-self:flex-end;background:#6aa5ff26}
-.chat-msg.HEAD{border-left:2px solid var(--claude)}
+.chat-msg.ARCHITECT{border-left:2px solid var(--claude)}
 .chat-msg.SYSTEM{font-size:12px;color:var(--muted);background:transparent;padding:2px 13px}
 
 /* ---------- attention + workshop */
@@ -386,7 +406,7 @@ body.broadcast #call-panel,body.broadcast #now-doing{display:none}
 }
 #chat-text::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .top-actions button{white-space:nowrap}
-@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}#intro{display:none}}
 #btn-shutdown{color:#ff9d9d;border-color:rgba(255,122,122,.45)}
 #btn-shutdown:hover{background:rgba(255,122,122,.14);border-color:#ff9d9d}
 #shutdown-veil{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:rgba(4,8,16,.94);color:var(--text);text-align:center;padding:24px}

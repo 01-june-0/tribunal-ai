@@ -9,7 +9,7 @@ research_call_provenance. Quota/auth/provider-unavailable/config/safety/schema/e
 are excluded by construction and still fail closed on the first attempt.
 
 Tests 1-4, 9: TriadResearchRunner-level, ProcessTreeRunner.run monkeypatched for determinism.
-Tests 5-6: structural proof the safety/reviewer pipeline never routes through the retrying runner at all.
+Tests 5-6: structural proof the safety/inspector pipeline never routes through the retrying runner at all.
 Tests 7-8: ResearchOrchestrator-level, provider_call stub, proving isolation and full provenance survive a
 retry that happened inside a lower-level runner (simulated here at the result-shape boundary).
 """
@@ -183,14 +183,14 @@ def test_9_retry_never_bypasses_the_real_cli_guard_in_default_regression(tmp_pat
 
 # ---------------------------------------------------------------------------------- 5-6: structural scope proof
 
-def test_5_6_retry_module_is_never_imported_by_the_safety_or_reviewer_pipeline():
-    """safety gate failure -> retry 0; Reviewer changes_required -> retry 0. Both are true by construction:
-    Scope Guard (core/safety.py), the NORMAL Builder/Verifier/Reviewer/Decision pipeline
-    (core/orchestrator.py), and the Reviewer agents never import core.research_runner at all - the bounded
+def test_5_6_retry_module_is_never_imported_by_the_safety_or_inspector_pipeline():
+    """safety gate failure -> retry 0; Inspector changes_required -> retry 0. Both are true by construction:
+    Scope Guard (core/safety.py), the NORMAL Maker/Verifier/Inspector/Decision pipeline
+    (core/orchestrator.py), and the Inspector agents never import core.research_runner at all - the bounded
     retry added in this round exists ONLY inside the six TRIAD research-prompt call sites and cannot affect
-    an experiment's Scope Guard, Verifier, or Reviewer outcome."""
-    for path in ("core/safety.py", "core/orchestrator.py", "agents/codex_reviewer.py",
-                 "agents/claude_reviewer.py", "agents/antigravity_builder.py"):
+    an experiment's Scope Guard, Verifier, or Inspector outcome."""
+    for path in ("core/safety.py", "core/orchestrator.py", "agents/codex_inspector.py",
+                 "agents/claude_inspector.py", "agents/antigravity_maker.py"):
         text = Path(path).read_text(encoding="utf-8")
         assert "research_runner" not in text and "TriadResearchRunner" not in text, path
 

@@ -2,7 +2,13 @@
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRIBUNAL AI · TRINITY</title><link rel="stylesheet" href="/stage.css"><script src="/i18n.js" defer></script><script src="/trinity.js" defer></script><script src="/stage.js" defer></script><script src="/console.js" defer></script></head>
 <body class="trinity" data-view="stage" data-phase="IDLE">
 <canvas id="trinity-canvas" aria-hidden="true"></canvas>
-<div id="intro" aria-hidden="true"><span>THREE MINDS</span><strong>ONE CORE</strong></div>
+<div id="intro" aria-hidden="true">
+  <div class="intro-call" data-slot="0"><i></i><span></span><b></b><em>✓ 응답</em></div>
+  <div class="intro-call" data-slot="1"><i></i><span></span><b></b><em>✓ 응답</em></div>
+  <div class="intro-call" data-slot="2"><i></i><span></span><b></b><em>✓ 응답</em></div>
+  <div class="intro-bloom"></div>
+  <div class="intro-title"><span>TRIBUNAL AI</span><strong>TRINITY ONLINE</strong></div>
+</div>
 
 <header id="topbar">
   <div class="brand">
@@ -56,20 +62,20 @@
   <section id="stage-center" aria-label="세 AI 작업 무대">
     <div id="stinger" aria-hidden="true"></div>
     <div id="role-menu" role="menu" hidden></div>
-    <div class="slot-label" data-slot="0"><span class="slot-role">HEAD · 지휘</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
-    <div class="slot-label" data-slot="1"><span class="slot-role">BUILDER · 구현</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
-    <div class="slot-label" data-slot="2"><span class="slot-role">REVIEWER · 검수</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
+    <div class="slot-label" data-slot="0"><span class="slot-role">ARCHITECT · 설계</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
+    <div class="slot-label" data-slot="1"><span class="slot-role">MAKER · 제작</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
+    <div class="slot-label" data-slot="2"><span class="slot-role">INSPECTOR · 감리</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
 
     <div id="stage-foot">
-      <p id="independence" role="status" hidden>검수 독립성 낮음 · REVIEWER가 HEAD 또는 BUILDER와 같은 AI입니다</p>
+      <p id="independence" role="status" hidden>감리 독립성 낮음 · INSPECTOR가 ARCHITECT 또는 MAKER와 같은 AI입니다</p>
       <p id="caption"></p>
       <div id="phase-box"><span class="kicker">TRINITY CORE</span><strong id="phase-word">대기</strong><small id="phase-sub">세 AI가 지시를 기다립니다</small></div>
       <ol id="pipeline" aria-label="작업 흐름">
-        <li data-stage="PLANNING"><i></i><b>계획</b><span>HEAD</span></li>
-        <li data-stage="BUILDING"><i></i><b>구현</b><span>BUILDER</span></li>
+        <li data-stage="PLANNING"><i></i><b>설계</b><span>ARCHITECT</span></li>
+        <li data-stage="BUILDING"><i></i><b>제작</b><span>MAKER</span></li>
         <li data-stage="VERIFYING"><i></i><b>테스트</b><span>DIRECTOR</span></li>
-        <li data-stage="REVIEWING"><i></i><b>검수</b><span>REVIEWER</span></li>
-        <li data-stage="DECIDING"><i></i><b>판단</b><span>HEAD</span></li>
+        <li data-stage="REVIEWING"><i></i><b>감리</b><span>INSPECTOR</span></li>
+        <li data-stage="DECIDING"><i></i><b>판단</b><span>ARCHITECT</span></li>
       </ol>
     </div>
   </section>
@@ -92,10 +98,10 @@
 </main>
 
 <footer id="composer" class="glass">
-  <button type="button" id="chat-peek" aria-expanded="false" aria-controls="chat-log"><span id="peek-role">HEAD</span><span id="peek-text">대화 기록을 읽고 있습니다.</span></button>
+  <button type="button" id="chat-peek" aria-expanded="false" aria-controls="chat-log"><span id="peek-role">ARCHITECT</span><span id="peek-text">대화 기록을 읽고 있습니다.</span></button>
   <div id="chat-log" hidden></div>
   <form id="chat-form">
-    <textarea id="chat-text" rows="1" maxlength="8000" placeholder="HEAD에게 지시하기 — 예: 캡션 글자 수 검사기를 만들어줘" aria-label="HEAD에게 지시하기"></textarea>
+    <textarea id="chat-text" rows="1" maxlength="8000" placeholder="ARCHITECT에게 지시하기 — 예: 캡션 글자 수 검사기를 만들어줘" aria-label="ARCHITECT에게 지시하기"></textarea>
     <button type="submit" id="chat-send">보내기</button>
   </form>
 </footer>

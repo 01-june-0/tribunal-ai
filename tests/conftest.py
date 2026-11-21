@@ -26,11 +26,11 @@ else:
 
 _RESOLVE_CLI_SITES = (
     "core.provider_manager.resolve_cli",
-    "agents.codex_head.resolve_cli",
-    "agents.claude_head.resolve_cli",
-    "agents.codex_reviewer.resolve_cli",
-    "agents.claude_reviewer.resolve_cli",
-    "agents.antigravity_builder.resolve_cli",
+    "agents.codex_architect.resolve_cli",
+    "agents.claude_architect.resolve_cli",
+    "agents.codex_inspector.resolve_cli",
+    "agents.claude_inspector.resolve_cli",
+    "agents.antigravity_maker.resolve_cli",
 )
 
 
@@ -110,19 +110,19 @@ def isolate_provider_db(request, monkeypatch, tmp_path):
 @pytest.fixture(autouse=True)
 def pinned_role_settings(monkeypatch, tmp_path):
     """The suite must not depend on the operator's local data/role_settings.json. The mode/truthfulness tests
-    (v0237/v0241/v0247) were written against the HEAD=OpenAI assignment, so every test starts from that manual
+    (v0237/v0241/v0247) were written against the ARCHITECT=OpenAI assignment, so every test starts from that manual
     assignment in a private file; tests that exercise role_settings itself re-point PATH to their own file."""
     from core import role_settings
     pinned = tmp_path / "pinned_roles.json"
-    pinned.write_text(json.dumps({"head": "openai", "builder": "antigravity", "reviewer": "claude"}), encoding="utf-8")
+    pinned.write_text(json.dumps({"architect": "openai", "maker": "antigravity", "inspector": "claude"}), encoding="utf-8")
     monkeypatch.setattr(role_settings, "PATH", pinned)
 
 
 @pytest.fixture(autouse=True)
-def strict_policy_unless_head_proxy(request, monkeypatch):
-    """Production runs with autonomy.head_proxy=true (user decision 2026-09-29). The legacy suite verifies the strict
-    human-approval policy, so it keeps running in strict mode; HEAD proxy tests opt in with @pytest.mark.head_proxy."""
-    if request.node.get_closest_marker("head_proxy") is not None:
+def strict_policy_unless_architect_proxy(request, monkeypatch):
+    """Production runs with autonomy.architect_proxy=true (user decision 2026-09-29). The legacy suite verifies the strict
+    human-approval policy, so it keeps running in strict mode; ARCHITECT proxy tests opt in with @pytest.mark.architect_proxy."""
+    if request.node.get_closest_marker("architect_proxy") is not None:
         return
     import director
     import dashboard_server
@@ -130,7 +130,7 @@ def strict_policy_unless_head_proxy(request, monkeypatch):
 
     def strict_config():
         cfg = real()
-        cfg.setdefault("autonomy", {})["head_proxy"] = False
+        cfg.setdefault("autonomy", {})["architect_proxy"] = False
         return cfg
     monkeypatch.setattr(director, "load_config", strict_config)
     monkeypatch.setattr(dashboard_server, "load_config", strict_config)
@@ -168,7 +168,7 @@ def remove_run_folders_left_by_tests():
     import shutil
     runs = Path(__file__).resolve().parents[1] / "runs"
     before = {d.name for d in runs.iterdir()} if runs.is_dir() else set()
-    # Two test sessions at once (a reviewer running a few tests while the full suite goes) share this folder; a
+    # Two test sessions at once (a inspector running a few tests while the full suite goes) share this folder; a
     # session that finishes first must not delete folders the other one is still reading. Each session leaves a
     # marker with its pid, and cleanup is skipped while another session's process is alive.
     marker = runs / f".test-session-{os.getpid()}"

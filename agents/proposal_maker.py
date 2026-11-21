@@ -1,18 +1,18 @@
-"""Builder proposes complete file contents; Director validates and applies them."""
+"""Maker proposes complete file contents; Director validates and applies them."""
 import json
 import os
 import sys
 import tempfile
 from pathlib import Path
-from agents.antigravity_builder import AntigravityBuilder
+from agents.antigravity_maker import AntigravityMaker
 from core.bootstrap import prepare_project
 from core.research_runner import TriadResearchRunner, ResearchProviderCallError
 from core.safety import SafetyPolicy
 from core.autopilot import required_output_path as autopilot_output
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 
 
-class ProposalBuilder(AntigravityBuilder):
+class ProposalMaker(AntigravityMaker):
     @staticmethod
     def _repair_invalid_json_escapes(text):
         """Repair only JSON escapes that json.loads cannot legally interpret.
@@ -67,7 +67,7 @@ class ProposalBuilder(AntigravityBuilder):
                     candidate=candidate[:pos]+candidate[pos+1:]
                 else:
                     candidate=candidate[:pos]+'\\'+candidate[pos:]
-        raise original or ValueError('Builder JSON repair limit exceeded')
+        raise original or ValueError('Maker JSON repair limit exceeded')
 
     def __init__(self, provider='google', **kwargs):
         from core.role_settings import ALIASES, DOMAINS
@@ -82,14 +82,14 @@ class ProposalBuilder(AntigravityBuilder):
         return super().get_provenance(exit_code).model_copy(update={
             'provider': self.provider, 'runtime': self.agent_family + '-cli'})
 
-    def run(self, order, worktree_path, builder_fn=None):
-        if builder_fn is not None:
-            return super().run(order, worktree_path, builder_fn)
+    def run(self, order, worktree_path, maker_fn=None):
+        if maker_fn is not None:
+            return super().run(order, worktree_path, maker_fn)
         from core import usage
-        usage.set_context(role='BUILDER')
+        usage.set_context(role='MAKER')
         self.last_execution_info = {'exit_code': None, 'attempts': [], 'output': ''}
         root = Path(worktree_path).resolve()
-        from core.builder_context import referenced_documents
+        from core.maker_context import referenced_documents
         documents = referenced_documents(order)
         sources = {}
         candidates = []
@@ -115,10 +115,10 @@ class ProposalBuilder(AntigravityBuilder):
                 editable.append((rel, path))
             elif readable_source:
                 context.append((rel, path))
-        # The files the ORDER lets the Builder change come first (a budget spent on unrelated files once hid the only
+        # The files the ORDER lets the Maker change come first (a budget spent on unrelated files once hid the only
         # file a milestone had to edit), ranked: required outputs, then files the ORDER/repair notes name, then the
         # rest smallest first. An oversized prompt is its own failure (empty responses, 600 s timeouts), so what does
-        # not fit is listed by path only and the Builder is told not to rewrite it.
+        # not fit is listed by path only and the Maker is told not to rewrite it.
         order_text = '\n'.join([order.goal, order.context or '', *order.acceptance_criteria])
         wanted = {p for p in (autopilot_output(r) for r in order.required_outputs) if p}
 
@@ -140,7 +140,7 @@ class ProposalBuilder(AntigravityBuilder):
                     omitted.append(rel)
         self.last_context_files = list(sources)          # in priority order: editable first
         self.last_omitted_files = omitted
-        prompt = ('You are the implementation Builder. Do not use tools. All source context is supplied below. '
+        prompt = ('You are the implementation Maker. Do not use tools. All source context is supplied below. '
                   'Return ONLY JSON: {"files":[{"path":"relative/file.py","content":"complete file contents"}],'
                   '"edits":[{"path":"existing/file.py","old":"exact text copied from that file","new":"replacement text"}],'
                   '"summary":"..."}. Prefer "edits" for changes to existing files - each "old" must appear EXACTLY ONCE in '
@@ -148,7 +148,7 @@ class ProposalBuilder(AntigravityBuilder):
                   'new files or complete rewrites. Keep the reply compact. '
                   'Implement the ORDER and real behavior tests. Preserve existing behavior. No placeholder implementations. '
                   'Return only changed files. No deletion operations. Stay within file and diff budgets. '
-                  'HEAD feedback and outstanding reviewer findings in context must be resolved. '
+                  'ARCHITECT feedback and outstanding inspector findings in context must be resolved. '
                   'Director host Python is ' + sys.version.split()[0] + '; platform is ' + sys.platform +
                   '. Honor any project-specific runtime requirements in the ORDER.\nORDER:\n' + order.model_dump_json() +
                   '\nREFERENCE DOCUMENTS:\n' + json.dumps(documents, ensure_ascii=False) +
@@ -158,7 +158,7 @@ class ProposalBuilder(AntigravityBuilder):
         domain = self.provider.upper()
         runner = TriadResearchRunner(executables={domain: self.executable}, timeout=self.timeout,
                                      no_output_timeout=self.no_progress_timeout)
-        with tempfile.TemporaryDirectory(prefix='director-builder-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='director-maker-') as tmp:
             prepare_project(tmp)
             try:
                 result = runner.invoke(domain, prompt, tmp, 'BUILDING')
@@ -181,7 +181,7 @@ class ProposalBuilder(AntigravityBuilder):
             self.last_execution_info['json_repairs'] = repairs
         if self.provider == 'anthropic' and isinstance(proposal, dict) and proposal.get('type') == 'result':
             if proposal.get('is_error'):
-                raise ValueError('Claude Builder returned an error result')
+                raise ValueError('Claude Maker returned an error result')
             text = proposal.get('result', '').strip()
             if text.startswith('```'):
                 text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
@@ -189,23 +189,23 @@ class ProposalBuilder(AntigravityBuilder):
             if envelope_repairs:
                 self.last_execution_info.setdefault('json_repairs', []).extend(envelope_repairs)
         if not isinstance(proposal, dict):
-            raise ValueError('Builder must return a JSON object')
+            raise ValueError('Maker must return a JSON object')
         files = proposal.get('files') or []
         edits = proposal.get('edits') or []
         if not isinstance(files, list) or not isinstance(edits, list):
-            raise ValueError('Builder must return a bounded nonempty files list')
-        if not files and not edits and 'HEAD REPAIR ORDER' in (order.context or ''):
+            raise ValueError('Maker must return a bounded nonempty files list')
+        if not files and not edits and 'ARCHITECT REPAIR ORDER' in (order.context or ''):
             # In a correction round "nothing needs to change" is a legitimate answer: the Director re-verifies and the
-            # Reviewer/HEAD judge the existing changes again (the repair budget bounds this).
-            return BuilderResultSchema(status='COMPLETED', files_modified=[], commands_run=[result['invocation']],
+            # Inspector/ARCHITECT judge the existing changes again (the repair budget bounds this).
+            return MakerResultSchema(status='COMPLETED', files_modified=[], commands_run=[result['invocation']],
                                        summary='No further changes proposed: ' + str(proposal.get('summary', ''))[:500])
         new_contents = self.resolve_changes(files, edits, root, order)
         if not new_contents or len(new_contents) > order.max_files_changed:
-            raise ValueError('Builder must return a bounded nonempty files list')
+            raise ValueError('Maker must return a bounded nonempty files list')
         # The complete batch was validated (paths, exact edit anchors) before the first file is written.
         for rel, content in new_contents.items():
             self.pre_tool_write_file(rel, content, str(root), order)
-        return BuilderResultSchema(status='COMPLETED', files_modified=list(new_contents),
+        return MakerResultSchema(status='COMPLETED', files_modified=list(new_contents),
                                    commands_run=[result['invocation']], summary=proposal.get('summary', 'Files implemented'))
 
     EDITABLE_BUDGET = 140_000

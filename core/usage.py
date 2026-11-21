@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 PROVIDER_BY_CLI = {"claude": "ANTHROPIC", "codex": "OPENAI", "agy": "GOOGLE"}
 PROVIDER_NAME = {"ANTHROPIC": "Claude", "OPENAI": "Codex", "GOOGLE": "Antigravity"}
-ROLE_NAME = {"HEAD": "HEAD · 지휘", "BUILDER": "BUILDER · 구현", "REVIEWER": "REVIEWER · 검수"}
+ROLE_NAME = {"ARCHITECT": "ARCHITECT · 설계", "MAKER": "MAKER · 제작", "INSPECTOR": "INSPECTOR · 감리"}
 STALE_AFTER = timedelta(minutes=30)          # longer than any CLI timeout: a RUNNING row older than this died with its process
 
 _CTX: contextvars.ContextVar = contextvars.ContextVar("director_usage_ctx", default=None)
@@ -77,6 +77,8 @@ def _conn() -> sqlite3.Connection:
     from core.db_path import get_db_path
     conn = sqlite3.connect(str(get_db_path()), timeout=10)
     conn.row_factory = sqlite3.Row
+    from core.role_names import migrate_db
+    migrate_db(conn)                                 # role names written before the rename
     conn.execute("""CREATE TABLE IF NOT EXISTS ai_usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, ended_at TEXT, status TEXT NOT NULL,
         provider TEXT NOT NULL, role TEXT, stage TEXT, run_id TEXT, mission_id TEXT, pid INTEGER,
@@ -171,6 +173,7 @@ def backfill_from_runs(runs_dir: Path, missions: List[Dict[str, Any]]) -> int:
                 continue
             path = Path(runs_dir) / run_id / "provenance.json"
             try:
+                from core.role_names import canon_role
                 records = json.loads(path.read_text(encoding="utf-8")).get("records", [])
             except (OSError, ValueError, AttributeError):
                 continue
@@ -183,7 +186,7 @@ def backfill_from_runs(runs_dir: Path, missions: List[Dict[str, Any]]) -> int:
                     "INSERT INTO ai_usage (started_at, ended_at, status, provider, role, stage, run_id, mission_id, "
                     "duration_sec, exit_code, source) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'backfill')",
                     (rec.get("timestamp") or "", rec.get("timestamp") or "",
-                     "OK" if rec.get("exit_code") == 0 else "ERROR", provider, rec.get("agent"), run_id, mission_id,
+                     "OK" if rec.get("exit_code") == 0 else "ERROR", provider, canon_role(rec.get("agent")), run_id, mission_id,
                      rec.get("duration_sec"), rec.get("exit_code")))
                 added += 1
     return added

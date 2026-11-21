@@ -51,6 +51,8 @@ class StateMachine:
 
     def _init_db(self) -> None:
         with self._get_conn() as conn:
+            from core.role_names import migrate_db
+            migrate_db(conn)                    # a database from before the role rename (see core/role_names.py)
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS runs (
@@ -125,7 +127,7 @@ class StateMachine:
                     changed_count INTEGER,
                     counts_json TEXT,
                     tests_state TEXT,
-                    reviewer_state TEXT,
+                    inspector_state TEXT,
                     safety_state TEXT,
                     worktree_state TEXT,
                     detail TEXT,
@@ -241,7 +243,7 @@ class StateMachine:
 
     def reopen_after_human_approval(self, run_id: str, details: str, target: str = None) -> bool:
         """The ONLY way out of HUMAN_REQUIRED: an explicit human approval reopens the run at ORDER_READY so it
-        continues through the normal resume pipeline (worktree, baseline, builder, scope guard, reviewer, final gate).
+        continues through the normal resume pipeline (worktree, baseline, maker, scope guard, inspector, final gate).
         Atomic conditional UPDATE: exactly one caller wins even if Approve is clicked twice or from two processes."""
         target = target or State.ORDER_READY
         if target not in (State.ORDER_READY, State.VERIFYING):
@@ -351,7 +353,7 @@ class StateMachine:
 
     def upsert_result_state(self, run_id: str, **fields) -> None:
         import json as _json
-        allowed = {"state", "changed_count", "counts_json", "tests_state", "reviewer_state", "safety_state", "worktree_state", "detail", "request_id"}
+        allowed = {"state", "changed_count", "counts_json", "tests_state", "inspector_state", "safety_state", "worktree_state", "detail", "request_id"}
         data = {k: (_json.dumps(v, ensure_ascii=False) if k == "counts_json" and not isinstance(v, str) else v) for k, v in fields.items() if k in allowed}
         now = datetime.utcnow().isoformat()
         with self._get_conn() as conn:
@@ -375,7 +377,7 @@ class StateMachine:
         with self._get_conn() as conn:
             rows = conn.execute(
                 """
-                SELECT r.run_id, r.project_path, r.created_at, s.state, s.changed_count, s.tests_state, s.reviewer_state, s.safety_state, s.worktree_state
+                SELECT r.run_id, r.project_path, r.created_at, s.state, s.changed_count, s.tests_state, s.inspector_state, s.safety_state, s.worktree_state
                 FROM result_state s JOIN runs r ON r.run_id = s.run_id
                 WHERE s.state = 'READY' AND r.current_state = 'PASS' AND s.worktree_state = 'PRESENT'
                 ORDER BY r.created_at DESC

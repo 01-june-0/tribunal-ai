@@ -1,6 +1,6 @@
-"""HEAD proxy autonomy - the user's delegated operating policy (2026-09-29).
+"""ARCHITECT proxy autonomy - the user's delegated operating policy (2026-09-29).
 
-The user delegated every decision to HEAD except four categories:
+The user delegated every decision to ARCHITECT except four categories:
   1. spending money (payments, purchases, paid services, paid API keys)
   2. real-money trading (orders on a live broker/exchange account; demo/backtest is fine)
   3. real credentials / account creation
@@ -8,7 +8,7 @@ The user delegated every decision to HEAD except four categories:
      messaging people)
 plus genuine security violations (control-plane tampering, worktree escape).
 
-Everything else is auto-resolved: scope is NARROWED (never widened beyond what HEAD asked for),
+Everything else is auto-resolved: scope is NARROWED (never widened beyond what ARCHITECT asked for),
 failed calls are retried with feedback, unavailable providers are replaced (visibly, with an audit
 record), soft Scope Guard findings are waived or fed back into the repair loop.
 """
@@ -24,7 +24,7 @@ DOMAIN_PREFERENCE = ("ANTHROPIC", "OPENAI", "GOOGLE")
 
 
 def enabled(config: Optional[dict]) -> bool:
-    return bool(((config or {}).get("autonomy") or {}).get("head_proxy"))
+    return bool(((config or {}).get("autonomy") or {}).get("architect_proxy"))
 
 
 def setting(config: Optional[dict], key: str, default):
@@ -34,9 +34,9 @@ def setting(config: Optional[dict], key: str, default):
 # Execution profiles: how much process a request gets. "quick" is for small, well-understood changes (one or two
 # milestones, one correction round); "deep" is for ambitious goals. A profile only changes budgets, never the gates.
 PROFILE_DEFAULTS = {
-    "quick": {"max_steps": 2, "max_repairs": 1, "builder_attempts": 2, "max_consecutive_failures": 2},
-    "standard": {"max_steps": 6, "max_repairs": 3, "builder_attempts": 3, "max_consecutive_failures": 3},
-    "deep": {"max_steps": 12, "max_repairs": 3, "builder_attempts": 3, "max_consecutive_failures": 4},
+    "quick": {"max_steps": 2, "max_repairs": 1, "maker_attempts": 2, "max_consecutive_failures": 2},
+    "standard": {"max_steps": 6, "max_repairs": 3, "maker_attempts": 3, "max_consecutive_failures": 3},
+    "deep": {"max_steps": 12, "max_repairs": 3, "maker_attempts": 3, "max_consecutive_failures": 4},
 }
 PROFILE_TAGS = {"[빠르게]": "quick", "[quick]": "quick", "[깊게]": "deep", "[deep]": "deep", "[표준]": "standard"}
 
@@ -47,7 +47,7 @@ def profile_overrides(config: Optional[dict], name: Optional[str]) -> dict:
         return {}
     merged = dict(PROFILE_DEFAULTS.get(name, {}))
     merged.update((setting(config, "profiles", {}) or {}).get(name) or {})
-    return {k: v for k, v in merged.items() if k in ("max_steps", "max_repairs", "builder_attempts", "max_consecutive_failures")}
+    return {k: v for k, v in merged.items() if k in ("max_steps", "max_repairs", "maker_attempts", "max_consecutive_failures")}
 
 
 def split_profile_tag(text: str):
@@ -77,7 +77,7 @@ def serious_terms_in(text: str) -> List[str]:
 
 
 def is_serious_text(text: str) -> bool:
-    """HEAD escalations are kept only for the delegated-exception categories."""
+    """ARCHITECT escalations are kept only for the delegated-exception categories."""
     return (text or "").strip().upper().startswith("USER_DECISION") or bool(serious_terms_in(text))
 
 
@@ -90,8 +90,8 @@ USER_STOP_MARKERS = (
 SECURITY_STOP_MARKERS = tuple(m for m in USER_STOP_MARKERS if m != "USER_DECISION")
 
 
-def head_decision_only(detail: str) -> bool:
-    """The stop is HEAD's own USER_DECISION with no security stop and no money/credential indicator. HEAD sometimes
+def architect_decision_only(detail: str) -> bool:
+    """The stop is ARCHITECT's own USER_DECISION with no security stop and no money/credential indicator. ARCHITECT sometimes
     uses it for an ORDER that cannot be met as written (e.g. its own protected_paths lock a broken test fixture) -
     a planning problem the proxy must resolve, not a question for the user."""
     d = detail or ""
@@ -151,7 +151,7 @@ REPAIRABLE_PREFIXES = ("Unauthorized file deletion", "Unauthorized deletion of e
 
 
 def split_post_build(violations: List[str]) -> Dict[str, List[str]]:
-    """serious (stop) / waivable (HEAD proxy approves) / repairable (back to the Builder).
+    """serious (stop) / waivable (ARCHITECT proxy approves) / repairable (back to the Maker).
     Anything unrecognised is serious: fail closed."""
     out = {"serious": [], "waivable": [], "repairable": []}
     for v in violations or []:
@@ -196,7 +196,7 @@ _PATHLIKE = re.compile(r"^(?:[\w.\-]+/)*[\w.\-]*\.[A-Za-z0-9]{1,8}$|^(?:[\w.\-]+
 
 def required_output_path(entry: str) -> Optional[str]:
     """The file a required_outputs entry names, or None when the entry is a description rather than a file.
-    HEAD writes 'backend/x.py (fix Y)', 'docs/X.md with the new rules' or even 'pytest summary line and ...': only a
+    ARCHITECT writes 'backend/x.py (fix Y)', 'docs/X.md with the new rules' or even 'pytest summary line and ...': only a
     leading repo-relative path-shaped token is a file requirement; prose belongs to the acceptance criteria."""
     text = str(entry or "").strip()
     if not text:
@@ -232,7 +232,7 @@ def symbol_deletion(entry: str) -> str:
 
 def order_conflicts(order: OrderSchema) -> List[str]:
     """A deliverable the ORDER itself makes impossible: a required output that its own protected_paths cover or that
-    its allowed_paths do not include. The Builder can never satisfy such an ORDER, so it goes back to HEAD before a
+    its allowed_paths do not include. The Maker can never satisfy such an ORDER, so it goes back to ARCHITECT before a
     run is spent on it. Nothing is widened or unprotected here."""
     problems = []
     for entry in order.required_outputs or []:
@@ -247,7 +247,7 @@ def order_conflicts(order: OrderSchema) -> List[str]:
 
 
 def sanitize_order(order: OrderSchema, project_path: Optional[str]) -> Tuple[OrderSchema, List[str]]:
-    """Representational repairs that can only NARROW authority (plus spelling HEAD's explicit whole-worktree
+    """Representational repairs that can only NARROW authority (plus spelling ARCHITECT's explicit whole-worktree
     intent as the pattern the Scope Guard actually understands). Control plane / .git / protected wins."""
     notes: List[str] = []
     if project_path:
@@ -292,7 +292,7 @@ def sanitize_order(order: OrderSchema, project_path: Optional[str]) -> Tuple[Ord
         if derived:
             allowed = derived
             notes.append("allowed_paths derived from required_outputs")
-    # HEAD sometimes names a test to delete as a pytest node id ("tests/test_x.py::test_y"); the deletion guard keys
+    # ARCHITECT sometimes names a test to delete as a pytest node id ("tests/test_x.py::test_y"); the deletion guard keys
     # symbols by name, and the path check would reject the whole ORDER as an out-of-worktree path.
     requested = [symbol_deletion(p) for p in data["allowed_deletions"]]
     if requested != list(data["allowed_deletions"]):
@@ -301,11 +301,11 @@ def sanitize_order(order: OrderSchema, project_path: Optional[str]) -> Tuple[Ord
     deletions = [p for p in requested if (":" in p and "/" not in p and "\\" not in p) or valid(p)]
     if len(deletions) != len(requested):
         notes.append("dropped invalid allowed_deletions")
-    # reference_paths is for absolute paths of documents the user supplied; repo files already reach the Builder
-    # as source context, and a relative entry makes the Builder reject the whole ORDER.
+    # reference_paths is for absolute paths of documents the user supplied; repo files already reach the Maker
+    # as source context, and a relative entry makes the Maker reject the whole ORDER.
     refs = [p for p in data.get("reference_paths") or [] if Path(str(p)).is_absolute()]
     if len(refs) != len(data.get("reference_paths") or []):
-        notes.append("dropped repo-relative reference_paths (repo files are already supplied to the Builder)")
+        notes.append("dropped repo-relative reference_paths (repo files are already supplied to the Maker)")
     data.update(allowed_paths=list(dict.fromkeys(allowed)), protected_paths=protected, allowed_deletions=deletions,
                 reference_paths=refs)
     return OrderSchema(**data), notes
@@ -315,10 +315,10 @@ AUTO_ENTRY_CODES = {"AMBIGUOUS_SCOPE", "SENSITIVE_FILE_IN_SCOPE", "PROTECTED_PAT
 JUDGED_ENTRY_CODES = {"HIGH_RISK", "EXPLICIT_HUMAN_APPROVAL_REQUESTED"}
 
 
-def proxy_verdict(head, question: str, evidence: Dict[str, Any], cwd: Optional[str] = None) -> Tuple[bool, str, str]:
-    """(approve, reason, source). HEAD decides as the user's proxy; if HEAD cannot be reached the user's
+def proxy_verdict(architect, question: str, evidence: Dict[str, Any], cwd: Optional[str] = None) -> Tuple[bool, str, str]:
+    """(approve, reason, source). ARCHITECT decides as the user's proxy; if ARCHITECT cannot be reached the user's
     written policy is applied deterministically (escalate only on money/credential indicators)."""
-    fn = getattr(head, "proxy_decide", None)
+    fn = getattr(architect, "proxy_decide", None)
     last = None
     if fn is not None:
         for _ in range(2):
@@ -326,22 +326,22 @@ def proxy_verdict(head, question: str, evidence: Dict[str, Any], cwd: Optional[s
                 res = fn(question, evidence, cwd=cwd) or {}
                 decision = str(res.get("decision", "")).upper()
                 if decision in ("APPROVE", "ESCALATE"):
-                    return decision == "APPROVE", str(res.get("reason", ""))[:500], "HEAD"
+                    return decision == "APPROVE", str(res.get("reason", ""))[:500], "ARCHITECT"
                 last = f"unexpected decision {decision!r}"
             except Exception as exc:
                 last = str(exc)[:200]
     hits = serious_terms_in(question + " " + str(evidence.get("scan_text", "")))
-    reason = ("HEAD proxy unavailable (" + str(last) + "); policy fallback: "
+    reason = ("ARCHITECT proxy unavailable (" + str(last) + "); policy fallback: "
               + ("money/credential indicators " + ", ".join(hits) if hits else "no money/credential indicators"))
     return not hits, reason, "POLICY"
 
 
-def rescope(order: OrderSchema, project_path: str, head, attempts: int = 2) -> Tuple[OrderSchema, List[str]]:
-    """Empty write scope with a nonzero write budget: HEAD names the minimal repo-relative paths it needs."""
+def rescope(order: OrderSchema, project_path: str, architect, attempts: int = 2) -> Tuple[OrderSchema, List[str]]:
+    """Empty write scope with a nonzero write budget: ARCHITECT names the minimal repo-relative paths it needs."""
     notes, errors = [], []
     for _ in range(attempts):
         try:
-            proposal = head.create_order(order.goal, {
+            proposal = architect.create_order(order.goal, {
                 "project_path": str(project_path), "original_order": order.model_dump(),
                 "instruction": "Define allowed_paths ONLY: the minimal repo-relative files/subtrees (e.g. 'src/**', "
                                "'tests/test_x.py') this goal must write. No absolute paths, no '..', no .git/.agents.",
@@ -353,42 +353,42 @@ def rescope(order: OrderSchema, project_path: str, head, attempts: int = 2) -> T
         candidate.allowed_paths = list(proposal.allowed_paths or [])
         candidate, n = sanitize_order(candidate, project_path)
         if candidate.allowed_paths:
-            notes.extend(n + ["HEAD re-scoped allowed_paths to " + ", ".join(candidate.allowed_paths)])
+            notes.extend(n + ["ARCHITECT re-scoped allowed_paths to " + ", ".join(candidate.allowed_paths)])
             return candidate, notes
-        errors.append("HEAD returned no usable allowed_paths")
+        errors.append("ARCHITECT returned no usable allowed_paths")
     return order, notes + errors
 
 
-def entry_gate(order: OrderSchema, project_path: Optional[str], head, cwd: Optional[str] = None) -> Dict[str, Any]:
+def entry_gate(order: OrderSchema, project_path: Optional[str], architect, cwd: Optional[str] = None) -> Dict[str, Any]:
     """Returns {'order', 'notes', 'approved': [reasons], 'escalate': None | 'APPROVAL_REQUIRED: ...'}."""
     order, notes = sanitize_order(order, project_path)
     reasons = SafetyPolicy.assess_order_for_auto_run(order)
     if (any(_code(r) == "AMBIGUOUS_SCOPE" for r in reasons) and not order.allowed_paths
-            and head is not None and project_path):
-        order, extra = rescope(order, project_path, head)
+            and architect is not None and project_path):
+        order, extra = rescope(order, project_path, architect)
         notes.extend(extra)
         reasons = SafetyPolicy.assess_order_for_auto_run(order)
     if not order.allowed_paths and (order.max_files_changed or order.max_diff_lines):
         return {"order": order, "notes": notes, "approved": [],
-                "escalate": "APPROVAL_REQUIRED: AMBIGUOUS_SCOPE (HEAD could not name any writable path)"}
+                "escalate": "APPROVAL_REQUIRED: AMBIGUOUS_SCOPE (ARCHITECT could not name any writable path)"}
     blocking = [r for r in reasons if _code(r) not in AUTO_ENTRY_CODES | JUDGED_ENTRY_CODES]
     if blocking:
         return {"order": order, "notes": notes, "approved": [], "escalate": "APPROVAL_REQUIRED: " + "; ".join(blocking)}
     judged = [r for r in reasons if _code(r) in JUDGED_ENTRY_CODES]
     if judged:
         approve, why, source = proxy_verdict(
-            head, "The ORDER below was flagged " + ", ".join(judged) + ". Approve it on the user's behalf?",
+            architect, "The ORDER below was flagged " + ", ".join(judged) + ". Approve it on the user's behalf?",
             {"order": order.model_dump(), "scan_text": order_text(order)}, cwd=cwd or project_path)
-        notes.append(f"HEAD proxy ({source}): {'APPROVE' if approve else 'ESCALATE'} - {why}")
+        notes.append(f"ARCHITECT proxy ({source}): {'APPROVE' if approve else 'ESCALATE'} - {why}")
         if not approve:
             return {"order": order, "notes": notes, "approved": [],
                     "escalate": f"APPROVAL_REQUIRED: USER_DECISION_REQUIRED ({why[:300]})"}
     return {"order": order, "notes": notes, "approved": reasons, "escalate": None}
 
 
-# ------------------------------------------------------------------ Builder retry feedback / provider choice
+# ------------------------------------------------------------------ Maker retry feedback / provider choice
 
-def builder_retry_feedback(error: str, order: OrderSchema) -> str:
+def maker_retry_feedback(error: str, order: OrderSchema) -> str:
     e = (error or "").lower()
     tips = []
     if any(k in e for k in ("json", "unterminated", "expecting", "escape", "delimiter", "output token", "cut off")):
@@ -410,7 +410,7 @@ def builder_retry_feedback(error: str, order: OrderSchema) -> str:
         tips.append("The previous attempt timed out: deliver a smaller, complete, working increment.")
     if not tips:
         tips.append("Previous attempt failed: " + (error or "")[:300] + ". Fix the cause and return the JSON proposal.")
-    return "BUILDER RETRY NOTICE: " + " ".join(tips)
+    return "MAKER RETRY NOTICE: " + " ".join(tips)
 
 
 def pick_alternative(pm, exclude: set, avoid: Optional[set] = None) -> Optional[str]:

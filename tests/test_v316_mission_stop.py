@@ -1,6 +1,6 @@
 """v3.1.6 — 작업 정지 (2026-11-03): a stop request really stops a running mission.
 
-2026-11-02 23:53 the operator wrote '즉시 작업 중단' in HEAD chat; HEAD agreed in words and the mission kept building,
+2026-11-02 23:53 the operator wrote '즉시 작업 중단' in ARCHITECT chat; ARCHITECT agreed in words and the mission kept building,
 and resume-on-start continued it after the next restart. Now: STOPPED survives the running thread's saves, the
 mission loop exits, resume skips it, the chat handler treats a short 'stop' message as a command.
 """

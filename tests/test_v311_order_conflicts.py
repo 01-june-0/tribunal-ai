@@ -1,15 +1,15 @@
 """
-v3.1.1: HEAD planned "create data/missions.json" while the same ORDER protected data/*.json. The Builder could never
+v3.1.1: ARCHITECT planned "create data/missions.json" while the same ORDER protected data/*.json. The Maker could never
 write the file, and the mission burned milestone after milestone on it. An ORDER whose required outputs contradict its
-own scope now goes back to HEAD at planning time, with the exact conflict; nothing is widened or unprotected.
+own scope now goes back to ARCHITECT at planning time, with the exact conflict; nothing is widened or unprotected.
 """
 import pytest
 
-from agents.mock_head import MockHead
+from agents.mock_architect import MockArchitect
 from core.autopilot import order_conflicts
 from core.mission import MissionRunner, MissionStore
 from schemas.order import OrderSchema
-from tests.test_v306_head_proxy_autonomy import ORDER, STEP2, mission_factory
+from tests.test_v306_architect_proxy_autonomy import ORDER, STEP2, mission_factory
 
 
 def test_self_contradicting_order_is_named_before_a_run_is_spent():
@@ -24,8 +24,8 @@ def test_self_contradicting_order_is_named_before_a_run_is_spent():
     assert order_conflicts(good) == []
 
 
-@pytest.mark.head_proxy
-def test_mission_planner_returns_a_conflicting_order_to_head(tmp_path, monkeypatch):
+@pytest.mark.architect_proxy
+def test_mission_planner_returns_a_conflicting_order_to_architect(tmp_path, monkeypatch):
     builds, seen = [], []
     conflicting = dict(STEP2, allowed_paths=["tests/**"], protected_paths=["feature2.py"])
     plans = [{"status": "CONTINUE", "summary": "", "reason": "", "order": conflicting},
@@ -36,7 +36,7 @@ def test_mission_planner_returns_a_conflicting_order_to_head(tmp_path, monkeypat
     def plan_next(self, goal, history, ctx, cwd=None):
         seen.append(ctx.get("previous_plan_rejected"))
         return plans.pop(0)
-    monkeypatch.setattr(MockHead, "plan_next", plan_next)
+    monkeypatch.setattr(MockArchitect, "plan_next", plan_next)
     runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
     m = runner.create(str(tmp_path / "proj"), "double then quad", OrderSchema(**ORDER), config={"autonomy": {"max_steps": 4}})
     done = runner.run(m["mission_id"])

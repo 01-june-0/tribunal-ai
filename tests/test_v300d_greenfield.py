@@ -171,7 +171,7 @@ def test_greenfield_is_revalidated_before_baseline_and_new_source_blocks(tmp_pat
     assert orchestrator.rsm.get_session(summary["session_id"])["project_type"] == PROJECT_TYPE_EXISTING
 
 
-def test_readme_only_is_benign_but_does_not_replace_required_head(tmp_path):
+def test_readme_only_is_benign_but_does_not_replace_required_architect(tmp_path):
     repo = _repo(tmp_path)
     (repo / "README.md").write_text("new project", encoding="utf-8")
     evidence = assess_project_type(str(repo), user_explicit_new_project=True)

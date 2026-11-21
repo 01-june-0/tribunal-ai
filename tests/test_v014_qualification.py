@@ -10,8 +10,8 @@ from core.orchestrator import Orchestrator
 from core.state_machine import State
 from core.safety import ScopeViolationError
 from schemas.order import OrderSchema
-from agents.antigravity_builder import AntigravityBuilder
-from agents.mock_head import MockHead
+from agents.antigravity_maker import AntigravityMaker
+from agents.mock_architect import MockArchitect
 
 
 # =====================================================================
@@ -30,8 +30,8 @@ def test_a1_scoped_permission_rules_no_wildcards():
             max_files_changed=5,
             max_diff_lines=100
         )
-        builder = AntigravityBuilder()
-        perms = builder._setup_scoped_permissions(wt, order)
+        maker = AntigravityMaker()
+        perms = maker._setup_scoped_permissions(wt, order)
 
         # 1. No open wildcards in allow lists
         for item in perms["allow_writes"] + perms["allow_commands"]:
@@ -58,8 +58,8 @@ def test_a2_permission_guard_hook_blocks_escapes():
             max_files_changed=5,
             max_diff_lines=100
         )
-        builder = AntigravityBuilder()
-        builder._setup_scoped_permissions(wt, order)
+        maker = AntigravityMaker()
+        maker._setup_scoped_permissions(wt, order)
 
         guard_script = wt / ".agents" / "permission_guard.py"
         assert guard_script.exists()
@@ -100,7 +100,7 @@ def test_a2_permission_guard_hook_blocks_escapes():
 
 
 def test_a3_pre_tool_validation_blocks_unauthorized_actions():
-    """Verify that builder pre-tool checks raise ScopeViolationError for escapes."""
+    """Verify that maker pre-tool checks raise ScopeViolationError for escapes."""
     with tempfile.TemporaryDirectory() as tmpdir:
         wt = Path(tmpdir)
         order = OrderSchema(
@@ -111,19 +111,19 @@ def test_a3_pre_tool_validation_blocks_unauthorized_actions():
             max_files_changed=5,
             max_diff_lines=100
         )
-        builder = AntigravityBuilder(approved_commands=["python -m pytest", "git status"])
+        maker = AntigravityMaker(approved_commands=["python -m pytest", "git status"])
 
         # Write outside allowed_paths -> blocked
         with pytest.raises(ScopeViolationError):
-            builder.pre_tool_write_file("outside.txt", "data", str(wt), order)
+            maker.pre_tool_write_file("outside.txt", "data", str(wt), order)
 
         # Write into protected path -> blocked
         with pytest.raises(ScopeViolationError):
-            builder.pre_tool_write_file(".git/config", "data", str(wt), order)
+            maker.pre_tool_write_file(".git/config", "data", str(wt), order)
 
         # Unapproved command -> blocked
         with pytest.raises(ScopeViolationError):
-            builder.pre_tool_run_command("git push", str(wt), order)
+            maker.pre_tool_run_command("git push", str(wt), order)
 
 
 # =====================================================================
@@ -137,13 +137,13 @@ def test_b1_single_provider_failure_resolves_degraded():
     pm.set_status("ANTHROPIC", ProviderStatus.HEALTHY)
     pm.set_status("GOOGLE", ProviderStatus.HEALTHY)
 
-    assigned = pm.resolve_roles(requested_head="openai", requested_builder="antigravity", requested_reviewer="codex")
+    assigned = pm.resolve_roles(requested_architect="openai", requested_maker="antigravity", requested_inspector="codex")
 
     assert assigned["can_proceed"] is True
     assert assigned["mode"] == FailoverMode.DEGRADED
-    assert assigned["head_provider"] == "claude"
-    assert assigned["reviewer_provider"] == "claude"
-    assert assigned["builder_provider"] == "antigravity"
+    assert assigned["architect_provider"] == "claude"
+    assert assigned["inspector_provider"] == "claude"
+    assert assigned["maker_provider"] == "antigravity"
 
 
 def test_b2_orchestrator_degraded_failover_execution():
@@ -165,8 +165,8 @@ def test_b2_orchestrator_degraded_failover_execution():
         subprocess.run(["git", "add", "."], cwd=str(proj_dir), check=True, capture_output=True)
         subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(proj_dir), check=True, capture_output=True)
 
-        # Mock Head that simulates an OpenAI quota failure initially, but Claude backup succeeds
-        class MockFailingHead(MockHead):
+        # Mock Architect that simulates an OpenAI quota failure initially, but Claude backup succeeds
+        class MockFailingArchitect(MockArchitect):
             def __init__(self):
                 super().__init__()
                 self.provider = "openai"
@@ -174,12 +174,12 @@ def test_b2_orchestrator_degraded_failover_execution():
             def create_order(self, goal, context):
                 raise RuntimeError("usage limit exceeded on OpenAI")
 
-        class MockClaudeHead(MockHead):
+        class MockClaudeArchitect(MockArchitect):
             def __init__(self):
                 super().__init__()
                 self.provider = "claude"
 
-        class MockClaudeReviewer:
+        class MockClaudeInspector:
             def __init__(self, **kwargs):
                 self.provider = "claude"
 
@@ -191,7 +191,7 @@ def test_b2_orchestrator_degraded_failover_execution():
                 from datetime import datetime
                 from schemas.provenance import AgentProvenanceRecord
                 return AgentProvenanceRecord(
-                    agent="REVIEWER",
+                    agent="INSPECTOR",
                     provider="anthropic",
                     runtime="claude-cli",
                     model="claude-code",
@@ -206,30 +206,30 @@ def test_b2_orchestrator_degraded_failover_execution():
                 )
 
         cfg = {
-            "head": {"provider": "openai"},
-            "builder": {"provider": "antigravity"},
-            "reviewer": {"provider": "codex"},
+            "architect": {"provider": "openai"},
+            "maker": {"provider": "antigravity"},
+            "inspector": {"provider": "codex"},
             "verification": {"test_command": "python -m pytest tests/test_calc.py"}
         }
-        orch = Orchestrator(config=cfg, head_agent=MockFailingHead())
+        orch = Orchestrator(config=cfg, architect_agent=MockFailingArchitect())
         # Provide MockClaude agents upon failover
-        orch._init_head = lambda prov=None: MockClaudeHead() if prov in ("claude", "anthropic") else MockFailingHead()
-        orch._init_reviewer = lambda prov=None: MockClaudeReviewer() if prov in ("claude", "anthropic") else orch._init_reviewer(prov)
+        orch._init_architect = lambda prov=None: MockClaudeArchitect() if prov in ("claude", "anthropic") else MockFailingArchitect()
+        orch._init_inspector = lambda prov=None: MockClaudeInspector() if prov in ("claude", "anthropic") else orch._init_inspector(prov)
 
-        # Custom builder function to simulate successful Antigravity modification
-        def custom_builder(builder, order, wt_path):
+        # Custom maker function to simulate successful Antigravity modification
+        def custom_maker(maker, order, wt_path):
             p = Path(wt_path) / "src" / "calc.py"
             p.write_text("def add(a, b): return a + b\ndef sub(a, b): return a - b\n")
             t = Path(wt_path) / "tests" / "test_calc.py"
             t.write_text("from src.calc import add, sub\ndef test_add(): assert add(1, 2) == 3\ndef test_sub(): assert sub(3, 1) == 2\n")
             return ["src/calc.py", "tests/test_calc.py"]
 
-        summary = orch.run(str(proj_dir), "Add subtract function", builder_fn=custom_builder)
+        summary = orch.run(str(proj_dir), "Add subtract function", maker_fn=custom_maker)
 
         # Verify failover was triggered and Same-Provider Guard demoted to HUMAN_REQUIRED
         assert summary["failover_mode"] == FailoverMode.DEGRADED
-        assert summary["head_label"] == "CLAUDE"
-        assert summary["reviewer_label"] == "CLAUDE"
+        assert summary["architect_label"] == "CLAUDE"
+        assert summary["inspector_label"] == "CLAUDE"
         assert summary["final_state"] == State.HUMAN_REQUIRED
 
 
@@ -244,7 +244,7 @@ def test_c1_two_providers_down_blocks_execution():
     pm.set_status("ANTHROPIC", ProviderStatus.UNAVAILABLE, "Claude missing or down")
     pm.set_status("GOOGLE", ProviderStatus.HEALTHY)
 
-    assigned = pm.resolve_roles(requested_head="openai", requested_builder="antigravity", requested_reviewer="codex")
+    assigned = pm.resolve_roles(requested_architect="openai", requested_maker="antigravity", requested_inspector="codex")
 
     assert assigned["can_proceed"] is False
     assert assigned["mode"] == FailoverMode.STOP
@@ -267,9 +267,9 @@ def test_c2_orchestrator_two_providers_down_aborts_immediately():
         subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(proj_dir), check=True, capture_output=True)
 
         cfg = {
-            "head": {"provider": "openai"},
-            "builder": {"provider": "antigravity"},
-            "reviewer": {"provider": "codex"},
+            "architect": {"provider": "openai"},
+            "maker": {"provider": "antigravity"},
+            "inspector": {"provider": "codex"},
             "verification": {"test_command": "python -m pytest"}
         }
         orch = Orchestrator(config=cfg)
@@ -278,15 +278,15 @@ def test_c2_orchestrator_two_providers_down_aborts_immediately():
         orch.pm.set_status("ANTHROPIC", ProviderStatus.UNAVAILABLE, "Down")
         orch.pm.set_status("GOOGLE", ProviderStatus.HEALTHY)
 
-        builder_called = []
-        def probe_builder(builder, order, wt_path):
-            builder_called.append(True)
+        maker_called = []
+        def probe_maker(maker, order, wt_path):
+            maker_called.append(True)
             return []
 
-        summary = orch.run(str(proj_dir), "Should not run", builder_fn=probe_builder)
+        summary = orch.run(str(proj_dir), "Should not run", maker_fn=probe_maker)
 
         # Assertions: Antigravity must never run alone
-        assert len(builder_called) == 0, "Antigravity must NEVER run autonomously alone!"
+        assert len(maker_called) == 0, "Antigravity must NEVER run autonomously alone!"
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert summary["files_changed"] == 0
         assert summary["scope_violations"] > 0

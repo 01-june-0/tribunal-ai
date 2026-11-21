@@ -1,16 +1,16 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from schemas.order import OrderSchema
-from schemas.builder_result import BuilderResultSchema
+from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 
 from schemas.provenance import AgentProvenanceRecord
 
-class BaseHead(ABC):
+class BaseArchitect(ABC):
     """
-    Abstract base class for HEAD agent.
-    HEAD has read-only access to project context and evidence.
+    Abstract base class for ARCHITECT agent.
+    ARCHITECT has read-only access to project context and evidence.
     Forbidden: file write, shell execution, git manipulation.
     """
     provider: str = ""
@@ -24,7 +24,7 @@ class BaseHead(ABC):
     def decide(
         self,
         order: OrderSchema,
-        builder_result: BuilderResultSchema,
+        maker_result: MakerResultSchema,
         verification: Dict[str, Any],
         review_result: ReviewResultSchema,
         cwd: Optional[str] = None,
@@ -82,10 +82,10 @@ class BaseHead(ABC):
         'order': ORDER|None}."""
         import json
         prompt = (
-            "You are HEAD, driving a multi-step development MISSION to completion on the user's behalf.\n"
+            "You are ARCHITECT, driving a multi-step development MISSION to completion on the user's behalf.\n"
             + self.PROXY_POLICY +
-            "\nEach step is one ORDER executed by a Builder in an isolated worktree, then tested by the Director, "
-            "reviewed by an independent Reviewer and judged by you. A new step starts from the files of the latest "
+            "\nEach step is one ORDER executed by a Maker in an isolated worktree, then tested by the Director, "
+            "reviewed by an independent Inspector and judged by you. A new step starts from the files of the latest "
             "PASSED step, so build incrementally on what exists.\n\n"
             "Decide the next move:\n"
             "- DONE: the mission goal's deliverables exist and the step evidence shows they are tested and working.\n"
@@ -98,7 +98,7 @@ class BaseHead(ABC):
             "ORDER rules: repo-relative paths only (e.g. 'src/**', 'tests/test_x.py'); never .git/.agents/GEMINI.md; "
             "include behavior tests in required_outputs; keep max_files_changed <= 15 and max_diff_lines <= 1500; "
             "reference_paths ONLY for absolute paths of external documents the user supplied (repo files are always "
-            "given to the Builder; never list them there); "
+            "given to the Maker; never list them there); "
             "risk_level HIGH only for the escalation categories, an ambitious goal is MEDIUM.\n"
             "Before you answer, check your ORDER against itself: every file in required_outputs must be inside "
             "allowed_paths and must NOT match protected_paths (a wildcard such as data/*.json also protects a new "

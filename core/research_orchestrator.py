@@ -427,11 +427,11 @@ class ResearchOrchestrator:
                      response_bytes: Optional[int] = None) -> None:
         result = result or {}
         roles = {
-            ResearchState.SYNTHESIS: "HEAD_SYNTHESIZER",
-            ResearchState.EXPERIMENT_PLANNING: "HEAD_EXPERIMENT_PLANNER",
+            ResearchState.SYNTHESIS: "ARCHITECT_SYNTHESIZER",
+            ResearchState.EXPERIMENT_PLANNING: "ARCHITECT_EXPERIMENT_PLANNER",
             INTERPRETATION_INDEPENDENT_STAGE: "RESULT_INTERPRETER",
             INTERPRETATION_CROSS_STAGE: "RESULT_INTERPRETATION_CRITIC",
-            RESEARCH_MEMORY_STAGE: "HEAD_MEMORY_CURATOR",
+            RESEARCH_MEMORY_STAGE: "ARCHITECT_MEMORY_CURATOR",
         }
         research_role = roles.get(stage, "RESEARCHER")
         # V3.0-H bounded transient retry: `result["attempts"]` (if present) holds every prior FAILED attempt
@@ -626,7 +626,7 @@ class ResearchOrchestrator:
         critiques = {r["domain"]: r["payload"] for r in self.rsm.get_stage_outputs(
             cycle["cycle_id"], ResearchState.CROSS_CRITIQUE)}
         if "OPENAI" not in proposals:
-            return self._fail_cycle(session_id, cycle["cycle_id"], "SYNTHESIS_BLOCKED: Codex HEAD is unavailable")
+            return self._fail_cycle(session_id, cycle["cycle_id"], "SYNTHESIS_BLOCKED: Codex ARCHITECT is unavailable")
         try:
             envelope = build_synthesis_prompt(session["moonshot"], proposals, critiques, bool(session["degraded"]))
         except Exception as exc:
@@ -651,7 +651,7 @@ class ResearchOrchestrator:
                                         "OPENAI", prompt, result, error)
             return self._fail_cycle(session_id, cycle["cycle_id"], error)
         self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.EXPERIMENT_PLANNING,
-                                  details="Codex HEAD synthesized proposals and critiques without majority voting")
+                                  details="Codex ARCHITECT synthesized proposals and critiques without majority voting")
         return self.session_summary(session_id, message="통합 가설이 생성되어 실험 계획 단계로 전환했습니다.")
 
     def run_through_synthesis(self, session_id: str) -> Dict[str, Any]:
@@ -664,7 +664,7 @@ class ResearchOrchestrator:
     # -------------------------------------------------------------- V3.0-E experiment integration
 
     def plan_experiment(self, session_id: str) -> Dict[str, Any]:
-        """Translate persisted synthesis into a validated NORMAL OrderSchema without executing Builder."""
+        """Translate persisted synthesis into a validated NORMAL OrderSchema without executing Maker."""
         session = self.rsm.get_session(session_id)
         if not session:
             raise ValueError(f"unknown research session: {session_id}")
@@ -738,7 +738,7 @@ class ResearchOrchestrator:
             greenfield_baseline_evidence=baseline_evidence,
         )
 
-    def execute_experiment(self, session_id: str, builder_fn=None) -> Dict[str, Any]:
+    def execute_experiment(self, session_id: str, maker_fn=None) -> Dict[str, Any]:
         """Run a planned experiment through the existing NORMAL safety pipeline and mirror its evidence."""
         session = self.rsm.get_session(session_id)
         if not session:
@@ -787,7 +787,7 @@ class ResearchOrchestrator:
         try:
             result = normal.run(
                 session["project_path"], order.goal, run_id=requested_run_id,
-                builder_fn=builder_fn, order=order,
+                maker_fn=maker_fn, order=order,
             )
         except Exception as exc:
             self.rsm.record_experiment_result(
@@ -807,37 +807,37 @@ class ResearchOrchestrator:
         )
         if final_state != NormalState.PASS:
             verification = result.get("verification") or {}
-            builder = result.get("builder") or {}
+            maker = result.get("maker") or {}
             review = result.get("review") or {}
             scope_violations = int(result.get("scope_violations") or 0)
             # A clean _finalize() decision (no Scope Guard/protected-path/provider/busy/baseline halt reached
             # this experiment through _stop()) always carries scope_violations == 0 - traced every _stop()
             # call site in core/orchestrator.py to confirm every one of them passes a non-empty violations
             # list or falls back to a one-element [details] list, so this is a reliable "we actually reached
-            # a real HEAD/Reviewer decision" signal, not a heuristic.
+            # a real ARCHITECT/Inspector decision" signal, not a heuristic.
             verifier_rejected = (
                 final_state == NormalState.FAIL
-                and builder.get("status") == "COMPLETED"
+                and maker.get("status") == "COMPLETED"
                 and verification.get("passed") is False
                 and scope_violations == 0
             )
-            reviewer_found_defect = (
-                builder.get("status") == "COMPLETED"
+            inspector_found_defect = (
+                maker.get("status") == "COMPLETED"
                 and verification.get("passed") is True
                 and scope_violations == 0
                 and review.get("verdict") == "changes_required"
                 and not (review.get("p0") or [])
             )
-            safe_research_failure = verifier_rejected or reviewer_found_defect
+            safe_research_failure = verifier_rejected or inspector_found_defect
             if safe_research_failure:
                 if verifier_rejected:
                     review_detail = "deterministic verification rejected the experiment"
                     message = "실험 검증은 실패했으며 성공으로 처리하지 않았습니다. 실패 증거를 독립 해석합니다."
                 else:
-                    review_detail = "reviewer found an ordinary implementation defect (no P0, no scope violation)"
-                    message = "Reviewer가 통상적인 구현 결함을 발견해 PASS로 처리하지 않았습니다. 실패 증거를 독립 해석합니다."
+                    review_detail = "inspector found an ordinary implementation defect (no P0, no scope violation)"
+                    message = "Inspector가 통상적인 구현 결함을 발견해 PASS로 처리하지 않았습니다. 실패 증거를 독립 해석합니다."
                 self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.EXPERIMENT_VERIFYING,
-                                          details="NORMAL deterministic verification PASS" if reviewer_found_defect
+                                          details="NORMAL deterministic verification PASS" if inspector_found_defect
                                           else "deterministic verification rejected the experiment")
                 self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.EXPERIMENT_REVIEW, details=review_detail)
                 self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.RESULT_INTERPRETATION,
@@ -855,7 +855,7 @@ class ResearchOrchestrator:
         self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.EXPERIMENT_VERIFYING,
                                   details="NORMAL deterministic verification PASS")
         self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.EXPERIMENT_REVIEW,
-                                  details="NORMAL reviewer and final evidence gate PASS")
+                                  details="NORMAL inspector and final evidence gate PASS")
         self.rsm.transition_cycle(cycle["cycle_id"], ResearchState.RESULT_INTERPRETATION,
                                   details="experiment evidence ready for independent interpretation")
         return {**self.session_summary(session_id, message="실험이 안전 파이프라인을 통과했습니다."),

@@ -35,7 +35,7 @@ def _rows():
 
 
 def _chat_gate_mode():
-    """The exact execution-path computation (dashboard_server.handle_chat_message lines: mark(only=[HEAD]) + gate)."""
+    """The exact execution-path computation (dashboard_server.handle_chat_message lines: mark(only=[ARCHITECT]) + gate)."""
     pm = ProviderManager()
     pm.mark_trial_candidates(only=["OPENAI"])
     return pm.get_failover_mode()[0]
@@ -60,9 +60,9 @@ def page_db(isolate_provider_db):
     return isolate_provider_db
 
 
-# ------------------------------------------------------------------ A: RECOVERING head with trial available -> DEGRADED, same as chat gate
+# ------------------------------------------------------------------ A: RECOVERING architect with trial available -> DEGRADED, same as chat gate
 
-def test_a_recovering_head_trial_available_is_degraded(page_db):
+def test_a_recovering_architect_trial_available_is_degraded(page_db):
     _set("OPENAI", "RECOVERING"); _set("ANTHROPIC", "RECOVERING"); _set("GOOGLE", "HEALTHY")
     preview = ProviderManager().get_effective_mode_for_next_run(only=["OPENAI"])
     assert preview["mode"] == FailoverMode.DEGRADED
@@ -93,7 +93,7 @@ def test_b_cooldown_active_is_stop(page_db):
     _set("OPENAI", "RECOVERING", trial_started_at=datetime.utcnow().isoformat())
     assert ProviderManager().get_effective_mode_for_next_run(only=["OPENAI"])["mode"] == FailoverMode.STOP
     assert _mode_in_html(render_html()) == "STOP"
-    # RECOVERING provider that is not the HEAD is not a chat candidate either (policy parity)
+    # RECOVERING provider that is not the ARCHITECT is not a chat candidate either (policy parity)
     _set("OPENAI", "UNAVAILABLE"); _set("ANTHROPIC", "RECOVERING"); _set("GOOGLE", "HEALTHY")
     assert ProviderManager().get_effective_mode_for_next_run(only=["OPENAI"])["mode"] == FailoverMode.STOP
     assert _chat_gate_mode() == FailoverMode.STOP
