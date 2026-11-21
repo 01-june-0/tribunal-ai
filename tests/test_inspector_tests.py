@@ -36,6 +36,8 @@ class FakeOrch:
     def _get_run_dir(self, run_id): return self.dir
     def _save_json(self, run_id, name, data): self.saved[name] = data
     def _load_json(self, run_id, name): return self.saved.get(name)
+    def _verification_timeout(self): return 120.0
+    _straight_to_repair = Orchestrator._straight_to_repair
 
 
 def review(*tests):

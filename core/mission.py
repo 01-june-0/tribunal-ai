@@ -374,7 +374,8 @@ class MissionRunner:
             "run_id": run_id, "final_state": row.get("current_state"), "worktree_path": row.get("worktree_path"),
             "stop_detail": ((trans[-1].get("details") if trans else "") or "")[:1500],
             "tests": ver.get("test_counts"), "verification": (ver.get("summary") or "")[:600],
-            "review_verdict": rev.get("verdict"),
+            # a review that was skipped because the tests failed is not a verdict of the inspector
+            "review_verdict": None if str(rev.get("summary") or "").startswith(orch.RED_SHORTCUT) else rev.get("verdict"),
             "review_findings": (list(rev.get("p0") or []) + list(rev.get("p1") or []) + list(rev.get("p2") or []))[:10],
             "architect_rationale": (dec.get("rationale") or "")[:1200],
             "files_changed": bld.get("files_modified"),

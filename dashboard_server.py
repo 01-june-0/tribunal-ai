@@ -1531,10 +1531,12 @@ DASHBOARD_JS = r"""
 (function () {
   var I18N = window.__I18N || { status: {}, state: {}, result: {}, role: {}, stage: {}, ui: {}, events: [], reasons: {}, provider: {} };
   function ko(map, raw) { return (map && map[raw]) ? map[raw] : raw; }
-  var POLL_MS = 5000;                                   // adaptive: 3s active run, 5s human-required, 12s idle
   var pollStatusTimer = null, pollMsgTimer = null, lastStatusMode = '';
-  function scheduleStatus(ms) { if (pollStatusTimer) clearTimeout(pollStatusTimer); pollStatusTimer = setTimeout(function () { pollStatus(); }, ms); }
-  function scheduleMessages(ms) { if (pollMsgTimer) clearTimeout(pollMsgTimer); pollMsgTimer = setTimeout(function () { pollMessages(); }, ms); }
+  // Out of sight (window hidden, or this page sitting in the hidden workshop tab of the console): no request is made;
+  // the timer only looks again in 2 s, so the page is fresh within 2 s of being shown.
+  function unseen() { try { return document.hidden || (!!window.frameElement && window.frameElement.getClientRects().length === 0); } catch (e) { return document.hidden; } }
+  function scheduleStatus(ms) { if (pollStatusTimer) clearTimeout(pollStatusTimer); pollStatusTimer = setTimeout(function () { if (unseen()) { scheduleStatus(2000); return; } pollStatus(); }, ms); }
+  function scheduleMessages(ms) { if (pollMsgTimer) clearTimeout(pollMsgTimer); pollMsgTimer = setTimeout(function () { if (unseen()) { scheduleMessages(2000); return; } pollMessages(); }, ms); }
   var STAGES = ['ARCHITECT', 'BUILD', 'VERIFY', 'REVIEW', 'DECIDE'];
   var STATE_INDEX = { PLANNING: 0, ORDER_READY: 0, BUILDING: 1, VERIFYING: 2, REVIEWING: 3, DECIDING: 4 };
   var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1 };

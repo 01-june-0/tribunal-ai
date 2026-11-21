@@ -400,6 +400,13 @@ class Orchestrator:
         v = self.config.get("verification", {}) or {}
         return v.get("build_command"), v.get("test_command"), v.get("lint_command")
 
+    def _verification_timeout(self) -> float:
+        """Seconds each of build / test / lint may take (`verification.timeout_sec`, default 120, 10 to 3600)."""
+        try:
+            return float(min(3600, max(10, float((self.config.get("verification", {}) or {}).get("timeout_sec", 120)))))
+        except (TypeError, ValueError):
+            return 120.0
+
     def prepare_order_for_execution(self, run_id: str, order: OrderSchema, logger: logging.Logger,
                                     provenance_records: list, worktree_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Global safety caps (min(order, global)) + fail-closed path validation. With a worktree the paths must
@@ -667,7 +674,8 @@ class Orchestrator:
         product's runtime output, not Maker changes, and must not later read as out-of-scope Maker edits."""
         build_cmd, test_cmd, lint_cmd = self._verification_cmds()
         before = self._dirty_state(worktree_path) if self._proxy() else None
-        result = Verifier.verify(worktree_path=worktree_path, build_cmd=build_cmd, test_cmd=test_cmd, lint_cmd=lint_cmd)
+        result = Verifier.verify(worktree_path=worktree_path, build_cmd=build_cmd, test_cmd=test_cmd, lint_cmd=lint_cmd,
+                                 timeout=self._verification_timeout())
         if before is not None:
             self._settle_verification_artifacts(run_id, worktree_path, before)
         return result
@@ -835,12 +843,38 @@ class Orchestrator:
             if getattr(prov, "duration_sec", None) is not None:
                 self.pm.update_latency(getattr(self.inspector, "provider", "ANTHROPIC"), prov.duration_sec)
 
+    RED_SHORTCUT = "REVIEW_SKIPPED_TESTS_FAILED"
+
+    def _straight_to_repair(self, run_id: str, verification) -> bool:
+        """True when a failed verification should go straight back to the Maker (ARCHITECT proxy mode, automatic repair
+        on, `autonomy.fast_repair` not switched off). Such a round is free: it does not use up `max_repairs`, so the
+        findings of the first real review get as many rounds as before. At most `max_repairs` rounds are free; after
+        that a red run is reviewed and decided as before, so a run that ends red still carries a real review."""
+        auto = self.config.get("autonomy", {}) or {}
+        if not auto.get("enabled") or auto.get("fast_repair") is False or not self._proxy():
+            return False          # without the ARCHITECT proxy a person may be waiting on the decision: nothing is skipped
+        if not isinstance(verification, dict) or "passed" not in verification or verification.get("passed"):
+            return False
+        fast = [r for r in (self._load_json(run_id, "repair_history.json") or []) if isinstance(r, dict) and r.get("fast")]
+        return len(fast) < auto.get("max_repairs", 3)
+
     def run_inspector_with_failover(self, run_id: str, order: OrderSchema, verification: Dict[str, Any],
                                    project_context: Dict[str, Any], worktree_path: str, logger: logging.Logger,
                                    provenance_records: list):
         """The review, plus the inspector's own independent tests when that is switched on (core/inspector_tests.py):
         the inspector proposes them as text, the Director runs them, a failure becomes a P1 finding."""
         from core import inspector_tests
+        if self._straight_to_repair(run_id, verification):
+            # A red test run needs no second opinion: the Maker gets the test output back at once, and the review
+            # and ARCHITECT's decision are spent on the round whose tests pass (or on the last round allowed).
+            note = self.RED_SHORTCUT + ": " + str(verification.get("summary") or "")[:1500]
+            review = ReviewResultSchema(verdict="changes_required", p0=[], p1=[note], p2=[], summary=note)
+            self._save_json(run_id, "review.json", review)
+            self.sm.log_audit(run_id, "ORCHESTRATOR", "REVIEW_SKIPPED_RED_TESTS", note[:500])
+            if self._load_json(run_id, "inspector_tests.json") is not None:
+                self._save_json(run_id, "inspector_tests.json", {"proposed": 0, "files": [], "rejected": [], "ran": False, "passed": None, "not_asked": True})
+            logger.info("[Fast repair] verification failed; review and decision skipped, straight back to the Maker")
+            return review, None
         wanted = (isinstance(verification, dict) and bool(verification.get("passed")) and bool(self._verification_cmds()[1])
                   and inspector_tests.enabled(self.config))
         if isinstance(verification, dict):
@@ -955,6 +989,11 @@ class Orchestrator:
                                    verification: Dict[str, Any], review_result: ReviewResultSchema, worktree_path: str,
                                    logger: logging.Logger, provenance_records: list):
         """ARCHITECT decision with provider failure handling / Claude failover. Returns (decision, stop)."""
+        if str(getattr(review_result, "summary", "")).startswith(self.RED_SHORTCUT) and self._straight_to_repair(run_id, verification):
+            decision = DecisionSchema(decision="FAIL", rationale=review_result.summary,
+                                      next_steps=["Make the verification pass: " + str(verification.get("summary") or "")[:1500]])
+            self.sm.log_audit(run_id, "ORCHESTRATOR", "DECISION_SKIPPED_RED_TESTS", decision.rationale[:500])
+            return decision, None
         if self._proxy():
             return self._run_decision_autonomous(run_id, order, maker_result, verification, review_result,
                                                  worktree_path, logger, provenance_records)
@@ -1273,9 +1312,13 @@ class Orchestrator:
                 and (decision.decision == 'FAIL' or not verification.get('passed')
                      or review_result.verdict != 'pass' or review_result.p0 or review_result.p1)):
             rounds = self._load_json(run_id, 'repair_history.json') or []
-            if len(rounds) < self.config.get('autonomy', {}).get('max_repairs', 3):
+            fast = str(decision.rationale or '').startswith(self.RED_SHORTCUT)      # see _straight_to_repair
+            used = sum(1 for r in rounds if isinstance(r, dict) and bool(r.get('fast')) == fast)
+            if used < self.config.get('autonomy', {}).get('max_repairs', 3):
                 feedback = {'round': len(rounds) + 1, 'architect': decision.model_dump(),
                             'review': review_result.model_dump(), 'verification': verification}
+                if fast:
+                    feedback['fast'] = True
                 rounds.append(feedback)
                 self._save_json(run_id, 'repair_history.json', rounds)
                 repair_order = {'round': len(rounds), 'architect': decision.model_dump(),

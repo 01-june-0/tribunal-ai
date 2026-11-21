@@ -169,7 +169,7 @@ class ClaudeInspector:
             cwd=str(wt),
             env=get_sanitized_env(),
             timeout=self.timeout,
-            no_output_timeout=self.no_progress_timeout,
+            no_output_timeout=None,          # `claude --print` writes nothing until it is done: silence is not a hang
             heartbeat_interval=self.heartbeat_interval,
             stdin_data=review_prompt
         )

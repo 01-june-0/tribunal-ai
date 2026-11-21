@@ -300,6 +300,8 @@ function drawFlat(){
     c.strokeStyle=rgb(col,.5);c.lineWidth=1.5*k;c.beginPath();c.ellipse(o[0],o[1],u*.47,u*.16,i*Math.PI/3+ph.c*.2,0,7);c.stroke();}
   c.globalCompositeOperation='source-over';
 }
+let paused=false,lost=false;
+function start(){if(!running&&!paused&&!lost&&canvas){running=true;last=performance.now();raf=requestAnimationFrame(frame);}}
 function init(el,opts){
   canvas=el;onFrame=(opts&&opts.onFrame)||null;bootDelay=(opts&&opts.bootDelay)||0;bootTime=(opts&&opts.bootTime)||3.2;
   if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){timeScale=.2;boot=1;}
@@ -312,8 +314,8 @@ function init(el,opts){
     uB=uniforms(progB,['uTex','uDir']);uC=uniforms(progC,['uScene','uB1','uB2','uRes','uCenter','uTime','uCore','uPulse','uTint','uPulseColor']);
     buildGeometry();
     if(!listening){
-      canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(raf);running=false;});
-      canvas.addEventListener('webglcontextrestored',()=>{size=[0,0];fb={};init(canvas,{onFrame});});
+      canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(raf);running=false;lost=true;});
+      canvas.addEventListener('webglcontextrestored',()=>{lost=false;size=[0,0];fb={};init(canvas,{onFrame});});
     }
   }catch(err){
     failed=true;gl=null;flat=canvas.getContext('2d');
@@ -321,7 +323,7 @@ function init(el,opts){
   }
   if(!listening){listening=true;window.addEventListener('pointermove',e=>{mouse[0]=(e.clientX/window.innerWidth-.5)*2;mouse[1]=(e.clientY/window.innerHeight-.5)*2;},{passive:true});}
   size=[0,0];resize();
-  if(!running){running=true;last=performance.now();raf=requestAnimationFrame(frame);}
+  start();
   return {webgl:!failed,hdr};
 }
 function set(s){
@@ -332,6 +334,8 @@ function set(s){
 }
 return {init,set,
   pulse(color){pulse=1;pulseColor=(color||[1,1,1]).slice();},
+  pause(){paused=true;if(running){cancelAnimationFrame(raf);running=false;}},   // nothing is drawn while the scene is covered
+  resume(){paused=false;start();},
   focus(r){rect=r;},                                  // stage rect inside the canvas, normalised {x,y,w,h}
   step(sec){for(let s=0;s<sec;s+=1/30){time+=1/30;approach(1/30);}render(0);},   // deterministic advance (captures, hidden tabs)
   state(){return {cur,tgt,pulse,boot,time,size:size.slice(),hdr,webgl:!failed,points:total};}};

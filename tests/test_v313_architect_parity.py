@@ -62,4 +62,6 @@ def test_both_heads_forward_the_same_timeouts(capture, tmp_path):
     for cls in (CodexArchitect, ClaudeArchitect):
         cls(executable=str(fake), timeout=300, no_progress_timeout=180, heartbeat_interval=30)._invoke_cli("x", cwd=None)
     a, b = cap.calls[-2], cap.calls[-1]
-    assert (a["timeout"], a["no_output_timeout"]) == (b["timeout"], b["no_output_timeout"]) == (300, 180)
+    assert a["timeout"] == b["timeout"] == 300
+    # `claude --print` is silent until it finishes, so silence must not count as a hang there (the hard timeout stays)
+    assert a["no_output_timeout"] == 180 and b["no_output_timeout"] is None

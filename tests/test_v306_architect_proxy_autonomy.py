@@ -938,3 +938,107 @@ def test_operator_replan_sends_a_security_stop_back_to_planning_without_approvin
     done = runner.run(m["mission_id"])
     assert done["status"] == "DONE" and "operator re-plan" in done["steps"][0]["result"]["treated_as"]
     assert orch.sm.get_run(rid)["current_state"] == State.HUMAN_REQUIRED    # the stopped run itself is not approved
+
+
+# ------------------------------------------------------------------ fast repair: red tests skip review + decision
+
+BAD = {"feature.py": "def double(x):\n    return x * 3\n",
+       "tests/test_feature.py": "from feature import double\n\ndef test_double():\n    assert double(4) == 8\n"}
+
+
+def _count_ai_calls(monkeypatch, orch):
+    seen = {"review": 0, "decide": 0}
+
+    def review(rid, o, v, *a):
+        seen["review"] += 1
+        r = ReviewResultSchema(verdict="pass" if v["passed"] else "changes_required",
+                               p1=[] if v["passed"] else ["tests fail"], summary="review")
+        orch._save_json(rid, "review.json", r)
+        return r, None
+
+    def decide(rid, o, b, v, r, *a):
+        seen["decide"] += 1
+        return DecisionSchema(decision="PASS" if v["passed"] and r.verdict == "pass" else "FAIL", rationale="evidence",
+                              next_steps=[]), None
+    monkeypatch.setattr(orch, "_review_with_failover", review)
+    monkeypatch.setattr(orch, "_run_decision_autonomous", decide)
+    return seen
+
+
+def _bad_then_good(calls, good_after=1):
+    def build(order, worktree_path, maker_fn=None):
+        calls.append(order.context or "")
+        files = BAD if len(calls) <= good_after else dict(BAD, **{"feature.py": "def double(x):\n    return x * 2\n"})
+        for rel, text in files.items():
+            write(worktree_path, rel, text)
+        return MakerResultSchema(status="COMPLETED", files_modified=list(files), summary="built")
+    return build
+
+
+def test_red_tests_go_straight_back_to_the_maker(tmp_path, monkeypatch):
+    orch = proxy_orch(max_repairs=2, inspector_tests=False)
+    quiet(monkeypatch, orch)
+    calls = []
+    monkeypatch.setattr(orch.maker, "run", _bad_then_good(calls))
+    seen = _count_ai_calls(monkeypatch, orch)
+    out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
+    assert out["final_state"] == State.PASS and len(calls) == 2
+    assert seen == {"review": 1, "decide": 1}                 # only the green round was reviewed and decided
+    assert "assert 12 == 8" in calls[1] and "REVIEW_SKIPPED_TESTS_FAILED" in calls[1]   # the Maker got the test output back
+    actions = [a["action"] for a in orch.sm.get_audit_logs(out["run_id"])]
+    assert "REVIEW_SKIPPED_RED_TESTS" in actions and "DECISION_SKIPPED_RED_TESTS" in actions
+
+
+def test_last_red_round_is_still_reviewed_and_decided(tmp_path, monkeypatch):
+    orch = proxy_orch(max_repairs=1, inspector_tests=False)
+    quiet(monkeypatch, orch)
+    calls = []
+    monkeypatch.setattr(orch.maker, "run", _bad_then_good(calls, good_after=99))
+    seen = _count_ai_calls(monkeypatch, orch)
+    out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
+    # one free round (red, nobody asked), then the red run is reviewed for real, gets its one repair round, and fails
+    assert out["final_state"] == State.FAIL and len(calls) == 3
+    assert seen == {"review": 2, "decide": 2}
+    assert not str((orch._load_json(out["run_id"], "review.json") or {}).get("summary", "")).startswith("REVIEW_SKIPPED")
+
+
+def test_fast_repair_can_be_switched_off(tmp_path, monkeypatch):
+    orch = proxy_orch(max_repairs=2, inspector_tests=False, fast_repair=False)
+    quiet(monkeypatch, orch)
+    calls = []
+    monkeypatch.setattr(orch.maker, "run", _bad_then_good(calls))
+    seen = _count_ai_calls(monkeypatch, orch)
+    out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
+    assert out["final_state"] == State.PASS and seen == {"review": 2, "decide": 2}
+
+
+def test_verification_timeout_comes_from_config():
+    assert _mock_orch()._verification_timeout() == 120.0
+    assert _mock_orch(verification={"timeout_sec": 900})._verification_timeout() == 900.0
+    assert _mock_orch(verification={"timeout_sec": 1})._verification_timeout() == 10.0
+    assert _mock_orch(verification={"timeout_sec": "soon"})._verification_timeout() == 120.0
+
+
+def test_a_free_red_round_does_not_cost_the_review_its_repair_round(tmp_path, monkeypatch):
+    """max_repairs=1: red -> (free) green with a real P1 from the review -> the P1 still gets its round -> PASS."""
+    orch = proxy_orch(max_repairs=1, inspector_tests=False)
+    quiet(monkeypatch, orch)
+    calls = []
+    monkeypatch.setattr(orch.maker, "run", _bad_then_good(calls))
+    verdicts = iter([ReviewResultSchema(verdict="changes_required", p1=["rename the helper"], summary="one defect"),
+                     ReviewResultSchema(verdict="pass", summary="fine")])
+
+    def review(rid, o, v, *a):
+        r = next(verdicts)
+        orch._save_json(rid, "review.json", r)
+        return r, None
+    monkeypatch.setattr(orch, "_review_with_failover", review)
+    decide_real = lambda rid, o, b, v, r, *a: (DecisionSchema(decision="PASS" if r.verdict == "pass" else "FAIL", rationale="evidence", next_steps=[]), None)
+    monkeypatch.setattr(orch, "_run_decision_autonomous", decide_real)
+    out = orch.run(str(tmp_path / "proj"), "double", order=OrderSchema(**ORDER))
+    assert out["final_state"] == State.PASS and len(calls) == 3 and "rename the helper" in calls[2]
+
+
+def test_without_the_proxy_nothing_is_skipped(tmp_path):
+    orch = _mock_orch(autonomy={"enabled": True, "max_repairs": 2})
+    assert orch._straight_to_repair("RUN-x", {"passed": False}) is False

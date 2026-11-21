@@ -518,7 +518,8 @@ class ResultManager:
         # verify in the main project with the same verifier
         v = self.config.get("verification", {}) or {}
         cmd = test_cmd if test_cmd is not None else v.get("test_command")
-        verification = Verifier.verify(worktree_path=str(proj_root), build_cmd=v.get("build_command"), test_cmd=cmd, lint_cmd=v.get("lint_command"), git_checks=False)
+        verification = Verifier.verify(worktree_path=str(proj_root), build_cmd=v.get("build_command"), test_cmd=cmd, lint_cmd=v.get("lint_command"), git_checks=False,
+                                       timeout=_verification_timeout(v))
         self._save(run_id, "apply_verification.json", verification)
         post = self._load(run_id, "verification.json") or {}
         expected = int((post.get("test_counts") or {}).get("passed", 0) or 0)
@@ -770,3 +771,11 @@ class ResultManager:
             pass
         self.sm.log_audit(run_id, by, "RESULT_DISCARDED", json.dumps({"worktree": wt, "removed": True, "request_id": request_id}))
         return {"status": "discarded", "run_id": run_id, "removed": True}
+
+
+def _verification_timeout(v) -> float:
+    """`verification.timeout_sec` (default 120, 10 to 3600) - the same rule as Orchestrator._verification_timeout."""
+    try:
+        return float(min(3600, max(10, float((v or {}).get("timeout_sec", 120)))))
+    except (TypeError, ValueError):
+        return 120.0

@@ -115,7 +115,7 @@ class ClaudeArchitect(BaseArchitect):
             cwd=cwd,
             env=sanitized_env,
             timeout=self.timeout,
-            no_output_timeout=self.no_progress_timeout,
+            no_output_timeout=None,          # `claude --print` writes nothing until it is done: silence is not a hang
             heartbeat_interval=self.heartbeat_interval,
             stdin_data=prompt
         )
@@ -195,7 +195,7 @@ class ClaudeArchitect(BaseArchitect):
                 "test_command": test_info.get("command"),
                 "test_exit_code": test_info.get("exit_code"),
                 "test_counts": verification.get("test_counts"),
-                "test_output": (test_info.get("output") or "")[:800],
+                "test_output": (test_info.get("output") or "")[-800:],     # the end is where failures and the summary are
             },
             "git_diff": verification.get("git_diff") or "",
             "review": review_result.model_dump()

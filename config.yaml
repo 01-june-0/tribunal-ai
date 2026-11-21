@@ -47,6 +47,7 @@ verification:
   build_command: null
   test_command: "python -m pytest tests/"
   lint_command: null
+  timeout_sec: 120          # each of build / test / lint; raise it for a slow suite (10 to 3600)
 
 bootstrap:
   enabled: true
@@ -63,6 +64,7 @@ projects: {}
 autonomy:
   enabled: true
   max_repairs: 3
+  fast_repair: true          # failed tests go straight back to the MAKER; review and decision wait for a green run
   # ARCHITECT proxy: ARCHITECT decides on the operator's behalf. Only money (payments, paid services, live-account orders),
   # real credentials/accounts and irreversible external actions stop for a human decision.
   architect_proxy: true

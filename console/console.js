@@ -42,7 +42,12 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
  doc.getElementById('mission-details').textContent=research?((r.session_id||T('연구 세션 없음'))+T('\n사이클 ')+(r.cycle_number||0)+' / '+(r.cycle_budget||0)+'\n'+(r.moonshot||'')):((run.run_id||T('작업 없음'))+'\n'+(run.details||s.stage_sentence||'')+T('\n최근 실행 기록: ')+(run.updated_at||T('없음')));
  document.getElementById('shell-error').hidden=true;offlineVeil(0);
  }catch(e){const error=document.getElementById('shell-error');error.hidden=false;error.textContent=T('상태 연결을 확인하고 있습니다 · ')+e.message;offlineVeil((window.__pollMisses||0)+1);}finally{busy=false;}}
-frame.addEventListener('load',setup);if(frame.contentDocument?.readyState==='complete')setup();setInterval(refresh,5000);
+// The workshop is only kept fresh while it is the view in front and the window is visible.
+const workshopSeen=()=>!document.hidden&&document.body.dataset.view==='workshop';
+const onWorkshopSeen=fn=>{new MutationObserver(()=>{if(workshopSeen())fn();}).observe(document.body,{attributes:true,attributeFilter:['data-view']});document.addEventListener('visibilitychange',()=>{if(workshopSeen())fn();});};
+setInterval(()=>{if(workshopSeen()){refresh();refreshActivity();}},5000);onWorkshopSeen(()=>{refresh();refreshActivity();});
+frame.addEventListener('load',setup);if(frame.contentDocument?.readyState==='complete')setup();
+
 
 function setupRoles(){
  // Roles are chosen on the stage (role menu), where one AI may hold several. The workshop only says so: its old
@@ -87,7 +92,7 @@ function setupActivity(panel){
  // reading and tab order = what is seen: summary, alerts, working area, AI activity, AI cards, role note
  const main=doc.getElementById('main'),alertBar=doc.getElementById('alert-bar');if(alertBar)main.before(alertBar);
  main.after(box);box.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'));
- refreshActivity();setInterval(refreshActivity,5000);
+ refreshActivity();   // kept fresh by the one timer registered next to `workshopSeen`
 }
 function paintNow(a,focus){
  const now=doc.getElementById('ai-now');now.replaceChildren();
@@ -169,7 +174,8 @@ function offlineVeil(misses){
  if(misses>=3&&!document.getElementById('shutdown-veil'))showVeil(T('Tribunal AI가 꺼져 있습니다'),T('서버(')+(location.port||'8081')+T(')가 응답하지 않습니다. 화면의 움직임은 브라우저 안의 연출일 뿐, 실행 중인 작업은 없습니다.'));
 }
 // heartbeat: the stage view does not run the workshop status poll, so check the server itself every 5 s
-setInterval(async()=>{try{const r=await fetch('/ops/roles',{cache:'no-store'});if(!r.ok)throw Error(r.status);offlineVeil(0);}catch(e){offlineVeil((window.__pollMisses||0)+1);}},5000);
+setInterval(async()=>{if(document.hidden||(workshopSeen()&&doc?.getElementById('mission-control')))return;try{   // a workshop that never loaded cannot notice a dead server itself
+const r=await fetch('/ops/roles',{cache:'no-store'});if(!r.ok)throw Error(r.status);offlineVeil(0);}catch(e){offlineVeil((window.__pollMisses||0)+1);}},5000);
 (()=>{
  const b=document.getElementById('btn-shutdown');if(!b)return;
  b.onclick=async()=>{

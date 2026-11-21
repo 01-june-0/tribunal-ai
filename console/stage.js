@@ -361,12 +361,11 @@ function stinger(m){
 }
 function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintFeeds(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');}
 const params=new URLSearchParams(location.search),attract=params.get('attract')==='1';let idleSince=null;
-function isLive(){const a=activity||{};return (a.working_now||[]).length>0||(a.missions||[]).some(m=>m.live);}
 function repaint(){
   if(attract&&activity){
-    if(replay&&isLive())stopReplay();
-    else if(!replay&&!isLive()){idleSince=idleSince||Date.now();if(Date.now()-idleSince>12000){idleSince=null;startReplay();}}
-    else if(isLive())idleSince=null;
+    if(replay&&isLiveNow())stopReplay();
+    else if(!replay&&!isLiveNow()){idleSince=idleSince||Date.now();if(Date.now()-idleSince>12000){idleSince=null;startReplay();}}
+    else if(isLiveNow())idleSince=null;
   }
   if(!replay)paint(liveModel());
 }
@@ -663,6 +662,7 @@ function setView(view){
   $('workshop').hidden=!work;$('tab-stage').classList.toggle('on',!work);$('tab-workshop').classList.toggle('on',work);
   $('tab-stage').setAttribute('aria-pressed',String(!work));$('tab-workshop').setAttribute('aria-pressed',String(work));
   if(work&&!frame.getAttribute('src'))frame.src='/classic';
+  if(work)Trinity.pause();else Trinity.resume();   // the workshop covers the whole scene
   if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openId!=null)closeCall();if(!$('ai-panel').hidden)setAIPanel(false,true);}
 }
 function setBroadcast(on){
@@ -713,8 +713,11 @@ function start(){
     if(e.key==='b'||e.key==='B'||e.key==='ㅠ')setBroadcast(!document.body.classList.contains('broadcast'));
     if(e.key==='r'||e.key==='R'||e.key==='ㄱ')startReplay();});
   setInterval(()=>{const d=new Date();$('top-clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');if(!replay)tickTimer();},1000);
-  pollActivity();pollStatus();pollChat();pollRoles();setInterval(pollRoles,8000);
-  setInterval(pollActivity,3000);setInterval(pollStatus,6000);setInterval(pollChat,3000);setInterval(pollCall,2000);pollAI();setInterval(pollAI,20000);setInterval(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
+  // Nothing is asked of the server while the window is out of sight; everything is asked again the moment it is back.
+  const every=(fn,ms)=>setInterval(()=>{if(!document.hidden)fn();},ms);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollActivity();pollStatus();pollChat();pollRoles();pollCall();pollAI();}});
+  pollActivity();pollStatus();pollChat();pollRoles();every(pollRoles,8000);
+  every(pollActivity,3000);every(pollStatus,6000);every(pollChat,3000);every(pollCall,2000);pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
      // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
 }
 window.TrinityStage={model:()=>lastModel,replaying:()=>!!replay};
