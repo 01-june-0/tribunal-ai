@@ -394,6 +394,28 @@ def parse_approval_reason(details: str) -> dict:
     return {"raw": details, "items": items, "approvable": bool(items) and all(i["approvable"] for i in items)}
 
 
+_LIMIT_KEY = {"OPENAI": "openai", "ANTHROPIC": "claude", "GOOGLE": "antigravity"}
+
+
+def _usage_line(domain: str) -> str:
+    """'5시간 30% · 주간 21%' for an AI card, from the limits the AI settings panel already keeps in memory
+    (core/cli_limits: asked of each CLI in the background, never here). 'UNKNOWN' when there is nothing to show."""
+    try:
+        from core import cli_limits, cli_settings
+        settings = cli_settings.load()
+        data = cli_limits.snapshot(settings["antigravity"]["model"], settings["usage_poll_minutes"] * 60).get(_LIMIT_KEY.get(domain, ""), {}) or {}
+        parts = []
+        for key, label in (("five_hour", "5시간"), ("weekly", "주간")):
+            used = (data.get(key) or {}).get("used_percent")
+            if isinstance(used, (int, float)):
+                parts.append(f"{label} {used:g}%")
+        if parts and data.get("plan"):
+            parts.append(f"요금제 {data['plan']}")
+        return " · ".join(parts) or "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+
 def _run_in_mission(run_id) -> bool:
     """True when the run is a step of a mission (the mission wrote `mission_base.json` into its record before it
     started). The console only ever sees the newest few missions, so it cannot tell this itself."""
@@ -1299,7 +1321,7 @@ def build_status_payload() -> dict:
             "role": str(data.get('current_role', 'UNKNOWN')),
             "version": str(data.get('version', 'UNKNOWN')),
             "latency": data.get('last_latency_sec', 0.0) or 0.0,
-            "usage": f"{usage}%" if usage is not None else "UNKNOWN",
+            "usage": f"{usage}%" if usage is not None else _usage_line(name),
             "error": str(data.get('failure_reason', 'NONE') or 'NONE'),
         }
     payload = {
@@ -2251,6 +2273,10 @@ DASHBOARD_JS = r"""
   });
   var inspect = document.getElementById('alert-inspect');
   if (inspect) inspect.addEventListener('click', inspectRun);
+  // AI card details: one open at a time, closed by a click elsewhere or Escape (a native <details> stays open forever)
+  function closeNodeDetails(except) { Array.prototype.forEach.call(document.querySelectorAll('.node details[open]'), function (d) { if (d !== except) d.removeAttribute('open'); }); }
+  document.addEventListener('click', function (e) { var inside = e.target && e.target.closest ? e.target.closest('.node details') : null; closeNodeDetails(inside); });
+  document.addEventListener('keydown', function (e) { if (e.key !== 'Escape') return; var open = document.querySelector('.node details[open]'); if (open) { closeNodeDetails(null); var sm = open.querySelector('summary'); if (sm) sm.focus(); } });
   var normalModeBtn = document.getElementById('normal-mode-btn');
   var triadModeBtn = document.getElementById('triad-mode-btn');
   if (normalModeBtn) normalModeBtn.addEventListener('click', function () { setDashboardView('NORMAL'); });

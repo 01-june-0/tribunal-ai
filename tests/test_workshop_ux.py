@@ -244,3 +244,23 @@ def test_phone_width_keeps_the_stop_buttons_on_screen():
     phone = phone[:phone.index("\n}")]
     assert "#btn-broadcast,#btn-lang{order:1}" in phone and ".brand{display:none}" in phone   # stop buttons first
     assert "overflow-x:auto" in phone and "display:none}   /*" not in phone   # nothing is taken away from a touch screen
+
+
+# ---------------------------------------------------------------- AI cards at the bottom of the details tab
+def test_ai_cards_show_real_usage_and_close_their_details(page, monkeypatch):
+    from core import cli_limits, cli_settings
+    monkeypatch.setattr(cli_settings, "load", lambda: {"antigravity": {"model": None}, "usage_poll_minutes": 5})
+    monkeypatch.setattr(cli_limits, "snapshot", lambda model, interval: {
+        "claude": {"plan": "team", "five_hour": {"used_percent": 30.0}, "weekly": {"used_percent": 21.5}},
+        "openai": {"plan": None, "five_hour": None, "weekly": {"used_percent": 8.0}},
+        "antigravity": {"state": "unavailable"}})
+    assert ds._usage_line("ANTHROPIC") == "5시간 30% · 주간 21.5% · 요금제 team"
+    assert ds._usage_line("OPENAI") == "주간 8%"
+    assert ds._usage_line("GOOGLE") == "UNKNOWN" and ds._usage_line("NOPE") == "UNKNOWN"
+    monkeypatch.setattr(cli_limits, "snapshot", lambda *a: (_ for _ in ()).throw(RuntimeError("cli gone")))
+    assert ds._usage_line("ANTHROPIC") == "UNKNOWN"                        # the card never breaks the status payload
+    assert "function closeNodeDetails(except)" in page and "e.key !== 'Escape'" in page
+    css = (ROOT / "console" / "console.css").read_text(encoding="utf-8")
+    short = css[css.index("/* AI cards on a short window"):]
+    assert ".director-v2 .node table{display:block" in short and "table{display:none}" not in short     # state and role stay visible
+    assert ".director-v2 .node tr:nth-child(n+3){display:none}" in short
