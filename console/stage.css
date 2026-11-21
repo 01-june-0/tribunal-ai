@@ -97,12 +97,15 @@ body.broadcast button.meta-chip::after{content:""}
 .delivery-actions button.warn{background:var(--warn);border-color:var(--warn);color:#1a1204;font-weight:700}
 .delivery-actions button:disabled{opacity:.55;cursor:default}
 /* approval and "why it stopped" on the mission card */
-#mission-attention[hidden]{display:none}
+#mission-attention[hidden],#loose-results[hidden]{display:none}
+#loose-results .delivery-actions{align-items:center}
 #mission-card.attn{border-color:#ffc46b88;box-shadow:0 0 0 1px #ffc46b33,0 0 26px -8px #ffc46b66}
 #mission-card.stopped{border-color:#ff6b7a66}
 .attention-box strong{font-size:13px}
 .attention-box p{margin:0;font-size:13px;color:#d6dff2;overflow-wrap:anywhere}
 .attention-box .why{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.attention-box .why li p{margin:4px 0 0;font-size:12px;color:var(--muted);max-height:76px;overflow-y:auto;scrollbar-width:thin}   /* long reasons scroll in place: the buttons stay near */
+.attention-box p.new-goal{padding:7px 9px;border-left:2px solid var(--warn);background:rgba(255,196,107,.07);border-radius:0 9px 9px 0;max-height:76px;overflow-y:auto;scrollbar-width:thin}
 .attention-box .why li{font-size:12px;padding:7px 9px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid var(--line);overflow-wrap:anywhere}
 .attention-box code,#result-panel code{font:12px ui-monospace,Menlo,Consolas,monospace;color:#cfe0ff}
 .attention-box details.more{font-size:12px;color:var(--muted)}
@@ -115,7 +118,7 @@ body.broadcast button.meta-chip::after{content:""}
 #result-panel{position:fixed;z-index:6;top:72px;right:18px;bottom:100px;width:min(640px,calc(100vw - 36px));display:flex;flex-direction:column;gap:10px;padding:16px;background:rgba(7,10,19,.95)}
 #result-panel[hidden]{display:none}
 #result-panel header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-#result-panel h3{margin:6px 0 2px;font:600 17px/1.3 var(--body);overflow-wrap:anywhere}
+#result-panel h3{margin:6px 0 2px;font:600 16px/1.35 var(--body);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}   /* a long goal does not push the diff away */
 #rp-meta{margin:0;font-size:12px;color:var(--muted)}
 #rp-close{height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:transparent;font-size:12px;color:var(--muted);white-space:nowrap}
 #rp-close:hover{color:var(--text)}

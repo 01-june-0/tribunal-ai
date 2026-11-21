@@ -292,6 +292,17 @@ class ResultManager:
             "approvals": [{"action": a["action"], "at": a["timestamp"], "payload": (a["payload"] or "")[:300]} for a in approvals],
         }
 
+    def blocked_results(self) -> List[Dict[str, Any]]:
+        """Results whose apply was refused and that still wait for a decision (same shape as pending_results)."""
+        out = []
+        for r in self.sm.list_blocked_results():
+            if str(r.get("run_id", "")).startswith("RUN-TEST-"):
+                continue
+            proj = r.get("project_path") or ""
+            out.append({"run_id": r["run_id"], "project_name": Path(proj).name if proj else "", "project_path": proj,
+                        "changed_count": r.get("changed_count"), "result_state": r.get("state"), "created_at": r.get("created_at")})
+        return out
+
     def pending_results(self) -> List[Dict[str, Any]]:
         """READY results from the persisted result_state table only (no run scan, no git)."""
         out = []

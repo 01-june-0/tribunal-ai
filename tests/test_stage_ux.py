@@ -149,7 +149,10 @@ def test_which_block_the_card_shows_for_each_server_state(tmp_path):
         ("stuck", {"required": False, "state": "HUMAN_REQUIRED", "run_id": "RUN-B", "blocking": [{"code": "REGRESSION"}]}, {"status": "BLOCKED", "live": False, "steps": [step("HUMAN_REQUIRED")]}),
         ("stopped", {"required": False, "state": "FAIL"}, {"status": "FAILED", "live": False, "steps": [step("FAIL")]}),
         # another mission's run waits for approval: this card does not offer to approve it
-        ("stopped", {"required": True, "state": "HUMAN_REQUIRED", "run_id": "RUN-OTHER"}, {"status": "INCOMPLETE", "live": False, "steps": [step("PASS")]}),
+        ("stopped", {"required": True, "state": "HUMAN_REQUIRED", "run_id": "RUN-OTHER", "in_mission": True}, {"status": "INCOMPLETE", "live": False, "steps": [step("PASS")]}),
+        # a task stopped at its very start belongs to no mission yet: the card asks, whatever mission it shows (or none)
+        ("approve", {"required": True, "state": "HUMAN_REQUIRED", "run_id": "RUN-NEW", "in_mission": False}, {"status": "DONE", "live": False, "steps": [step("PASS")]}),
+        ("approve", {"required": True, "state": "HUMAN_REQUIRED", "run_id": "RUN-NEW", "in_mission": False}, None),
         (None, {"required": False}, {"status": "DONE", "live": False, "steps": [step("PASS")]}),
         (None, {"required": False}, {"status": "RUNNING", "live": True, "steps": [step("BUILDING")]}),
     ]
@@ -173,3 +176,30 @@ def test_the_panel_decides_only_about_what_it_shows():
     assert "mine.done='applied'" in panel                                  # no second "원본에 적용" after it worked
     assert "const once=(node,sig,build)=>{if(node.dataset.sig===sig)return;" in panel       # a poll does not rebuild the diff being read
     assert "run_id:ms.deliverableRun" in JS and "decideMission(result.ms.id,'discard',{run_id:result.ms.deliverableRun})" in panel
+
+
+def test_a_result_without_a_mission_can_be_read_and_decided_on_the_stage(tmp_path):
+    """A task approved at its very start runs on its own: no mission, so no card. Its result is listed under the card.
+    Whether a run belongs to a mission is the server's word (in_mission): the page sees only the newest few missions."""
+    src = JS[JS.index("function looseResults(){"):JS.index("async function decideResult(runId,kind,extra){")]
+    script = ("let status={results:[{run_id:'RUN-1',in_mission:true},{run_id:'RUN-OLD'},{run_id:'RUN-9',in_mission:false}],"
+              "blocked_results:[{run_id:'RUN-B',in_mission:false,result_state:'APPLY_BLOCKED'}]};\n" + src +
+              "\nconsole.log(JSON.stringify(looseResults().map(r=>r.run_id)));status=null;console.log(JSON.stringify(looseResults()));")
+    assert _node(tmp_path, script).split("\n") == ['["RUN-9","RUN-B"]', "[]"]      # RUN-OLD (no word from the server) is not offered
+    assert "activity" not in src
+    assert "openResult({loose:true,id:r.run_id,deliverableRun:r.run_id" in JS and "paintAttention(m);paintDelivery(m);paintLoose(m);return;}" in JS   # also with no mission at all
+    panel = JS[JS.index("function paintResult(){"):JS.index("function looseResults(){")]
+    assert "decideResult(mine.ms.id,'apply',state==='blocked'?{on_conflict:'skip'}:{})" in panel and "APPLY_BLOCKED:'blocked'" in panel
+
+
+def test_the_server_says_whether_a_run_belongs_to_a_mission(tmp_path, monkeypatch):
+    import dashboard_server as d
+    monkeypatch.setattr(d, "DIRECTOR_ROOT", tmp_path)
+    (tmp_path / "runs" / "RUN-M").mkdir(parents=True)
+    (tmp_path / "runs" / "RUN-M" / "mission_base.json").write_text('{"mission_id": "MSN-1", "base_worktree": null}', encoding="utf-8")
+    (tmp_path / "runs" / "RUN-S").mkdir()
+    (tmp_path / "runs" / "RUN-BAD").mkdir()
+    (tmp_path / "runs" / "RUN-BAD" / "mission_base.json").write_text("{not json", encoding="utf-8")
+    assert d._run_in_mission("RUN-M") is True and d._run_in_mission("RUN-S") is False and d._run_in_mission("RUN-NONE") is False
+    assert d._run_in_mission("RUN-BAD") is True and d._run_in_mission("../x") is True and d._run_in_mission(None) is True   # in doubt: not offered on its own
+    assert "ap.in_mission===false" in JS

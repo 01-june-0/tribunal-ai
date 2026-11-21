@@ -394,6 +394,20 @@ def parse_approval_reason(details: str) -> dict:
     return {"raw": details, "items": items, "approvable": bool(items) and all(i["approvable"] for i in items)}
 
 
+def _run_in_mission(run_id) -> bool:
+    """True when the run is a step of a mission (the mission wrote `mission_base.json` into its record before it
+    started). The console only ever sees the newest few missions, so it cannot tell this itself."""
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", run_id) or ".." in run_id:
+        return True                                          # unknown shape: never offered as a stand-alone result
+    try:
+        data = json.loads((DIRECTOR_ROOT / "runs" / run_id / "mission_base.json").read_text(encoding="utf-8"))
+        return bool(isinstance(data, dict) and data.get("mission_id"))
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return True
+
+
 def _reason_ko(code) -> dict:
     """The Korean wording of a gate for the stage (the English one is `title` / `why`); empty when there is none."""
     try:
@@ -429,8 +443,13 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
         inflight = run_id in _APPROVAL_INFLIGHT
     approvable = bool(st.get("approvable")) and not inflight
     stage = st.get("stage")
+    try:
+        goal = str((StateMachine().get_run(run_id) or {}).get("goal") or "")[:400]      # a run stopped before its mission exists has no card of its own
+    except Exception:
+        goal = ""
     return {
-        "required": approvable, "state": state, "run_id": run_id, "reason_raw": details, "items": items,
+        "required": approvable, "state": state, "run_id": run_id, "goal": goal, "in_mission": _run_in_mission(run_id),
+        "reason_raw": details, "items": items,
         "blocking": blocking, "stage": stage,
         "stage_label": {"ENTRY": "ENTRY / before build", "POST_BUILD": "POST-BUILD / VERIFYING"}.get(stage, "runtime gate"),
         "maker": "COMPLETED" if st.get("maker_ran") else "NOT RUN",
@@ -1333,7 +1352,9 @@ def build_status_payload() -> dict:
         "approval": approval_info(current_run['run_id'], raw_state, last_details) if current_run else {"required": False},
         "pending": pending_actions(),
         "result": result_info(current_run['run_id']) if current_run and raw_state == State.PASS else {"is_pass": False},
-        "results": _result_manager().pending_results(),
+        "results": [dict(r, in_mission=_run_in_mission(r.get("run_id"))) for r in _result_manager().pending_results()],
+        # refused once (a conflict, mostly) and still undecided; only those no mission card can show
+        "blocked_results": [dict(r, in_mission=False) for r in _result_manager().blocked_results() if not _run_in_mission(r.get("run_id"))],
         "research": build_research_status_payload(),
     }
     payload = payload if isinstance(payload, dict) else {}
@@ -3234,7 +3255,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 try:
                     if self.path == '/result/apply':
                         snapshot_based = (rm.run_dir(run_id) / "source_snapshot.json").exists()
-                        result = (rm.apply_tree if snapshot_based else rm.apply)(run_id, request_id=request_id, applied_by="HUMAN")
+                        skip = snapshot_based and params.get('on_conflict', ['block'])[0] == 'skip'      # leave the conflicting files, apply the rest
+                        result = (rm.apply_tree(run_id, request_id=request_id, applied_by="HUMAN", on_conflict="skip") if skip else
+                                  (rm.apply_tree if snapshot_based else rm.apply)(run_id, request_id=request_id, applied_by="HUMAN"))
                     elif self.path == '/result/discard':
                         result = rm.discard(run_id, request_id=request_id, by="HUMAN")
                     elif self.path == '/result/open_worktree':

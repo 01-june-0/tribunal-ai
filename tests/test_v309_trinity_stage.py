@@ -57,8 +57,9 @@ def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
     assert called == {"/ops/activity", "/status", "/ops/replay", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
                       "/result", "/run/inspect"}                       # read-only: what changed, and the ORDER of a run awaiting approval
-    assert js.count("method:'POST'") == 8                             # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run
+    assert js.count("method:'POST'") == 9                             # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST'" in js
+    assert "fetch(kind==='apply'?'/result/apply':'/result/discard',{method:'POST'" in js
     assert set(re.findall(r"accountPost\('(/[a-z/_]+)", js)) == {"/ops/ai/account", "/ops/ai/account/reveal"}     # both go through the one token-carrying helper
     assert "'X-Tribunal-Token':roleToken" in js                        # the role change carries the local token
 

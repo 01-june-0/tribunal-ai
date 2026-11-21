@@ -384,6 +384,18 @@ class StateMachine:
                 """).fetchall()
             return [dict(r) for r in rows]
 
+    def list_blocked_results(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Results whose apply was refused (a conflict, mostly) and that can still be applied or discarded."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT r.run_id, r.project_path, r.created_at, s.state, s.changed_count
+                FROM result_state s JOIN runs r ON r.run_id = s.run_id
+                WHERE s.state = 'APPLY_BLOCKED' AND r.current_state = 'PASS' AND s.worktree_state = 'PRESENT'
+                ORDER BY r.created_at DESC LIMIT ?
+                """, (int(limit),)).fetchall()
+            return [dict(r) for r in rows]
+
     def pass_runs_without_result_state(self, limit: int = 500) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:
             rows = conn.execute(
