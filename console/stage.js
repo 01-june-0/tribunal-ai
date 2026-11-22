@@ -744,11 +744,11 @@ function paintInside(){
       top.length?listEl(top.map(([k,v])=>{const s=el('span');s.append(codeEl(k),' ',el('small',T('{0}회',v)));return s;})):el('small',d.found?T('도구를 쓰지 않은 호출입니다.'):T('기록 없음'),'cp-hint'),
       el('span',T('토큰'),'kicker'),el('small',live?T('끝나면 기록됩니다'):d.tokens!=null?(d.exact?'':'~')+num(d.tokens)+' · '+(d.exact?T('CLI가 보고한 값'):T('글자 수로 추정한 값')):T('기록 없음'),'cp-hint'),more);}
   // the stream: the newest thing it did sits on the focus line, older ones recede into the cloud
-  const shown=ev.filter(e=>e.kind!=='done'||e.detail||e.error).slice(-7),ssig=JSON.stringify([d.key,ev.length,shown.length?shown[shown.length-1]:0]);
+  const shown=ev.filter(e=>e.kind!=='done'||e.detail||e.error).slice(-7),ssig=JSON.stringify([d.key,d.status,d.found,ev.length,shown.length?shown[shown.length-1]:0]);   // the status too: the note and the flow end with the call
   if(list.dataset.sig!==ssig){list.dataset.sig=ssig;const fresh=!firstInside&&ev.length>insideSeen;insideSeen=ev.length;firstInside=false;
     list.replaceChildren(...shown.map((e,i)=>{const age=shown.length-1-i,li=el('li','',e.kind+(e.error?' bad':'')+(age===0?' now':'')),[name,detail]=eventText(e);
       li.style.transform='scale('+(1-age*.055).toFixed(3)+')';li.style.opacity=String(Math.max(.12,1-age*.17));
-      li.append(el('time',e.at?hms(utc(e.at)):''),el('b',name),el('span',detail||(e.kind==='think'?T('생각하는 중…'):'')),el('em',e.error?T('오류'):''));
+      li.append(el('time',e.at?hms(utc(e.at)):''),el('b',name),el('span',detail||(e.kind==='think'&&live&&age===0?T('생각하는 중…'):'')),el('em',e.error?T('오류'):''));
       if(age===0&&fresh){li.classList.add('enter');requestAnimationFrame(()=>requestAnimationFrame(()=>li.classList.remove('enter')));}
       return li;}));
     if(!shown.length)list.append(el('li',!d.found?(live?T('CLI가 아직 기록을 남기지 않았습니다. 곧 다시 확인합니다.'):T('이 호출의 내부 기록을 찾지 못했습니다. 이 기능이 생기기 전의 호출이거나, CLI가 기록을 남기지 않았거나, 기록 형식이 바뀐 경우입니다.')):T('기록된 활동이 없습니다.'),'empty'));

@@ -216,6 +216,7 @@ def test_the_camera_follows_the_work_and_a_cloud_can_be_entered(tmp_path):
     assert "if(inside!==at||insideKey!==key)return;" in JS                 # a late answer never paints another cloud or call
     view = JS[JS.index("function paintInside(){"):JS.index("async function pollInside(){")]
     assert "innerHTML" not in view                                         # commands and the model's words go in as text
+    assert "ssig=JSON.stringify([d.key,d.status,d.found,ev.length" in view  # "still going" does not outlive the call
     assert "body.inside #panel-now" in CSS and ".slot-label.aside{" in CSS
     # one AI at work: the camera leans to it; none, two, or the intro: the whole scene; inside: that cloud, whatever works
     src = JS[JS.index("const LEAN="):JS.index("function insideCall(m){")]
