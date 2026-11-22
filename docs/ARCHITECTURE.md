@@ -43,7 +43,8 @@ IDLE → PLANNING → ORDER_READY → BUILDING → VERIFYING → REVIEWING → D
 
 수정 회차는 `autonomy.max_repairs`까지 돕니다. **빠른 수정**(`autonomy.fast_repair`, 대리 판단 모드에서만)이 켜져 있으면, 테스트가
 실패한 회차는 감리와 판단을 건너뛰고 곧바로 MAKER에게 돌아갑니다. 실패가 분명한데 AI 두 번을 더 부르지 않기 위해서입니다.
-이렇게 건너뛴 회차는 수정 횟수 한도에 넣지 않습니다.
+이렇게 건너뛴 회차는 수정 횟수 한도에 넣지 않습니다. 다만 건너뛸 수 있는 횟수도 `max_repairs`까지이고, 그 뒤에는 실패한 테스트도
+감리와 판단을 거칩니다.
 
 ### 감리 AI의 독립 테스트
 
@@ -141,6 +142,7 @@ dashboard_server.py    자세히 탭 화면, 채팅, 상태, 승인 · 결과 �
 dashboard_i18n.py      자세히 탭의 문구
 
 agents/                역할 어댑터
+  architect.py         mock_architect.py                        설계 역할의 공통 틀, 테스트용 가짜
   claude_architect.py  codex_architect.py  google_roles.py      설계 · 판단
   proposal_maker.py    antigravity_maker.py                     제작
   claude_inspector.py  codex_inspector.py                       감리
@@ -152,6 +154,8 @@ core/
   safety.py            범위 검사
   verifier.py          빌드 · 테스트 · 린트 실행
   inspector_tests.py   감리 AI의 독립 테스트
+  entry_repair.py      시작 전 검사에 걸린 지시서의 범위를 좁혀 다시 쓰기
+  maker_context.py     지시서가 가리킨 참고 문서를 제작에 넘기기
   result_manager.py    결과물 보기 · 적용 · 폐기
   bootstrap.py  project_inventory.py  git_manager.py            프로젝트 준비와 작업 사본
   process_runner.py    모든 외부 명령 실행 (시간 제한, 프로세스 트리 종료)
