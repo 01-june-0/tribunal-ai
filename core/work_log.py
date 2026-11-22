@@ -225,12 +225,18 @@ def _result_brief(result: Optional[dict]) -> Optional[dict]:
 
 
 def _verify_round(conn, tr) -> Tuple[Optional[dict], int, int]:
-    """(verification, nth, count) for one transition into VERIFYING. Repair round k keeps the test result it reacted
+    """(verification, nth, count) for one transition into VERIFYING; nth 0 means the run was stopped before any test
+    ran. Repair round k keeps the test result it reacted
     to in repair_history.json: that is the last test run before the step "correction round k". A test run that no
     repair round followed is verification.json, when the file was written in that run's own window. Anything else
     (a run reopened after an approval, a retried step) has no record that can be tied to it."""
     steps = conn.execute("SELECT id, to_state, details, timestamp FROM state_transitions WHERE run_id=? ORDER BY id", (tr["run_id"],)).fetchall()
-    tests = [s["id"] for s in steps if s["to_state"] == "VERIFYING"]
+    # The Scope Guard looks at the change first; when it stops the run there, no test was run in that phase.
+    guarded = {s["id"] for s, nxt in zip(steps, steps[1:]) if s["to_state"] == "VERIFYING"
+               and nxt["to_state"] == "HUMAN_REQUIRED" and str(nxt["details"] or "").startswith("Scope violation: ")}
+    tests = [s["id"] for s in steps if s["to_state"] == "VERIFYING" and s["id"] not in guarded]
+    if tr["id"] in guarded:
+        return None, 0, len(tests)                   # nth 0: stopped before the tests
     nth, count = tests.index(tr["id"]) + 1, len(tests)
     after = [s for s in steps if s["id"] > tr["id"]]
     round_no = None
@@ -285,7 +291,7 @@ def rows(limit: int = 40) -> List[dict]:
             if t["to_state"] == "VERIFYING":
                 found, nth, rounds = _verify_round(conn, t)
                 test = (found or {}).get("test") if isinstance((found or {}).get("test"), dict) else {}
-                row.update(event="verify", round=nth, rounds=rounds, known=found is not None,
+                row.update(event="verify", round=nth, rounds=rounds, known=found is not None, skipped=nth == 0,
                            passed=found.get("passed") if found else None, counts=_counts(found),
                            ran=bool(test.get("executed")) if found else None)
             else:
@@ -355,7 +361,7 @@ def _transition_detail(tr_id: int) -> dict:
             found, nth, rounds = _verify_round(conn, t)
             nxt = conn.execute("SELECT timestamp FROM state_transitions WHERE run_id=? AND id>? ORDER BY id LIMIT 1",
                                (run_id, tr_id)).fetchone()
-            out.update(event="verify", round=nth, rounds=rounds, found=found is not None,
+            out.update(event="verify", round=nth, rounds=rounds, found=found is not None, skipped=nth == 0,
                        ended_at=nxt["timestamp"] if nxt else None)
             if found:
                 test = found.get("test") if isinstance(found.get("test"), dict) else {}

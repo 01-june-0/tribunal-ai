@@ -122,6 +122,7 @@ PROVIDER_LABEL: Dict[str, Tuple[str, str, str]] = {   # domain -> (display name,
 
 REASON_TEXT: Dict[str, Tuple[str, str]] = {   # code -> (short title, explanation)
     "SENSITIVE_FILE_IN_SCOPE": ("의존성·환경 설정 파일 변경 승인 필요", "실행 환경이나 의존성에 영향을 줄 수 있는 파일이 작업 범위에 포함되어 있습니다. 수정 전에 확인이 필요합니다."),
+    "LIVE_MONEY_CODE": ("돈을 움직일 수 있는 코드", "주문이나 결제를 실행할 수 있는 코드가 추가되었습니다. 테스트가 이 코드를 실행하기 전에, 이 파일에 한해 사용자가 허용해야 합니다."),
     "DEPENDENCY_CONFIGURATION_MODIFIED": ("의존성 설정 파일 변경", "의존성 설정 파일이 실제로 변경되었습니다. 이 파일에 한해 승인하면 검증이 계속됩니다."),
     "AMBIGUOUS_SCOPE": ("작업 범위가 불명확함", "허용 경로가 비어 있거나 프로젝트 전체입니다. 범위를 확인하고 승인해주세요."),
     "HIGH_RISK": ("고위험 작업", "ARCHITECT가 이 작업을 고위험으로 판단했습니다. 사람이 승인해야 실행됩니다."),
@@ -226,6 +227,7 @@ HELP_TEXT: Dict[str, str] = {
 _REASON_PATTERNS: List[Tuple[str, str]] = [
     (r"APPROVAL_REQUIRED:\s*([A-Z_]+)", None),
     (r"Dependency configuration modified", "DEPENDENCY_CONFIGURATION_MODIFIED"),
+    (r"Live money code", "LIVE_MONEY_CODE"),
     (r"Control plane modified", "CONTROL_PLANE_MODIFIED"),
     (r"CANONICAL_CONTAINMENT|resolves outside worktree|escapes worktree", "CANONICAL_CONTAINMENT"),
     (r"ORDER_PATH_VIOLATION", "ORDER_PATH_VIOLATION"),

@@ -549,6 +549,7 @@ function verifyOutcome(r){
 function logLine(r){                                       // {who,color,what,out:[words,class]}
   if(r.kind==='ai')return {who:(AI[r.provider]||{name:r.provider}).name,color:(AI[r.provider]||{}).css||'#8fa0bd',what:CALL_DID[r.stage]||ROLE_KO[r.role]||r.role||'',out:callOutcome(r)};
   if(r.kind==='me'){const d=MY_DID[r.action]||[r.action,r.action,''];return {who:T('나'),color:ME_CSS,what:d[0],out:[d[1],d[2]]};}
+  if(r.event==='verify'&&r.skipped)return {who:'TRIBUNAL',color:TRIBUNAL_CSS,what:T('바뀐 내용을 검사하다 멈췄습니다'),out:[T('테스트 실행 전'),'off']};
   if(r.event==='verify')return {who:'TRIBUNAL',color:TRIBUNAL_CSS,what:T('테스트를 직접 실행했습니다')+(r.rounds>1?' · '+T('{0}회차',r.round):''),out:verifyOutcome(r)};
   const d=END_DID[r.state]||[r.state,r.state,''];
   return {who:'TRIBUNAL',color:TRIBUNAL_CSS,what:r.state==='HUMAN_REQUIRED'&&r.stage==='ENTRY'?T('시작 전에 승인을 요청했습니다'):d[0],out:[d[1],d[2]]};
@@ -608,6 +609,7 @@ function callFacts(d){
   return out;
 }
 function verifyFacts(d){
+  if(d.skipped)return [facts(T('검증'),[[T('시작'),stamp(d.at)],[T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]],[el('p',T('테스트를 실행하기 전에, 바뀐 내용을 검사하는 단계에서 멈췄습니다. 이때는 테스트가 실행되지 않았습니다. 멈춘 이유는 바로 위 줄에 있습니다.'),'cp-hint')])];
   const round=[T('회차'),T('{0}회차 · 전체 {1}회',d.round,d.rounds)];
   if(!d.found)return [facts(T('검증'),[round,[T('시작'),stamp(d.at)]],[el('p',T('이 회차의 검증 기록은 남아 있지 않습니다.'),'cp-hint')])];
   const t=d.test||{},b=d.baseline;

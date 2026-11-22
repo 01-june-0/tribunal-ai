@@ -62,6 +62,7 @@ APPROVAL_REASONS = {
     "GIT_INTERNALS_IN_SCOPE": ("Git internals in scope", ".git is inside allowed_paths; confirm or reject."),
     "INVALID_PATH": ("Invalid path in ORDER", "The ORDER contains a path that is not repo-relative; this is not approvable."),
     "CONTROL_PLANE_IN_SCOPE": ("Director control-plane path in scope", "Director-owned control files (.agents, .director_worktrees, GEMINI.md) are never approvable."),
+    "LIVE_MONEY_CODE": ("Code that could move real money", "The maker added code that could place an order or take a payment; a human must allow this specific file before the tests run it."),
     "DEPENDENCY_CONFIGURATION_MODIFIED": ("Dependency configuration modified", "The maker changed a dependency file; a human must approve this specific file before verification continues."),
 }
 ARCHITECT_WORKING_MESSAGE = "ARCHITECT is working..."

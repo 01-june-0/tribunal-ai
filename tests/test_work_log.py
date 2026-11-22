@@ -89,8 +89,8 @@ def test_a_test_round_shows_the_record_of_that_round(run):
     assert work_log.detail(rounds[1]["key"])["found"] is False
 
 
-def test_a_test_run_that_no_repair_round_followed_is_not_given_a_rounds_record(run):
-    """Stopped after the build, approved, tested again: the first test run has no record that can be tied to it."""
+def test_a_stop_by_the_scope_guard_is_not_shown_as_a_test_run(run):
+    """Stopped after the build before any test, approved, then tested: one real test run, and the stop says so."""
     for state in ("PLANNING", "ORDER_READY", "BUILDING", "VERIFYING"):
         run.sm.transition_to(run.id, state, "x")
     run.sm.transition_to(run.id, "HUMAN_REQUIRED", "Scope violation: Dependency configuration modified: req.txt")
@@ -102,7 +102,8 @@ def test_a_test_run_that_no_repair_round_followed_is_not_given_a_rounds_record(r
     (run.dir / "repair_history.json").write_text(json.dumps([{"round": 1, "verification": other}]), encoding="utf-8")
     (run.dir / "verification.json").write_text(json.dumps(other), encoding="utf-8")
     rounds = sorted((r for r in work_log.rows() if r.get("event") == "verify" and r["run_id"] == run.id), key=lambda r: r["round"])
-    assert [(r["round"], r["known"]) for r in rounds] == [(1, False), (2, True)]
+    assert [(r["round"], r["known"], r["skipped"]) for r in rounds] == [(0, False, True), (1, True, False)]   # the guard stopped it: no test ran, and it is not counted as a round
+    assert work_log.detail(rounds[0]["key"])["skipped"] is True and work_log.detail(rounds[1]["key"])["rounds"] == 1
     stop = next(r for r in work_log.rows() if r.get("event") == "end" and r["run_id"] == run.id)
     assert work_log.detail(stop["key"])["stage"] == "POST_BUILD" and work_log.detail(stop["key"])["is_last"] is False
 
