@@ -584,16 +584,17 @@ function codeEl(t){return el('code',t);}
 function titled(label,node){const d=el('div','','cp-sub');d.append(el('small',label),node);return d;}
 function callFacts(d){
   const out=[],both=d.tokens_in!=null&&d.tokens_out!=null,bar=both&&d.tokens>0?el('div','','cp-bar'):null,x=d.result;
-  const est=d.exact?'':'~',only=d.exact&&!both&&d.tokens!=null?T('CLI가 알려 주지 않음'):null;      // a fact about this CLI, not a gap in our record
+  const live=d.status==='RUNNING'?T('끝나면 기록됩니다'):null;   // still at work: not a gap in the record
+  const est=d.exact?'':'~',only=live||(d.exact&&!both&&d.tokens!=null?T('CLI가 알려 주지 않음'):null);      // a fact about this CLI, not a gap in our record
   out.push(facts(T('호출'),[[T('상태'),(CALL_STATUS[d.status]||d.status)+(d.exit_code!=null?' · '+T('종료 코드 {0}',d.exit_code):'')],
-    [T('시작 → 끝'),d.started_at?stamp(d.started_at)+' → '+(d.ended_at?hms(utc(d.ended_at)):T('진행 중')):null],[T('걸린 시간'),span1(d.seconds)],
+    [T('시작 → 끝'),d.started_at?stamp(d.started_at)+' → '+(d.ended_at?hms(utc(d.ended_at)):T('진행 중')):null],[T('걸린 시간'),span1(d.seconds)||live],
     [T('모델 · 추론 강도'),d.model==null?null:(d.model||T('CLI 기본 모델'))+' · '+(d.effort||T('CLI 기본 강도'))],
     [T('작업'),taskName(d)],[T('실행 번호'),d.run_id?codeEl(d.run_id):(d.group||{}).key==='chat'?T('없음 · 작업 밖에서 한 호출'):T('없음 · 단계와 단계 사이에 한 호출')]],
     [d.model==null?el('small',T('모델과 추론 강도는 이 기능이 생긴 뒤의 호출부터 기록됩니다.'),'cp-hint'):null]));
   if(bar){const a=el('i'),b=el('i');a.style.width=(d.tokens_in/d.tokens*100)+'%';b.style.width=(d.tokens_out/d.tokens*100)+'%';bar.append(a,b);}
   out.push(facts(T('토큰'),[[T('입력'),d.tokens_in!=null?est+num(d.tokens_in):only],[T('출력'),d.tokens_out!=null?est+num(d.tokens_out):only],
-    [T('합계'),d.tokens!=null?est+num(d.tokens)+' · '+(d.exact?T('CLI가 보고한 값'):T('글자 수로 추정한 값')):null],
-    [T('보낸 지시 · 받은 답'),d.prompt_chars!=null&&d.output_chars!=null?T('{0}자 · {1}자',num(d.prompt_chars),num(d.output_chars)):null]],
+    [T('합계'),d.tokens!=null?est+num(d.tokens)+' · '+(d.exact?T('CLI가 보고한 값'):T('글자 수로 추정한 값')):live],
+    [T('보낸 지시 · 받은 답'),d.prompt_chars!=null&&d.output_chars!=null?T('{0}자 · {1}자',num(d.prompt_chars),num(d.output_chars)):live]],
     [bar,d.exact&&!both&&d.tokens!=null?el('small',T('이 CLI는 입력과 출력을 나누지 않고 합계만 알려 줍니다.'),'cp-hint'):null]));
   if(x&&x.type==='order')out.push(facts(T('이 호출이 쓴 지시서'),[[T('목표'),x.goal],[T('사람 승인'),x.needs_approval?T('필요'):T('필요 없음')],[T('위험도'),x.risk]],
     [x.allowed.length?titled(T('바꿀 수 있는 파일:'),listEl(x.allowed.map(codeEl))):null,x.criteria.length?titled(T('완료 기준:'),listEl(x.criteria)):null]));
