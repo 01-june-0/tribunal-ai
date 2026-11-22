@@ -271,6 +271,8 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "승인으로 푸는 멈춤이 아닙니다": "not a stop an approval clears",
+  "마지막 판단 뒤 · 마칠 때의 검사": "after the final decision · closing checks",
   "끝나면 기록됩니다": "recorded when it ends",
   "Tribunal이 바꾼 최종 판단": "Final decision, changed by Tribunal",
   "Tribunal의 마침 검사나 대리 판단이 ARCHITECT의 답을 바꿔 저장했습니다. 이 호출이 실제로 한 답은 아래 \"안에서 한 일\"에 있습니다.": "Tribunal's closing checks or its proxy changed the ARCHITECT's answer before saving it. What this call really answered is in \"Inside the call\" below.",

@@ -147,6 +147,26 @@ def _window_end(conn, row) -> str:
     return min([t for t in (nxt_call, nxt_step) if t] or [end])
 
 
+def _round_entry(conn, run_id: str, after: str) -> Optional[dict]:
+    """The repair_history entry of the round a review or decision led to: the first "correction round k" step after
+    `after`, provided no new test run came in between (then the call belongs to a later cycle)."""
+    for s in conn.execute("SELECT to_state, details FROM state_transitions WHERE run_id=? AND timestamp>=? ORDER BY id", (run_id, after)):
+        if s["to_state"] == "VERIFYING":
+            return None
+        match = re.search(r"correction round (\d+)", str(s["details"] or ""))
+        if s["to_state"] == "BUILDING" and match:
+            folder = _run_dir(run_id)
+            try:
+                history = json.loads((folder / "repair_history.json").read_text(encoding="utf-8")) if folder else []
+            except (OSError, ValueError):
+                return None
+            for entry in history if isinstance(history, list) else []:
+                if isinstance(entry, dict) and entry.get("round") == int(match.group(1)):
+                    return entry
+            return None
+    return None
+
+
 def _call_result(conn, row) -> Optional[dict]:
     """What this very call produced, from the file written in its own window."""
     stage, run_id, start = row["stage"], row["run_id"], row["started_at"]
@@ -165,12 +185,19 @@ def _call_result(conn, row) -> Optional[dict]:
             return {"type": "build", "files": _strings(maker.get("files_modified")), "summary": _text(maker.get("summary")),
                     "status": _text(maker.get("status"), 40), "error": _text(maker.get("error"), 400)}
     elif stage == "REVIEWING":
-        review = _read(run_id, "review.json", start, end)
+        review, kept = _read(run_id, "review.json", start, end), False
+        if not review:                               # an earlier round: what it answered is kept with the repair it led to
+            entry = _round_entry(conn, run_id, row["ended_at"]) or {}
+            review, kept = (entry.get("review") if isinstance(entry.get("review"), dict) else None), True
         if review:
             findings = [{"level": level, "text": text} for level in ("p0", "p1", "p2") for text in _strings(review.get(level), 20, 500)]
-            return {"type": "review", "verdict": _text(review.get("verdict"), 40), "findings": findings, "summary": _text(review.get("summary"))}
+            return {"type": "review", "verdict": _text(review.get("verdict"), 40), "findings": findings, "summary": _text(review.get("summary")),
+                    "file": "repair_history.json" if kept else "review.json"}
     elif stage == "DECIDING":
-        decision = _read(run_id, "decision.json", start, end)
+        decision, kept = _read(run_id, "decision.json", start, end), False
+        if not decision:
+            entry = _round_entry(conn, run_id, row["ended_at"]) or {}
+            decision, kept = (entry.get("architect") if isinstance(entry.get("architect"), dict) else None), True
         if decision:
             # The engine may change the ARCHITECT's answer before saving it (final gate, proxy): then the file is
             # Tribunal's final decision, not what this call said, and is labelled so.
@@ -178,7 +205,8 @@ def _call_result(conn, row) -> Optional[dict]:
                 "SELECT 1 FROM audit_logs WHERE run_id=? AND action IN ('FINAL_GATE_BLOCK','ARCHITECT_ESCALATION_RESOLVED_BY_PROXY') "
                 "AND timestamp>=? AND timestamp<=? LIMIT 1", (run_id, start, end)).fetchone())
             return {"type": "decision", "decision": _text(decision.get("decision"), 40), "rationale": _text(decision.get("rationale")),
-                    "next_steps": _strings(decision.get("next_steps"), 10, 400), "changed_by_tribunal": changed}
+                    "next_steps": _strings(decision.get("next_steps"), 10, 400), "changed_by_tribunal": changed,
+                    "file": "repair_history.json" if kept else "decision.json"}
     return None
 
 
@@ -303,8 +331,7 @@ def _call_detail(row_id: int) -> dict:
         out["result_missing"] = (out["result"] is None and bool(r["run_id"]) and r["status"] == "OK"
                                  and r["stage"] in RESULT_FILE and bool(r["ended_at"]))
     out["sources"] = ["ledger"] + ([out["source"]] if out.get("found") else []) + \
-        ({"order": ["order.json"], "build": ["maker.json"], "review": ["review.json"], "decision": ["decision.json"]}
-         .get((out["result"] or {}).get("type"), []))
+        ([(out["result"] or {}).get("file") or {"order": "order.json", "build": "maker.json"}.get(out["result"]["type"], "")] if out["result"] else [])
     return out
 
 
@@ -353,13 +380,14 @@ def _transition_detail(tr_id: int) -> dict:
         sources = ["transitions", "ledger"]
         if t["to_state"] == "HUMAN_REQUIRED":
             reason = str(t["details"] or "")             # the same two prefixes Orchestrator.approval_state goes by
-            out["stage"] = "ENTRY" if reason.startswith("APPROVAL_REQUIRED") else ("POST_BUILD" if reason.startswith("Scope violation: ") else None)
+            out["stage"] = ("ENTRY" if reason.startswith("APPROVAL_REQUIRED") else "POST_BUILD" if reason.startswith("Scope violation: ")
+                            else "FINAL" if reason.startswith("Final decision") and t["from_state"] == "DECIDING" else None)
             decided = conn.execute("SELECT action, timestamp FROM audit_logs WHERE run_id=? AND action IN ('HUMAN_APPROVAL','HUMAN_REJECTED') "
                                    "AND timestamp>=? ORDER BY id LIMIT 1", (run_id, t["timestamp"])).fetchone()
             nxt = conn.execute("SELECT timestamp FROM state_transitions WHERE run_id=? AND id>? ORDER BY id LIMIT 1", (run_id, tr_id)).fetchone()
             if decided and (not nxt or decided["timestamp"] <= nxt["timestamp"]):      # an answer to this stop, not to a later one
                 out["answer"] = {"action": decided["action"], "at": decided["timestamp"]}
-        elif is_last:                                 # the run ended here: its closing files describe this ending
+        if is_last:                                   # the run ended here: its closing files describe this ending
             before = conn.execute("SELECT timestamp FROM state_transitions WHERE run_id=? AND id<? ORDER BY id DESC LIMIT 1", (run_id, tr_id)).fetchone()
             since = before["timestamp"] if before else t["timestamp"]
             evidence = _read(run_id, "final_evidence.json", since, t["timestamp"])

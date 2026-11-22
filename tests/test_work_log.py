@@ -145,6 +145,28 @@ def test_a_failed_read_is_said_not_shown_as_an_empty_record(monkeypatch):
     assert "logLost:a.log===null" in JS and "m.logLost?T('기록을 읽지 못했습니다. 곧 다시 시도합니다.')" in JS
 
 
+def test_an_earlier_rounds_review_and_decision_come_from_the_repair_they_led_to(run):
+    for state in ("PLANNING", "ORDER_READY", "BUILDING", "VERIFYING", "REVIEWING"):
+        run.sm.transition_to(run.id, state, "x")
+    review = _call("REVIEWING", "INSPECTOR", run.id, argv=("agy", "--print"))
+    run.sm.transition_to(run.id, "DECIDING", "x")
+    decide = _call("DECIDING", "ARCHITECT", run.id, argv=("claude", "--print"))
+    assert work_log.detail(f"call-{decide}")["result_missing"] is True     # nothing saved yet: said, not guessed
+    run.sm.transition_to(run.id, "BUILDING", "ARCHITECT requested correction round 1")
+    (run.dir / "repair_history.json").write_text(json.dumps([{"round": 1, "review": {"verdict": "changes_required", "p1": ["fix it"]},
+                                                            "architect": {"decision": "FAIL", "rationale": "red"}, "verification": {}}]), encoding="utf-8")
+    got = work_log.detail(f"call-{review}")
+    assert got["result"]["verdict"] == "changes_required" and got["result"]["findings"] == [{"level": "p1", "text": "fix it"}]
+    assert got["sources"][-1] == "repair_history.json"
+    got = work_log.detail(f"call-{decide}")
+    assert got["result"]["decision"] == "FAIL" and got["result"]["file"] == "repair_history.json" and got["result_missing"] is False
+    # a later cycle's calls are not given round 1's answers
+    for state in ("VERIFYING", "REVIEWING"):
+        run.sm.transition_to(run.id, state, "x")
+    later = _call("REVIEWING", "INSPECTOR", run.id, argv=("agy", "--print"))
+    assert work_log.detail(f"call-{later}")["result"] is None
+
+
 def test_endings_and_my_decisions_are_lines_too(run):
     run.sm.transition_to(run.id, "HUMAN_REQUIRED", "APPROVAL_REQUIRED: USER_DECISION_REQUIRED (pay)")
     run.sm.log_audit(run.id, "HUMAN", "HUMAN_REJECTED", json.dumps({"stage": "ENTRY", "reason": "APPROVAL_REQUIRED: pay"}))

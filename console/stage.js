@@ -623,11 +623,11 @@ function endFacts(d){
   const e=END_DID[d.state]||[d.state,d.state,''],t=d.totals||{},stop=d.state==='HUMAN_REQUIRED';
   const rows=[[T('결과'),e[1]],[T('시작 → 끝'),stamp(d.started_at)+' → '+hms(utc(d.at))],[T('걸린 시간'),took(d.started_at,d.at)],
     [T('AI 호출'),t.calls?T('{0}회',t.calls)+(t.tokens?' · '+(t.exact?'':'~')+tok(t.tokens)+T(' 토큰'):''):T('없음')],[T('자동 수정'),T('{0}회',d.repairs||0)],[T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]];
-  if(stop)rows.splice(1,0,[T('멈춘 때'),d.stage==='ENTRY'?T('시작 전 · 제작 전'):d.stage==='POST_BUILD'?T('제작 후'):null],[T('내 결정'),d.answer?(MY_DID[d.answer.action]||['',d.answer.action])[1]+' · '+stamp(d.answer.at):T('아직 없음')]);
+  if(stop)rows.splice(1,0,[T('멈춘 때'),d.stage==='ENTRY'?T('시작 전 · 제작 전'):d.stage==='POST_BUILD'?T('제작 후'):d.stage==='FINAL'?T('마지막 판단 뒤 · 마칠 때의 검사'):null],[T('내 결정'),d.answer?(MY_DID[d.answer.action]||['',d.answer.action])[1]+' · '+stamp(d.answer.at):d.stage==='ENTRY'||d.stage==='POST_BUILD'?T('아직 없음'):T('승인으로 푸는 멈춤이 아닙니다')]);
   const early=stop&&d.stage==='ENTRY';                     // stopped before anything ran: there is no span, call or repair to report
   const out=[facts(T('요약'),early?[rows[0],rows[1],rows[2],[T('멈춘 시각'),stamp(d.at)],rows[7],rows[8]]:rows)];
   if(d.details)out.push(facts(stop?T('멈춘 이유 원문'):T('마지막 판단 원문'),null,[el('p',d.details,'cp-quote')]));
-  if(d.gates)out.push(facts(T('마칠 때의 검사'),Object.entries(d.gates).map(([k,v])=>[GATE_KO[k]||k,String(v).toUpperCase()==='PASS'?T('통과'):String(v)]),[d.gate_reasons&&d.gate_reasons.length?listEl(d.gate_reasons):null]));
+  if(d.gates)out.push(facts(T('마칠 때의 검사'),Object.entries(d.gates).map(([k,v])=>[GATE_KO[k]||k,{PASS:T('통과'),FAIL:T('실패'),MISSING:T('기록 없음')}[String(v).toUpperCase()]||String(v)]),[d.gate_reasons&&d.gate_reasons.length?listEl(d.gate_reasons):null]));
   if(d.changed)out.push(facts(T('바뀐 파일'),null,[d.changed.length?listEl(d.changed.map(f=>{const s=el('span');s.append(codeEl(f.path),' ',el('small',{A:T('새 파일'),D:T('삭제'),M:T('수정')}[f.status]||f.status));return s;})):el('p',T('바뀐 파일이 없습니다.'),'cp-hint')]));
   if(!d.is_last)out.push(el('p',T('이 실행은 이 뒤에 다시 이어졌습니다.'),'cp-hint'));
   const ms=lastModel&&lastModel.mission;
