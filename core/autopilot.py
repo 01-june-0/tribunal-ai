@@ -104,10 +104,14 @@ def run_stop_needs_user(detail: str) -> bool:
     return any(m in (detail or "") for m in USER_STOP_MARKERS) or is_serious_text(detail)
 
 
-MONEY_CODE_PATTERNS = (
-    (re.compile(r"\border_send\s*\("), "broker order submission (order_send)"),
-    (re.compile(r"\bOrderSend\s*\("), "broker order submission (OrderSend)"),
-    (re.compile(r"\bcreate_(?:market|limit)_(?:buy_|sell_)?order\s*\("), "exchange order submission"),
+# Calls that submit an order. The name alone is not proof: a project may have its own function called order_send
+# (a work queue, say). Such a name is left alone only under the narrow conditions of _own_names; every doubt flags.
+_ANY_ORDER_CALL = (
+    (re.compile(r"\b(order_send)\s*\("), "broker order submission (order_send)"),
+    (re.compile(r"\b(OrderSend)\s*\("), "broker order submission (OrderSend)"),
+    (re.compile(r"\b(create_(?:market|limit)_(?:buy_|sell_)?order)\s*\("), "exchange order submission"),
+)
+MONEY_CODE_PATTERNS = _ANY_ORDER_CALL + (
     (re.compile(r"^\s*(?:import|from)\s+(?:stripe|paypalrestsdk|braintree|iamport|tosspayments)\b"), "payment SDK"),
     (re.compile(r"\b(?:PaymentIntent|Charge)\.create\s*\("), "payment charge"),
 )
@@ -115,27 +119,154 @@ LIVE_MONEY_PREFIX = "Live money code"
 # MetaTrader sources are only compiled by the Director, never executed; an EA places orders only after the user
 # attaches it to a chart themselves. The guard exists for code the Director's test run could execute.
 NOT_EXECUTED_BY_VERIFICATION = (".mq5", ".mqh", ".mq4")
+# Anything that can bind or replace a name behind the parser's back: a file using one gets no exemption at all.
+_DYNAMIC_NAMES = {"globals", "locals", "vars", "setattr", "delattr", "exec", "eval", "compile", "__import__", "importlib",
+                  "builtins", "__builtins__", "__dict__", "modules", "_getframe", "f_globals", "f_locals", "f_builtins",
+                  "__setattr__", "__getattr__", "__class__", "__code__", "__globals__"}
 
 
-def money_code_findings(raw_git_diff: str, new_files: Optional[Dict[str, str]] = None) -> List[str]:
+def _bindings(tree, name: str) -> Optional[List[Tuple[str, object]]]:
+    """Every place the module binds `name`, as (kind, node); None when the file is not plainly readable for this
+    purpose (a star import, a dynamic-binding API, or the name used as an attribute: x.name)."""
+    import ast
+    found: List[Tuple[str, object]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and (node.attr == name or node.attr in _DYNAMIC_NAMES):
+            return None
+        if isinstance(node, ast.Name):
+            if node.id in _DYNAMIC_NAMES:
+                return None
+            if node.id == name and not isinstance(node.ctx, ast.Load):
+                found.append(("assign", node))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == name:
+                found.append(("def" if not isinstance(node, ast.ClassDef) else "class", node))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    return None
+                bound = alias.asname or alias.name.split(".")[0]
+                if bound == name or alias.name == name:
+                    found.append(("import", node))
+        elif isinstance(node, ast.arg) and node.arg == name:
+            found.append(("arg", node))
+        elif isinstance(node, ast.ExceptHandler) and node.name == name:
+            found.append(("except", node))
+        elif isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+            found.append(("scope", node))
+        elif isinstance(node, ast.keyword) and node.arg == name:
+            pass                                     # f(order_send=1) binds nothing in this module
+        elif type(node).__name__ in ("MatchAs", "MatchStar") and getattr(node, "name", None) == name:
+            found.append(("match", node))
+        elif type(node).__name__ == "MatchMapping" and getattr(node, "rest", None) == name:
+            found.append(("match", node))
+    return found
+
+
+def _parse(text: str):
+    import ast
+    try:
+        return ast.parse(text)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None
+
+
+def _defines_plainly(tree, name: str) -> bool:
+    """The module's one and only binding of `name` is an undecorated function at the top level of the file."""
+    found = _bindings(tree, name)
+    return bool(found is not None and len(found) == 1 and found[0][0] == "def"
+                and found[0][1] in tree.body and not found[0][1].decorator_list)
+
+
+def _own_names(path: str, new_texts: Dict[str, str], root: Optional[str]) -> set:
+    """Order-like names that, in this file, can only mean a function this change itself wrote. Conditions, all of
+    them: the file is a wholly new Python file that parses; it uses no dynamic-binding API, no star import and never
+    reaches the name through an object; and its only binding of the name is either an undecorated top-level def, or
+    one top-level `from M import name` where M is - by exact path - another wholly new file of this change that
+    defines it that way, with no package of the same path in the project to shadow it (`root` must be given to
+    check). Everything else keeps the old behaviour: the name is flagged."""
+    import ast
+    if not path.endswith(".py") or path not in new_texts:
+        return set()
+    tree = _parse(new_texts[path])
+    if tree is None:
+        return set()
+    own = set()
+    for pattern, _label in _ANY_ORDER_CALL:
+        for name in {m.group(1) for m in pattern.finditer(new_texts[path])}:
+            if _defines_plainly(tree, name):
+                own.add(name)
+                continue
+            found = _bindings(tree, name)
+            if found is None or len(found) != 1 or found[0][0] != "import":
+                continue
+            node = found[0][1]
+            if not (isinstance(node, ast.ImportFrom) and node in tree.body and node.module and root
+                    and all(a.asname in (None, name) for a in node.names if a.name == name)
+                    and any(a.name == name for a in node.names)):
+                continue
+            parts = node.module.split(".")
+            if node.level:
+                base = path.split("/")[:-1]
+                if node.level - 1 > len(base):
+                    continue
+                base = base[:len(base) - (node.level - 1)]
+            else:
+                base = []
+            home = "/".join(base + parts) + ".py"
+            if home == path or home not in new_texts or not home.endswith(".py"):
+                continue
+            try:
+                if (Path(root) / home[:-3]).exists():     # a package directory of the same name would be imported instead
+                    continue
+            except OSError:
+                continue
+            home_tree = _parse(new_texts[home])
+            if home_tree is not None and _defines_plainly(home_tree, name):
+                own.add(name)
+    return own
+
+
+def money_code_findings(raw_git_diff: str, new_files: Optional[Dict[str, str]] = None, root: Optional[str] = None) -> List[str]:
     """Added code that could move real money. Scanned BEFORE any test executes the code.
-    Returns Scope-Guard-style strings '<LIVE_MONEY_PREFIX>: <path>' (human-approvable per file)."""
-    hits: Dict[str, str] = {}
-    current = None
+    Returns Scope-Guard-style strings '<LIVE_MONEY_PREFIX>: <path>' (human-approvable per file).
+    A wholly new Python file's own function is not an order just because of its name (see _own_names; `root` is the
+    work folder, needed to wave an imported name through). A changed existing file is always judged by name alone:
+    the lines this scan cannot see may bind the name to anything."""
+    texts: Dict[str, str] = {}                        # path -> what this change adds to it
+    whole: Dict[str, str] = {}                        # the subset we hold in full: files that did not exist before
+    current, created = None, False
     for line in (raw_git_diff or "").splitlines():
+        if line.startswith("--- "):
+            created = line[4:].strip() == "/dev/null"
+            continue
         if line.startswith("+++ "):
             target = line[4:].strip()
             current = target[2:] if target.startswith("b/") else target
+            if created and current not in (None, "/dev/null"):
+                whole[current] = ""
+            created = False
             continue
         if not line.startswith("+") or current in (None, "/dev/null"):
             continue
-        for pattern, label in MONEY_CODE_PATTERNS:
-            if pattern.search(line[1:]):
-                hits.setdefault(current, label)
+        texts[current] = texts.get(current, "") + line[1:] + "\n"
+        if current in whole:
+            whole[current] += line[1:] + "\n"
     for path, content in (new_files or {}).items():
-        for raw in (content or "").splitlines():
-            for pattern, label in MONEY_CODE_PATTERNS:
+        if path in texts:
+            whole.pop(path, None)                     # seen twice: no longer sure we hold exactly the file
+        else:
+            whole[path] = (content or "") + "\n"
+        texts[path] = texts.get(path, "") + (content or "") + "\n"
+    hits: Dict[str, str] = {}
+    for path, text in texts.items():
+        own = _own_names(path, whole, root)
+        for raw in text.splitlines():
+            for pattern, label in MONEY_CODE_PATTERNS[len(_ANY_ORDER_CALL):]:
                 if pattern.search(raw):
+                    hits.setdefault(path, label)
+            for pattern, label in _ANY_ORDER_CALL:
+                if any(m.group(1) not in own for m in pattern.finditer(raw)):
                     hits.setdefault(path, label)
     return [f"{LIVE_MONEY_PREFIX}: {p}" for p in sorted(hits)
             if not str(p).lower().endswith(NOT_EXECUTED_BY_VERIFICATION)]

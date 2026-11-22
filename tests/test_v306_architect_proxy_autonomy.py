@@ -168,6 +168,60 @@ def test_money_code_scan_reads_added_lines_only():
     assert SafetyPolicy.classify_post_build_violations(["Live money code: src/live.py"])["approvable"]
 
 
+def test_a_projects_own_function_is_not_an_order_because_of_its_name(tmp_path):
+    """order_send for a work queue, in wholly new Python files: the definition and bare calls of it pass. Anything
+    that could reach a real broker call - or that the scan cannot rule out - still stops for the user."""
+    root = str(tmp_path)
+    find = lambda diff, files=None, root=root: autopilot.money_code_findings(diff, files, root=root)
+    own = "def order_send(queue, item):\n    queue.append(item)\n    return len(queue)\n"
+    test = "from src.queue_util import order_send\n\ndef test_a():\n    assert order_send([], 1) == 1\n"
+    broker = "import MetaTrader5 as mt5\ndef order_send(r): pass\n"
+    passes = {
+        "new module and its test": find("", {"src/queue_util.py": own, "tests/test_queue_util.py": test}),
+        "the same as a diff of created files": find("--- /dev/null\n+++ b/src/q.py\n+def order_send(q, i):\n+    return 1\n"
+                                                    "--- /dev/null\n+++ b/tests/t.py\n+from src.q import order_send\n+order_send([], 1)\n"),
+        "relative import in the same package": find("", {"src/a/queue_util.py": own, "src/a/t.py": "from .queue_util import order_send\norder_send([], 1)\n"}),
+        "== and a keyword are not rebinding": find("", {"a.py": "def order_send(q, i): return 1\nx = dict(a=order_send([], 1))\nassert order_send([], 1) == 1\n"}),
+    }
+    assert {k: v for k, v in passes.items() if v} == {}
+    (tmp_path / "pk" / "queue_util").mkdir(parents=True)
+    stops = {
+        "defined outside this change": find("", {"tests/test_queue_util.py": test}),
+        "import that cannot be checked against the work folder": find("", {"src/queue_util.py": own, "tests/test_queue_util.py": test}, root=None),
+        "an existing file: its other lines are unseen": find("--- a/src/q.py\n+++ b/src/q.py\n+def order_send(r): pass\n+order_send(r)\n"),
+        "imported from a changed existing file": find("--- a/src/q.py\n+++ b/src/q.py\n+def order_send(r): pass\n", {"tests/test_q.py": "from src.q import order_send\norder_send({})\n"}),
+        "through a module": find("", {"a.py": broker.replace("pass", "return mt5.order_send(r)")}),
+        "through a module, split over lines": find("", {"a.py": broker + "mt5.\\\n  order_send(1)\n"}),
+        "method of the same name, broker import in brackets": find("", {"a.py": "from MetaTrader5 import (\n    order_send,\n)\nclass X:\n    def order_send(self): pass\norder_send(1)\n"}),
+        "import after a semicolon": find("", {"a.py": "def order_send(r): pass\nimport os; from MetaTrader5 import order_send\norder_send(1)\n"}),
+        "import on an if line": find("", {"a.py": "def order_send(r): pass\nif True: from MetaTrader5 import order_send\norder_send(1)\n"}),
+        "import with a comment": find("", {"a.py": "def order_send(r): pass\nfrom MetaTrader5 import order_send  # x\norder_send(1)\n"}),
+        "star import": find("", {"a.py": "from MetaTrader5 import *\ndef order_send(r): pass\norder_send(1)\n"}),
+        "something else imported under the name": find("", {"a.py": "def order_send(r): pass\nfrom x import y as order_send\norder_send(1)\n"}),
+        "plain assignment": find("", {"a.py": broker + "order_send = mt5.x\norder_send(1)\n"}),
+        "walrus": find("", {"a.py": broker + "(order_send := mt5.x)\norder_send(1)\n"}),
+        "tuple target": find("", {"a.py": broker + "order_send, _ = mt5.x, None\norder_send(1)\n"}),
+        "list target": find("", {"a.py": broker + "[order_send] = [mt5.x]\norder_send(1)\n"}),
+        "globals()": find("", {"a.py": broker + "globals()['order_send'] = mt5.x\norder_send(1)\n"}),
+        "setattr on the module": find("", {"a.py": "import sys\n" + broker + "setattr(sys.modules[__name__], 'order_send', mt5.x)\norder_send(1)\n"}),
+        "class of the same name": find("", {"a.py": broker + "class order_send(mt5.X): pass\norder_send(1)\n"}),
+        "match capture": find("", {"a.py": broker + "match mt5.x:\n    case order_send:\n        order_send(1)\n"}),
+        "decorator replaces the function": find("", {"a.py": "import MetaTrader5 as mt5\ndef real(f): return mt5.x\n@real\ndef order_send(r): pass\norder_send(1)\n"}),
+        "with ... as": find("", {"a.py": "def order_send(r): pass\nwith ctx() as order_send:\n    order_send(1)\n"}),
+        "a parameter of the same name": find("", {"a.py": "def order_send(r): pass\ndef go(order_send):\n    order_send(1)\n"}),
+        "only a nested definition": find("", {"a.py": "def w():\n    def order_send(r): pass\norder_send(1)\n"}),
+        "the home module imports it itself": find("", {"src/queue_util.py": "from MetaTrader5 import order_send\n", "tests/t.py": "from src.queue_util import order_send\norder_send(1)\n"}),
+        "relative import into another package": find("", {"src/a/queue_util.py": own, "src/b/t.py": "from .queue_util import order_send\norder_send(1)\n"}),
+        "a module that only ends the same way": find("", {"vendor/pkg/mod.py": own, "t.py": "from pkg.mod import order_send\norder_send(1)\n"}),
+        "a package of the same path shadows the new module": find("", {"pk/queue_util.py": own, "t.py": "from pk.queue_util import order_send\norder_send(1)\n"}),
+        "a file that does not parse": find("", {"a.py": "def order_send(r): pass\norder_send(1\n"}),
+        "the same path seen twice": find("--- a/a.py\n+++ b/a.py\n+x = 1\n", {"a.py": "def order_send(r): pass\norder_send(1)\n"}),
+        "not Python": find("", {"a.js": "function OrderSend(q){ return q.length }\nOrderSend([])\n"}),
+        "unknown bare call": find("", {"src/new.py": "x = create_market_buy_order('BTC')\n"}),
+    }
+    assert [why for why, hits in stops.items() if not hits] == []
+
+
 @pytest.mark.parametrize("diff,flagged", [
     ("-def foo(a):\n+def foo(a, b):\n", False),        # edited signature: still exists
     ("-class Old:\n+class New:\n", True),              # really removed
