@@ -281,6 +281,7 @@ def test_the_core_follows_a_running_test():
     core = JS[JS.index("function paintCore(){"):JS.index("function tickInside(){")]
     assert "going&&going.tail?going.tail" in core and "if(stick)out.scrollTop=out.scrollHeight;" in core
     assert "going=live&&d&&d.live&&!done?d.live:null;" in core              # only while the scene says a test run is going
+    assert "if(live&&d&&d.found&&!d.running&&Date.now()-utc(d.ended_at||d.at)>8000)d=null;" in core   # the previous run's result is never shown as this run's
     assert "const {group,live:_l,...rest}=d" in core                        # the panes are not rebuilt for every new line
     assert "if(inside===CORE&&lastModel&&lastModel.phase==='VERIFYING')pollInside();},700)" in JS
     # a comment once swallowed the rest of this line: every poller must be real code

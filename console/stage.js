@@ -767,11 +767,13 @@ let firstInside=true;
 // running there is nothing to stream: the view says so and shows the result the moment it exists.
 const CORE=3,CORE_DIVE=.13;
 function paintCore(){
-  const m=lastModel,d=insideData&&insideData.known?insideData:null,box=$('inside'),live=!!(m&&m.phase==='VERIFYING');
+  const m=lastModel,box=$('inside'),live=!!(m&&m.phase==='VERIFYING');let d=insideData&&insideData.known?insideData:null;
+  // A test run has begun but the list still names the previous one for a moment: that result is not this run's.
+  if(live&&d&&d.found&&!d.running&&Date.now()-utc(d.ended_at||d.at)>8000)d=null;
   box.style.setProperty('--c',TRIBUNAL_CSS);box.dataset.view='core';
   $('in-kicker').textContent=T('핵 속')+' · TRIBUNAL · '+STAGE_LABEL.VERIFYING;$('in-name').textContent='TRIBUNAL';$('in-track-k').textContent=T('테스트 결과');
   const done=d&&d.found&&!d.skipped,going=live&&d&&d.live&&!done?d.live:null;       // going: the run's output so far, straight from the engine
-  $('in-what').textContent=insideKey===null?T('아직 실행한 테스트가 없습니다'):live&&!done?T('테스트를 직접 실행하는 중'):!insideData?T('불러오는 중…'):!d?T('기록에 없는 줄'):live?T('테스트를 막 마쳤습니다'):T('지금은 쉬는 중');
+  $('in-what').textContent=insideKey===null?T('아직 실행한 테스트가 없습니다'):live&&!done?T('테스트를 직접 실행하는 중'):!insideData?T('불러오는 중…'):!d?(live?T('테스트를 직접 실행하는 중'):T('기록에 없는 줄')):live?T('테스트를 막 마쳤습니다'):T('지금은 쉬는 중');
   $('in-sub').textContent=insideKey===null?T('작업이 제작을 마치면 TRIBUNAL이 테스트를 실행하고, 그 결과가 여기에 나타납니다.'):!d?'':live&&!done?T('AI가 아니라 Tribunal AI 프로그램이 직접 실행합니다')+' · '+(going?T('출력을 나오는 대로 보여 줍니다.'):T('결과는 실행이 끝나면 나옵니다.')):T('마지막으로 실행한 테스트를 다시 보여 줍니다 · {0} 끝남',ago(utc(d.ended_at||d.at)));
   $('in-live').classList.toggle('off',!live);$('in-live').lastChild.textContent=live?T('실시간'):T('다시 보기');
   const left=$('in-left'),right=$('in-right'),out=$('in-output'),ticks=$('in-ticks');
