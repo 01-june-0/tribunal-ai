@@ -94,7 +94,7 @@ void main(){
   float bt=clamp(uBoot*1.3-aSeed.w*.3,0.,1.);bt=bt*bt*(3.-2.*bt);
   p=mix(scatter,p,bt);alpha*=bt;
   vec4 clip=uVP*vec4(p,1.);
-  gl_Position=clip;gl_PointSize=max(1.5,size*uPx/clip.w);
+  gl_Position=clip;gl_PointSize=min(max(1.5,size*uPx/clip.w),150.);
   vColor=col;vAlpha=alpha;
 }`;
 const FS_POINTS=`#version 300 es
@@ -155,7 +155,9 @@ const cur={act:[.1,.1,.1],edge:[0,0,0],core:.18,verify:0,colors:[[1,.54,.36],[.4
 const tgt={act:[.1,.1,.1],edge:[0,0,0],core:.18,verify:0,colors:cur.colors.map(c=>c.slice())};
 const ph={c:0,s:[0,0,0],e:[0,0,0],n:[0,0,0]};
 let pulse=0,pulseColor=[1,1,1],boot=0,time=0,last=0,timeScale=1,bootDelay=0,bootTime=3.2,age=0;
-let rect={x:0,y:0,w:1,h:1};const mouse=[0,0],mouseS=[0,0];
+let rect={x:0,y:0,w:1,h:1};
+// where the camera looks: x/y lean toward a cloud, d scales the distance (1 = the whole scene, ~.08 = inside a cloud)
+const cam={x:0,y:0,d:1},camT={x:0,y:0,d:1,k:2.4};let still=false;const mouse=[0,0],mouseS=[0,0];
 const vp=new Float32Array(16);
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
@@ -208,10 +210,11 @@ const P=new Float32Array(16),V=new Float32Array(16);
 function camera(){
   const W=size[0],H=size[1],aspect=W/H,fov=36*Math.PI/180,f=1/Math.tan(fov/2);
   const need=Math.max(1.36/(Math.max(rect.h,.2)),1.50/(aspect*Math.max(rect.w,.2)));
-  const dist=need*f,near=.1,far=40;
+  const dist=need*f*cam.d,near=.02,far=40;
   P.fill(0);P[0]=f/aspect;P[5]=f;P[10]=(far+near)/(near-far);P[11]=-1;P[14]=2*far*near/(near-far);
-  const yaw=.24*Math.sin(time*.11)+mouseS[0]*.22,pitch=.07*Math.sin(time*.17)+mouseS[1]*.12;
-  const tx=0,ty=.06,tz=0;
+  const sway=Math.min(1,cam.d*1.2);                                   // close up, the idle sway would swing the view too far
+  const yaw=(.24*Math.sin(time*.11)+mouseS[0]*.22)*sway,pitch=(.07*Math.sin(time*.17)+mouseS[1]*.12)*sway;
+  const tx=cam.x,ty=.06*cam.d+cam.y,tz=0;
   const ex=tx+dist*Math.sin(yaw)*Math.cos(pitch),ey=ty+dist*Math.sin(pitch),ez=tz+dist*Math.cos(yaw)*Math.cos(pitch);
   let zx=ex-tx,zy=ey-ty,zz=ez-tz;const zl=Math.hypot(zx,zy,zz);zx/=zl;zy/=zl;zz/=zl;
   let xx=zz,xy=0,xz=-zx;const xl=Math.hypot(xx,xy,xz);xx/=xl;xz/=xl;                  // up(0,1,0) x z
@@ -231,6 +234,7 @@ function approach(dt){
   const k=1-Math.exp(-dt*3.2),kc=1-Math.exp(-dt*2.2);
   for(let i=0;i<3;i++){cur.act[i]+=(tgt.act[i]-cur.act[i])*k;cur.edge[i]+=(tgt.edge[i]-cur.edge[i])*k;
     for(let j=0;j<3;j++)cur.colors[i][j]+=(tgt.colors[i][j]-cur.colors[i][j])*kc;}
+  {const kz=still?1:1-Math.exp(-dt*camT.k);cam.x+=(camT.x-cam.x)*kz;cam.y+=(camT.y-cam.y)*kz;cam.d+=(camT.d-cam.d)*kz;}
   cur.core+=(tgt.core-cur.core)*k;cur.verify+=(tgt.verify-cur.verify)*k;
   mouseS[0]+=(mouse[0]-mouseS[0])*k*.6;mouseS[1]+=(mouse[1]-mouseS[1])*k*.6;
   pulse=Math.max(0,pulse-dt/1.7);
@@ -304,7 +308,7 @@ let paused=false,lost=false;
 function start(){if(!running&&!paused&&!lost&&canvas){running=true;last=performance.now();raf=requestAnimationFrame(frame);}}
 function init(el,opts){
   canvas=el;onFrame=(opts&&opts.onFrame)||null;bootDelay=(opts&&opts.bootDelay)||0;bootTime=(opts&&opts.bootTime)||3.2;
-  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){timeScale=.2;boot=1;}
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){timeScale=.2;boot=1;still=true;}
   try{
     gl=canvas.getContext('webgl2',{antialias:false,alpha:false,powerPreference:'high-performance'});
     if(!gl)throw Error('WebGL2 unavailable');
@@ -336,7 +340,9 @@ return {init,set,
   pulse(color){pulse=1;pulseColor=(color||[1,1,1]).slice();},
   pause(){paused=true;if(running){cancelAnimationFrame(raf);running=false;}},   // nothing is drawn while the scene is covered
   resume(){paused=false;start();},
-  focus(r){rect=r;},                                  // stage rect inside the canvas, normalised {x,y,w,h}
+  focus(r){rect=r;},
+  // slot<0: the whole scene. Otherwise lean `pull` (0..1) of the way to that cloud and come to distance factor `d`.
+  look(slot,pull,d,k){if(!(slot>=0&&slot<3)){camT.x=0;camT.y=0;camT.d=1;}else{camT.x=SLOTS[slot][0]*pull;camT.d=Math.min(1,Math.max(.05,d));camT.y=(SLOTS[slot][1]-.06*camT.d)*pull;}camT.k=k||2.4;},                                  // stage rect inside the canvas, normalised {x,y,w,h}
   step(sec){for(let s=0;s<sec;s+=1/30){time+=1/30;approach(1/30);}render(0);},   // deterministic advance (captures, hidden tabs)
-  state(){return {cur,tgt,pulse,boot,time,size:size.slice(),hdr,webgl:!failed,points:total};}};
+  state(){return {cam:{...cam},camT:{...camT},cur,tgt,pulse,boot,time,size:size.slice(),hdr,webgl:!failed,points:total};}};
 })();

@@ -56,8 +56,8 @@ def test_role_labels_work_from_the_keyboard():
 def test_escape_closes_one_layer_and_panels_do_not_stack():
     esc = JS[JS.index("if(e.key==='Escape'){"):]
     esc = esc[:esc.index("return;}") + 8]
-    order = [esc.index(x) for x in ("closeRoleMenu(true)", "setChatLog(false)", "setAIPanel(false)", "closeResult()", "closeCall()")]
-    assert order == sorted(order) and esc.count("else if") == 4
+    order = [esc.index(x) for x in ("closeRoleMenu(true)", "setChatLog(false)", "setAIPanel(false)", "closeResult()", "closeCall()", "leaveCloud()")]
+    assert order == sorted(order) and esc.count("else if") == 5      # the cloud is the bottom layer: panels close first
     assert "replay" not in JS.lower() and "attract" not in JS      # the replay of a past task was removed
     assert "function openRecord(key){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();" in JS
     assert "if(open){if(openKey!=null)closeCall();if(result)closeResult();" in JS
@@ -205,6 +205,33 @@ def test_record_lines_in_the_chat_are_put_in_words():
     assert i.event_line("ARCHITECT Error: timed out after 180s") == ""                     # the detail is the point
     assert i.event_line("something nobody mapped") == ""
     assert "said=role==='SYSTEM'&&KO&&msg.content_ko" in JS and "if(said)node.title=raw.slice(0,400);" in JS   # the record stays in the tooltip
+
+
+def test_the_camera_follows_the_work_and_a_cloud_can_be_entered(tmp_path):
+    scene = (CONSOLE / "trinity.js").read_text(encoding="utf-8")
+    assert "look(slot,pull,d,k){" in scene and "const dist=need*f*cam.d" in scene and "still=true;" in scene   # reduced motion: no camera travel
+    assert HTML.count('class="cloud-hit"') == 3 and 'id="inside"' in HTML and 'id="in-back"' in HTML
+    assert "$('inside').inert=true;" in JS and "enterCloud(+b.dataset.slot)" in JS and "if(work){leaveCloud();" in JS
+    assert "getJSON('/ops/record?key='+encodeURIComponent(key))" in JS[JS.index("async function pollInside(){"):JS.index("function enterCloud(slot){")]
+    assert "if(inside!==at||insideKey!==key)return;" in JS                 # a late answer never paints another cloud or call
+    view = JS[JS.index("function paintInside(){"):JS.index("async function pollInside(){")]
+    assert "innerHTML" not in view                                         # commands and the model's words go in as text
+    assert "body.inside #panel-now" in CSS and ".slot-label.aside{" in CSS
+    # one AI at work: the camera leans to it; none, two, or the intro: the whole scene; inside: that cloud, whatever works
+    src = JS[JS.index("const LEAN="):JS.index("function insideCall(m){")]
+    script = ("const T=s=>s,ROLES=['ARCHITECT','MAKER','INSPECTOR'];let calls=[],cls={has:false};"
+              "const Trinity={look(...a){calls.push(a);}},document={body:{classList:{contains:()=>cls.has}},querySelectorAll:()=>[]};\n"
+              + src + "\nconst w=(...r)=>({working:r.map(role=>({role}))});\n"
+              "aimCamera(w('MAKER'));aimCamera(w());aimCamera(w('MAKER','INSPECTOR'));cls.has=true;aimCamera(w('ARCHITECT'));cls.has=false;"
+              "inside=2;aimCamera(w('MAKER'));console.log(JSON.stringify(calls));")
+    assert json.loads(_node(tmp_path, script)) == [[1, .42, .78, 1.6], [-1], [-1], [-1], [2, 1, .085, 1.9]]
+
+
+def test_elapsed_time_and_time_of_day_are_two_functions(tmp_path):
+    """The record's clock once shadowed the elapsed-time one of the same name: the labels showed a date."""
+    assert JS.count("function clock(") == 1 and JS.count("function clockAt(") == 1
+    src = JS[JS.index("function clock(sec){"):JS.index("\n", JS.index("function clock(sec){"))]
+    assert _node(tmp_path, "const T=s=>s;" + src + "\nconsole.log(clock(75)+' '+clock(3725))") == "01:15 1:02:05"
 
 
 def test_a_diff_keeps_lines_that_only_look_like_a_header(tmp_path):

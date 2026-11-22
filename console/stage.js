@@ -176,6 +176,7 @@ function paintNow(m){
 }
 function tickTimer(){
   for(const label of document.querySelectorAll('.slot-label'))if(label._work&&label._work.fixed==null)label.querySelector('.slot-status').textContent=label._work.text+' · '+clock((Date.now()-label._work.at)/1000);
+  tickInside();
   const node=$('now-elapsed');
   const eta=$('now-eta'),est=timerBase&&timerBase.estimate;eta.hidden=!est;
   if(!timerBase){node.textContent='--:--';return;}
@@ -525,7 +526,7 @@ const VERDICT_KO={pass:T('통과'),changes_required:T('수정 요청')},DECISION
 const SRC_KO={ledger:T('Tribunal 호출 기록'),transitions:T('Tribunal 상태 전환 기록'),audit:T('Tribunal 감사 기록'),...SOURCE_KO};
 const GATE_KO={order_paths:T('지시서의 경로'),canonical_containment:T('작업 폴더 안에서만 변경'),baseline:T('시작 전 테스트'),verification:T('검증'),regression:T('기존 테스트 유지'),inspector_verdict:T('감리 판정'),architect_decision:T('ARCHITECT 판단')};
 const TRIBUNAL_CSS='#b9ffe2',ME_CSS='#d9c2ff';
-function clock(ms){const d=new Date(ms),t=hms(ms).slice(0,5);return d.toDateString()===new Date().toDateString()?t:(d.getMonth()+1)+'/'+d.getDate()+' '+t;}
+function clockAt(ms){const d=new Date(ms),t=hms(ms).slice(0,5);return d.toDateString()===new Date().toDateString()?t:(d.getMonth()+1)+'/'+d.getDate()+' '+t;}
 function stamp(iso){if(!iso)return null;const ms=utc(iso),d=new Date(ms);return (d.getMonth()+1)+'/'+d.getDate()+' '+hms(ms);}
 function span1(sec){return sec==null?null:sec<10?(Math.round(sec*10)/10)+T('초'):span(sec);}
 function took(a,b){return a&&b?span1(Math.max(0,(utc(b)-utc(a))/1000)):null;}
@@ -568,7 +569,7 @@ function paintLog(m){
     b.type='button';b.dataset.key=r.key;b.style.setProperty('--dot',l.color);b.title=T('자세한 내용 보기');if(openKey===r.key)b.setAttribute('aria-current','true');
     l1.append(el('b',l.who),el('span',l.what));l2.append(el('span',l.out[0],'res '+l.out[1]));
     if(r.kind==='ai'&&r.status!=='RUNNING'){if(r.seconds!=null)l2.append(el('span',span1(r.seconds)));if(r.tokens)l2.append(el('span',(r.exact?'':'~')+tok(r.tokens)+T(' 토큰')));}
-    body.append(l1,l2);b.append(el('time',clock(utc(r.at))),body);b.onclick=()=>openRecord(r.key);li.append(b);frag.push(li);}
+    body.append(l1,l2);b.append(el('time',clockAt(utc(r.at))),body);b.onclick=()=>openRecord(r.key);li.append(b);frag.push(li);}
   if(!frag.length)frag.push(el('li',m.logLost?T('기록을 읽지 못했습니다. 곧 다시 시도합니다.'):logFilter==='all'?T('아직 기록이 없습니다.'):T('해당하는 기록이 없습니다.'),'log-empty'));
   list.replaceChildren(...frag);
   if(held){const again=list.querySelector('[data-key="'+held+'"]');if(again)again.focus();}
@@ -691,6 +692,111 @@ async function pollCall(){
       try{const d=await getJSON('/ops/record?key='+encodeURIComponent(key));if(openKey===key){openData=d;paintRecord();}}catch(e){/* next tick */}}
   }finally{callBusy=false;}
 }
+
+// ------------------------------------------------------------------ the camera follows the work; a cloud can be entered
+// While exactly one AI works, the camera leans to its cloud. A click on a cloud goes inside it: the call that AI is
+// in right now (or, when it rests, its latest one) as the CLI recorded it - the same /ops/record the panel reads.
+const LEAN=.42,NEAR=.78,DIVE=.085;
+const DOING={PLANNING:T('지시서를 쓰는 중'),ENTRY_REVIEW:T('지시서를 검토하는 중'),BUILDING:T('코드를 만드는 중'),REVIEWING:T('결과물을 감리하는 중'),DECIDING:T('결과를 판단하는 중'),MISSION_PLANNING:T('다음 단계를 계획하는 중'),CHAT:T('대화에 답하는 중')};
+let inside=-1,insideKey,insideData=null,insideBusy=false,insideOpener=null,insideSeen=0;
+const orderAsked=new Map();                               // run id -> when its order was last asked for
+function aimCamera(m){
+  if(inside>=0){Trinity.look(inside,1,DIVE,1.9);return;}
+  const at=ROLES.map(r=>m.working.some(w=>w.role===r)),slot=at.filter(Boolean).length===1&&!document.body.classList.contains('intro')?at.indexOf(true):-1;
+  document.querySelectorAll('.slot-label').forEach((l,i)=>l.classList.toggle('aside',slot>=0&&i!==slot));
+  if(slot>=0)Trinity.look(slot,LEAN,NEAR,1.6);else Trinity.look(-1);
+}
+function insideCall(m){                                   // the call at work in this cloud, else this role's latest one
+  const role=ROLES[inside],w=m.working.find(x=>x.role===role);
+  if(w)return w.id?'call-'+w.id:undefined;                // at work, its ledger line not known yet: wait, do not show an older call as "resting"
+  if(m.logLost)return undefined;                          // the record could not be read: that is not "nothing done"
+  const last=(m.log||[]).find(r=>r.kind==='ai'&&r.role===role);
+  return last?last.key:null;
+}
+function paintInside(){
+  if(inside<0)return;
+  const role=ROLES[inside],d=insideData&&insideData.known?insideData:null,m=lastModel,w=m&&m.working.find(x=>x.role===role);
+  const p=d?d.provider:(w?w.provider:m?m.assign[role]:''),live=!!(d&&d.status==='RUNNING'),box=$('inside');
+  box.style.setProperty('--c',(AI[p]||{}).css||'#fff');
+  $('in-kicker').textContent=T('구름 속')+' · '+ROLE_KO[role];
+  $('in-name').textContent=(AI[p]||{name:p||'—'}).name;
+  $('in-what').textContent=insideKey===null?T('아직 한 일이 없습니다'):!insideData?T('불러오는 중…'):!d?T('기록에 없는 호출'):live?(DOING[d.stage]||T('일하는 중')):T('지금은 쉬는 중');
+  $('in-sub').textContent=insideKey===null?T('이 역할로 한 호출이 아직 없습니다. 작업이 시작되면 여기에 나타납니다.'):!d?'':live?T('이 호출 안에서 일어나는 일을 CLI 기록 그대로 보여 줍니다.'):T('마지막으로 한 호출을 다시 보여 줍니다 · {0} 끝남',ago(utc(d.ended_at||d.started_at)));
+  $('in-live').classList.toggle('off',!live);$('in-live').lastChild.textContent=live?T('실시간'):T('다시 보기');
+  const left=$('in-left'),right=$('in-right'),list=$('in-events');
+  if(!d){left.replaceChildren();right.replaceChildren();list.replaceChildren();delete left.dataset.sig;delete right.dataset.sig;delete list.dataset.sig;$('in-ticks').replaceChildren();$('in-note').textContent='';$('in-quiet').textContent='';return;}
+  const order=(d.run_id&&orders.get(d.run_id))||null,goal=order?order.goal:(d.result&&d.result.type==='order'?d.result.goal:'');
+  const lsig=JSON.stringify([d.key,d.stage,goal,order&&order.allowed_paths,order&&order.acceptance_criteria,d.prompt_chars,d.group]);
+  if(left.dataset.sig!==lsig){left.dataset.sig=lsig;
+    const files=order&&Array.isArray(order.allowed_paths)?order.allowed_paths:[],crit=order&&Array.isArray(order.acceptance_criteria)?order.acceptance_criteria:[];
+    left.replaceChildren(facts(T('받은 지시'),[[T('목표'),goal||taskName(d)],[T('단계'),STAGE_LABEL[d.stage]||d.stage],[T('작업'),taskName(d)],[T('보낸 지시'),d.prompt_chars!=null?T('{0}자',num(d.prompt_chars)):null]],
+      [files.length?titled(T('바꿀 수 있는 파일:'),listEl(files.slice(0,12).map(codeEl))):null,crit.length?titled(T('완료 기준:'),listEl(crit.slice(0,12))):null,
+       !order&&d.run_id?el('small',T('이 실행의 지시서를 아직 불러오지 못했습니다.'),'cp-hint'):null]));}
+  const ev=d.events||[],tools=ev.filter(e=>e.kind==='tool'),count={};for(const t of tools)count[t.name]=(count[t.name]||0)+1;
+  const top=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const rsig=JSON.stringify([d.key,d.status,d.model,d.effort,d.tools,d.errors,ev.length,d.tokens,d.exact,d.seconds,top]);
+  if(right.dataset.sig!==rsig){right.dataset.sig=rsig;
+    const head=el('div','','in-clock');head.append(el('b','','in-big'),el('small',d.model==null?T('모델 기록 없음'):(d.model||T('CLI 기본 모델'))+' · '+(d.effort||T('CLI 기본 강도'))));
+    const cells=el('div','','in-cells'),cell=(v,label,cls,id)=>{const c=el('div','',cls||'');const b=el('b',v);if(id)b.id=id;c.append(b,el('span',label));return c;};
+    cells.append(cell(d.found?String(d.tools):'—',T('도구 호출')),cell(d.found?String(d.errors):'—',T('오류'),d.errors?'bad':''),cell(d.found?String(ev.filter(e=>e.kind==='say').length):'—',T('말')),cell('—',T('마지막 활동 뒤'),'','in-quiet-n'));
+    const more=el('button',T('자세한 기록 열기'));more.type='button';more.onclick=()=>{const key=insideKey;leaveCloud();openRecord(key);};
+    right.replaceChildren(el('span',T('이 호출'),'kicker'),head,cells,el('span',T('많이 쓴 도구'),'kicker'),
+      top.length?listEl(top.map(([k,v])=>{const s=el('span');s.append(codeEl(k),' ',el('small',T('{0}회',v)));return s;})):el('small',d.found?T('도구를 쓰지 않은 호출입니다.'):T('기록 없음'),'cp-hint'),
+      el('span',T('토큰'),'kicker'),el('small',live?T('끝나면 기록됩니다'):d.tokens!=null?(d.exact?'':'~')+num(d.tokens)+' · '+(d.exact?T('CLI가 보고한 값'):T('글자 수로 추정한 값')):T('기록 없음'),'cp-hint'),more);}
+  // the stream: the newest thing it did sits on the focus line, older ones recede into the cloud
+  const shown=ev.filter(e=>e.kind!=='done'||e.detail||e.error).slice(-7),ssig=JSON.stringify([d.key,ev.length,shown.length?shown[shown.length-1]:0]);
+  if(list.dataset.sig!==ssig){list.dataset.sig=ssig;const fresh=!firstInside&&ev.length>insideSeen;insideSeen=ev.length;firstInside=false;
+    list.replaceChildren(...shown.map((e,i)=>{const age=shown.length-1-i,li=el('li','',e.kind+(e.error?' bad':'')+(age===0?' now':'')),[name,detail]=eventText(e);
+      li.style.transform='scale('+(1-age*.055).toFixed(3)+')';li.style.opacity=String(Math.max(.12,1-age*.17));
+      li.append(el('time',e.at?hms(utc(e.at)):''),el('b',name),el('span',detail||(e.kind==='think'?T('생각하는 중…'):'')),el('em',e.error?T('오류'):''));
+      if(age===0&&fresh){li.classList.add('enter');requestAnimationFrame(()=>requestAnimationFrame(()=>li.classList.remove('enter')));}
+      return li;}));
+    if(!shown.length)list.append(el('li',!d.found?(live?T('CLI가 아직 기록을 남기지 않았습니다. 곧 다시 확인합니다.'):T('이 호출의 내부 기록을 찾지 못했습니다. 이 기능이 생기기 전의 호출이거나, CLI가 기록을 남기지 않았거나, 기록 형식이 바뀐 경우입니다.')):T('기록된 활동이 없습니다.'),'empty'));
+    const t0=utc(d.started_at),t1=Math.max(t0+1000,live?Date.now():utc(d.ended_at)||t0+1000);
+    $('in-ticks').replaceChildren(...ev.filter(e=>e.at).map(e=>{const i=el('i','',e.kind+(e.error?' bad':''));i.style.left=Math.min(99,Math.max(0,(utc(e.at)-t0)/(t1-t0)*98+1)).toFixed(2)+'%';return i;}));
+    $('in-note').textContent=T('{0}건',ev.length)+(d.total>ev.length?' · '+T('최근 {0}건만 표시합니다 (전체 {1}건).',ev.length,d.total):'')+' · '+(live?T('지금도 이어지는 중'):T('끝난 호출'));}
+  tickInside();
+}
+let firstInside=true;
+function tickInside(){                                    // the clock and the quiet time move every second
+  if(inside<0)return;const d=insideData&&insideData.known?insideData:null,big=document.querySelector('#in-right .in-big'),q=$('in-quiet-n');
+  if(!d||!big)return;const live=d.status==='RUNNING';
+  big.textContent=live?clock(Math.max(0,(Date.now()-utc(d.started_at))/1000)):span1(d.seconds)||'—';
+  const quiet=live&&d.quiet_sec!=null?d.quiet_sec+Math.round((Date.now()-insideAt)/1000):null;
+  if(q)q.textContent=quiet!=null?span(quiet):'—';
+  $('in-quiet').textContent=quiet!=null&&quiet>=QUIET_SHOW?T('{0}째 새 활동 없음',span(quiet))+' · '+T('오래 생각하는 중일 수 있습니다'):'';
+}
+let insideAt=0;
+async function pollInside(){
+  if(inside<0||insideBusy||!lastModel)return;insideBusy=true;
+  try{
+    const at=inside,key=insideCall(lastModel);
+    if(key!==insideKey){insideKey=key;insideData=null;insideSeen=0;firstInside=true;paintInside();}
+    if(!key)return;
+    const d=await getJSON('/ops/record?key='+encodeURIComponent(key));
+    if(inside!==at||insideKey!==key)return;                // left, or moved on to another call, while this was on its way
+    insideData=d;insideAt=Date.now();
+    if(d.known&&d.run_id&&!orders.has(d.run_id)&&Date.now()-(orderAsked.get(d.run_id)||0)>10000){orderAsked.set(d.run_id,Date.now());
+      try{const r=await getJSON('/run/inspect?run_id='+encodeURIComponent(d.run_id));if(r.order)orders.set(d.run_id,r.order);}catch(e){/* asked again later */}}
+    if(inside===at&&insideKey===key)paintInside();
+  }catch(e){/* next round */}finally{insideBusy=false;}
+}
+function enterCloud(slot){
+  if(document.body.dataset.view!=='stage'||document.body.classList.contains('intro'))return;
+  insideOpener=document.activeElement;                    // before the panels close: closing one moves the focus
+  closeRoleMenu();setChatLog(false);if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();if(openKey!=null)closeCall();
+  inside=slot;insideKey=undefined;insideData=null;insideSeen=0;firstInside=true;
+  document.body.classList.add('inside');$('inside').inert=false;
+  if(lastModel)aimCamera(lastModel);paintInside();pollInside();$('in-back').focus();
+}
+function leaveCloud(){
+  if(inside<0)return;inside=-1;insideData=null;document.body.classList.remove('inside');$('inside').inert=true;
+  if(lastModel)aimCamera(lastModel);
+  const back=insideOpener;insideOpener=null;
+  // the cloud that was entered is no target until the camera is back out: the focus returns to it then
+  const giveBack=()=>{if(inside<0&&back&&back.isConnected&&document.activeElement===document.body)back.focus();};
+  if(back&&back.hidden)setTimeout(giveBack,1500);else if(back&&back.isConnected)back.focus();
+}
 function paintScene(m){
   const act=[.1,.1,.1],edge=[0,0,0],colors=[];
   ROLES.forEach((role,i)=>{const w=m.working.find(x=>x.role===role),p=w?w.provider:m.assign[role];if(w)act[i]=1;colors.push((AI[p]||AI[m.assign[role]]).rgb);
@@ -705,6 +811,7 @@ function paintScene(m){
   if(m.phase==='BUILDING')edge[0]=1;if(m.phase==='REVIEWING')edge[1]=1;if(m.phase==='DECIDING')edge[2]=1;
   if(m.phase==='VERIFYING')act[1]=.5;
   Trinity.set({act,edge,colors,core:PHASE[m.phase].core,verify:m.phase==='VERIFYING'?1:0});
+  aimCamera(m);if(inside>=0)paintInside();
 }
 let lastPhase=null;
 function stinger(m){
@@ -741,8 +848,15 @@ function onFrame(f){
   placeIntro(f);
   labels.forEach((n,i)=>{const [x,y]=f.slots[i],w=n.offsetWidth,h=n.offsetHeight;
     let lx=i===0?x+u*.31:x-w/2,ly=i===0?y-h/2:y+u*.31;                 // ARCHITECT: above-right; MAKER/INSPECTOR: centred below
-    lx=Math.min(Math.max(lx-center.left,2),center.width-w-2);ly=Math.max(ly-center.top,2);
+    lx=Math.min(Math.max(lx-center.left,2),center.width-w-2);ly=Math.min(Math.max(ly-center.top,2),Math.max(2,center.height-foot-h-2));   // a leaning camera never pushes a label out of the stage
     n.style.transform='translate('+lx.toFixed(1)+'px,'+ly.toFixed(1)+'px)';});
+  // The clouds themselves are the way in - but only a cloud that sits whole inside the stage, at rest or under the
+  // gentle lean: never over a side panel, and never while the camera travels into or out of a cloud.
+  const d=Math.min(Math.max(84,u*.5),center.width*.3,230),near=Trinity.state().cam.d<.7;
+  document.querySelectorAll('.cloud-hit').forEach((n,i)=>{const [x,y]=f.slots[i],r=d/2;
+    const ok=!near&&x-r>=center.left&&x+r<=center.right&&y-r>=center.top&&y+r<=center.bottom-foot;
+    n.hidden=!ok;if(!ok)return;
+    n.style.width=n.style.height=d.toFixed(0)+'px';n.style.transform='translate('+(x-center.left-r).toFixed(1)+'px,'+(y-center.top-r).toFixed(1)+'px)';});
 }
 
 // ------------------------------------------------------------------ AI settings (/ops/ai): model, effort, plan, limits
@@ -960,10 +1074,10 @@ function setView(view){
   $('tab-stage').setAttribute('aria-pressed',String(!work));$('tab-workshop').setAttribute('aria-pressed',String(work));
   if(work&&!frame.getAttribute('src'))frame.src='/classic';
   if(work)Trinity.pause();else Trinity.resume();   // the workshop covers the whole scene
-  if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openKey!=null)closeCall();if(result)closeResult();if(!$('ai-panel').hidden)setAIPanel(false,true);}
+  if(work){leaveCloud();$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openKey!=null)closeCall();if(result)closeResult();if(!$('ai-panel').hidden)setAIPanel(false,true);}
 }
 function setBroadcast(on){
-  document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('전체 화면 끝내기'):T('전체 화면');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on)closeRoleMenu();
+  document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('전체 화면 끝내기'):T('전체 화면');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on){closeRoleMenu();leaveCloud();}
   try{if(on&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){/* fullscreen is optional */}
 }
 function start(){
@@ -981,6 +1095,8 @@ function start(){
   $('btn-broadcast').onclick=()=>setBroadcast(!document.body.classList.contains('broadcast'));
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&document.body.classList.contains('broadcast'))setBroadcast(false);});
   for(const b of $('win-tabs').children)b.onclick=()=>{win=b.dataset.win;winAuto=false;repaint();};
+  $('inside').inert=true;$('in-back').onclick=leaveCloud;
+  for(const b of document.querySelectorAll('.cloud-hit'))b.onclick=e=>{e.stopPropagation();enterCloud(+b.dataset.slot);};
   $('now-doing').onclick=()=>{if(liveCall)openRecord('call-'+liveCall.id);};$('cp-close').onclick=closeCall;
   $('btn-ai').onclick=()=>setAIPanel($('ai-panel').hidden);$('ai-close').onclick=()=>setAIPanel(false);
   $('limit-alert').onclick=()=>{if($('ai-panel').hidden)$('btn-ai').click();};
@@ -1005,16 +1121,16 @@ function start(){
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){   // one layer per press, the topmost first
       if(!$('role-menu').hidden)closeRoleMenu(true);else if(!$('chat-log').hidden){setChatLog(false);if(e.target.id!=='chat-text')$('chat-peek').focus();}
-      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openKey!=null)closeCall();return;}
+      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openKey!=null)closeCall();else if(inside>=0)leaveCloud();return;}
     if(e.target.closest('textarea,input,select,[contenteditable]')||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.repeat||document.body.dataset.view!=='stage')return;
     if(e.key==='b'||e.key==='B'||e.key==='ㅠ')setBroadcast(!document.body.classList.contains('broadcast'));
 });
   setInterval(()=>{const d=new Date();$('top-clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');tickTimer();},1000);
   // Nothing is asked of the server while the window is out of sight; everything is asked again the moment it is back.
   const every=(fn,ms)=>setInterval(()=>{if(!document.hidden)fn();},ms);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollActivity();pollStatus();pollChat();pollRoles();pollCall();pollAI();}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollActivity();pollStatus();pollChat();pollRoles();pollCall();pollInside();pollAI();}});
   pollActivity();pollStatus();pollChat();pollRoles();every(pollRoles,8000);
-  every(pollActivity,3000);every(pollStatus,6000);every(pollChat,3000);every(pollCall,2000);pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
+  every(pollActivity,3000);every(pollStatus,6000);every(pollChat,3000);every(pollCall,2000);every(pollInside,2000);pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
      // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
 }
 window.TrinityStage={model:()=>lastModel};
