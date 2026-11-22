@@ -161,6 +161,19 @@ class AntigravityMaker:
             raise ValueError(f"unsupported scoped permission path pattern: {path_rule}")
         return clean
 
+    @staticmethod
+    def _hook_python() -> str:
+        """The interpreter the permission hook is run with. `python` where that command exists (as before); where it
+        does not - macOS and many Linux systems only have `python3` - the interpreter running the Director, quoted.
+        A hook whose command cannot start protects nothing."""
+        import shlex
+        import shutil
+        import sys
+        if shutil.which("python"):
+            return "python"
+        exe = sys.executable or shutil.which("python3") or "python3"
+        return subprocess.list2cmdline([exe]) if os.name == "nt" else shlex.quote(exe)
+
     def _setup_scoped_permissions(self, worktree_path: Path, order: OrderSchema) -> Dict[str, List[str]]:
         """
         Dynamically generates and provisions scoped permission rules for this run.
@@ -285,7 +298,7 @@ except Exception as e:
                         "matcher": "*",
                         "hooks": [
                             {
-                                "command": f"python {guard_script.as_posix()}"
+                                "command": f"{self._hook_python()} {guard_script.as_posix()}"
                             }
                         ]
                     }

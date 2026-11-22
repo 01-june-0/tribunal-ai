@@ -200,7 +200,9 @@ def _free_port():
 
 
 def _listeners_on(port):
-    return [c for c in psutil.net_connections(kind="tcp")
+    # This process's own sockets: the servers under test live here, and macOS does not let an unprivileged process
+    # list every process's connections (psutil.net_connections raised AccessDenied there).
+    return [c for c in psutil.Process().net_connections(kind="tcp")
             if c.status == psutil.CONN_LISTEN and c.laddr and c.laddr.port == port]
 
 
@@ -219,7 +221,9 @@ def test_e_dashboard_single_instance(isolate_provider_db):
         listeners = _listeners_on(port)
         assert len(listeners) == 1, listeners
         assert listeners[0].laddr.ip == "127.0.0.1"
-        assert DashboardServer.allow_reuse_address is False
+        # Windows: address reuse would let a second server listen, so it is off. POSIX: it never allows a second live
+        # listener (the two refusals above prove it) and only lets a restart bind during TIME_WAIT, so it is on.
+        assert DashboardServer.allow_reuse_address is (os.name != "nt")
     finally:
         first.shutdown(); first.server_close()
 

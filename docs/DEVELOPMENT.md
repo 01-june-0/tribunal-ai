@@ -15,20 +15,20 @@
 
 ### 현재 결과
 
-2026-11-22 기준 **781개 통과, 5개 실패**입니다. 실패 5개는 원본 때부터 이어진 것으로, macOS 환경과 맞지 않는 전제 때문이며
-제품 동작과는 무관합니다. 새 변경이 이 목록을 늘리지 않는 것을 기준으로 삼습니다.
+2026-11-23 기준 **787개 모두 통과**합니다. 새 변경은 이 상태를 유지해야 합니다.
 
-| 테스트 | 실패하는 이유 |
-|---|---|
-| `test_v014_qualification.py::test_a2_permission_guard_hook_blocks_escapes` | `python`이라는 이름의 실행 파일을 전제 (macOS에는 `python3`만 있음) |
-| `test_v0232_e2e_blockers.py::test_e_dashboard_single_instance` | 다른 프로세스의 정보를 읽는 권한이 macOS에서 거부됨 |
-| `test_v0233_codex_fixes.py::test_l_resolve_cli_permission_error_no_crash` | 이 컴퓨터에 설치된 CLI가 실제로 발견되어 기대와 달라짐 |
-| `test_v300h_maker_headless.py::test_exit_zero_without_task_changes_is_failed_and_settings_restore` | 임시 폴더 경로 형태가 기대와 다름 |
-| `test_v300j_chat_order_path_normalization.py::test_a_unfixed_order_would_have_escalated` | 윈도우 경로를 전제 |
+원본에서 넘어올 때는 7개가 macOS에서 실패했습니다. 하나씩 원인을 확인해 보니 여섯은 테스트가 Windows나 특정 환경을 전제로 한
+것이었고, 하나는 제품 코드에도 문제가 있었습니다.
 
-원래 7개였는데, 두 개는 원인을 확인해 보니 기능이 아니라 테스트가 틀린 것이어서 고쳤습니다. 작업 사본 폴더 열기 테스트는
-Windows인 척하는 방식이 macOS에서 경로 처리 자체를 깨뜨렸고, 스냅샷 테스트는 예전 규칙(데이터 폴더 제외)을 기대하고 있었습니다.
-남은 5개는 원인을 끝까지 확인하지 않았습니다.
+| 테스트 | 원인 | 조치 |
+|---|---|---|
+| 권한 보호 훅 | 테스트와 **제품 코드 모두** `python`이라는 명령을 전제. macOS에는 `python3`만 있어 훅이 시작되지 못함 | 훅이 실제로 있는 인터프리터를 쓰도록 제품 코드 수정, 테스트도 수정 |
+| 콘솔 중복 실행 방지 | 테스트가 모든 프로세스의 연결 목록을 읽으려 함(macOS는 권한 없이 불가). 주소 재사용 설정도 Windows 값만 기대 | 테스트 수정. 중복 실행 방지 자체는 원래 동작 |
+| CLI 탐색 중 권한 오류 | 테스트가 Windows 폴더만 막아서, 이 컴퓨터에 실제로 설치된 CLI가 발견됨 | 테스트가 모든 후보 위치를 막도록 수정 |
+| 작업 사본 폴더 열기 | 테스트가 Windows인 척하면 macOS에서 경로 처리가 깨짐 | 테스트 수정 |
+| 헤드리스 제작의 권한 규칙 | 절대 경로를 `C:/` 형태로만 확인 | 테스트 수정 |
+| 지시서의 절대 경로 거부 | 오류 문구를 Windows 형태(`drive-absolute`)로만 확인 | 테스트 수정. macOS의 절대 경로도 원래 거부됨 |
+| 스냅샷 제외 규칙 | 테스트가 예전 규칙(데이터 폴더 제외)을 기대 | 테스트 수정 |
 
 ### 화면 코드의 테스트
 

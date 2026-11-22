@@ -428,8 +428,12 @@ def test_l_resolve_cli_permission_error_no_crash(monkeypatch):
     monkeypatch.setattr(env_utils.shutil, "which", lambda name: None)
     monkeypatch.setattr("core.provider_manager.resolve_cli", env_utils.resolve_cli)   # real resolver (conftest stubs it)
     real_exists = Path.exists
+    # Every place a CLI could be found is unreadable - on any platform, and whatever is really installed on this
+    # machine (the test once looked only at the Windows folders, so a real ~/.local/bin/claude was "found").
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: Path(tempfile.mkdtemp()) / "home"))
     def exploding_exists(self):
-        if "npm" in str(self) or "agy" in str(self):
+        text = str(self)
+        if any(part in text for part in ("npm", "agy", ".local", "homebrew", "/usr/local", ".claude")) or self.name in ("claude", "codex"):
             raise PermissionError(5, "Access is denied")
         return real_exists(self)
     monkeypatch.setattr(Path, "exists", exploding_exists)

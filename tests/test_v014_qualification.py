@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import subprocess
 import tempfile
@@ -67,7 +68,7 @@ def test_a2_permission_guard_hook_blocks_escapes():
         def run_guard(tool_name: str, args: dict) -> dict:
             payload = json.dumps({"toolCall": {"name": tool_name, "args": args}})
             res = subprocess.run(
-                ["python", str(guard_script)],
+                [sys.executable, str(guard_script)],      # not "python": macOS and many Linux systems have no such command
                 input=payload,
                 text=True,
                 capture_output=True,
@@ -77,7 +78,7 @@ def test_a2_permission_guard_hook_blocks_escapes():
             return json.loads(res.stdout.strip())
 
         # Escape 1: Outside worktree write
-        r1 = run_guard("write_to_file", {"TargetFile": "C:/temp/escape.txt"})
+        r1 = run_guard("write_to_file", {"TargetFile": "C:/temp/escape.txt" if os.name == "nt" else "/tmp/escape.txt"})
         assert r1["decision"] == "deny"
         assert "outside allowed worktree" in r1["reason"]
 
@@ -290,3 +291,19 @@ def test_c2_orchestrator_two_providers_down_aborts_immediately():
         assert summary["final_state"] == State.HUMAN_REQUIRED
         assert summary["files_changed"] == 0
         assert summary["scope_violations"] > 0
+
+
+def test_the_permission_hook_names_an_interpreter_that_exists(monkeypatch):
+    """hooks.json once said `python <script>`; on a machine with only `python3` the hook could not start."""
+    import shlex
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/python" if name == "python" else None)
+    assert AntigravityMaker._hook_python() == "python"                       # where it worked, nothing changes
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    chosen = AntigravityMaker._hook_python()
+    assert chosen != "python" and Path(shlex.split(chosen)[0] if os.name != "nt" else chosen.strip('"')).exists()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        wt = Path(tmpdir)
+        AntigravityMaker()._setup_scoped_permissions(wt, OrderSchema(goal="g", allowed_paths=["src/"], acceptance_criteria=["ok"]))
+        command = json.loads((wt / ".agents" / "hooks.json").read_text(encoding="utf-8"))["scoped-permission-guard"]["PreToolUse"][0]["hooks"][0]["command"]
+        assert command.startswith(chosen + " ") and command.endswith("permission_guard.py")
