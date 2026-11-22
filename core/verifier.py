@@ -12,7 +12,7 @@ class Verifier:
     """Orchestrator-driven verification executing build, test, and git checks."""
 
     @staticmethod
-    def _execute_cmd(cmd_str: Optional[Union[str, List[str]]], cwd: Path, timeout: float = 120.0) -> Dict[str, Any]:
+    def _execute_cmd(cmd_str: Optional[Union[str, List[str]]], cwd: Path, timeout: float = 120.0, on_line=None) -> Dict[str, Any]:
         if not cmd_str:
             return {"command": None, "executed": False, "passed": True, "output": "No command specified"}
         
@@ -25,6 +25,9 @@ class Verifier:
             cwd_str = str(cwd)
             current_ppath = env.get("PYTHONPATH", "")
             env["PYTHONPATH"] = f"{cwd_str}{os.pathsep}{current_ppath}" if current_ppath else cwd_str
+            # Always, watched or not: every verification of a run (baseline, the round itself, apply) must see the
+            # same environment. A Python test runner then writes each line as it happens, as it would in a terminal.
+            env["PYTHONUNBUFFERED"] = "1"
 
             if isinstance(cmd_str, list):
                 argv = list(cmd_str)
@@ -53,7 +56,8 @@ class Verifier:
                 cwd=cwd_str,
                 env=env,
                 timeout=timeout,
-                no_output_timeout=None
+                no_output_timeout=None,
+                on_output_line=on_line
             )
 
             if res.timed_out:
@@ -91,8 +95,13 @@ class Verifier:
         test_cmd: Optional[str] = None,
         lint_cmd: Optional[str] = None,
         timeout: float = 120.0,
-        git_checks: bool = True
+        git_checks: bool = True,
+        on_line=None
     ) -> Dict[str, Any]:
+        """`on_line(phase, line)` observes the commands' output while they run (phase: build / test / lint)."""
+        def watch(phase):
+            return (lambda line: on_line(phase, line)) if on_line is not None else None
+
         wt = Path(worktree_path).resolve()
 
         # 1. Git checks
@@ -103,13 +112,13 @@ class Verifier:
             git_status, git_diff = "", ""
 
         # 2. Run build
-        build_res = cls._execute_cmd(build_cmd, wt, timeout=timeout)
+        build_res = cls._execute_cmd(build_cmd, wt, timeout=timeout, on_line=watch("build"))
 
         # 3. Run test
-        test_res = cls._execute_cmd(test_cmd, wt, timeout=timeout)
+        test_res = cls._execute_cmd(test_cmd, wt, timeout=timeout, on_line=watch("test"))
 
         # 4. Run lint
-        lint_res = cls._execute_cmd(lint_cmd, wt, timeout=timeout)
+        lint_res = cls._execute_cmd(lint_cmd, wt, timeout=timeout, on_line=watch("lint"))
 
         # Overall verification pass condition:
         # Build must pass (if executed)

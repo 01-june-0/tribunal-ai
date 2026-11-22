@@ -1,4 +1,5 @@
 import os
+import threading
 import json
 import shutil
 import logging
@@ -668,14 +669,80 @@ class Orchestrator:
                 state[rel] = None
         return state
 
-    def _verify(self, run_id: str, worktree_path: str) -> Dict[str, Any]:
+    LIVE_LOG = "verification_live.log"
+    LIVE_LOG_MAX = 400_000                          # bytes: a runaway test run never fills the disk through this file
+
+    def _live_log(self, run_id: str):
+        """A writer for the run's live test output (the console shows it while the tests run). The file starts empty
+        for every test run. Watching must not slow or change the run: the pipe readers only hand a line to a queue
+        (dropped when the queue is full); one background thread does the file I/O. Call .close() when the run ends."""
+        import queue
+        try:
+            path = self._get_run_dir(run_id) / self.LIVE_LOG
+            handle = open(path, "w", encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        lines: "queue.Queue" = queue.Queue(maxsize=5000)
+        limit = self.LIVE_LOG_MAX
+
+        def drain() -> None:
+            written, phase_now = 0, None
+            try:
+                while True:
+                    item = lines.get()
+                    if item is None:
+                        break
+                    if written > limit:
+                        continue                      # keep emptying the queue so the readers never wait
+                    phase, line = item
+                    text = line if line.endswith("\n") else line + "\n"
+                    if phase != phase_now:
+                        text, phase_now = f"--- {phase} ---\n" + text, phase
+                    written += len(text.encode("utf-8", "replace"))
+                    if written > limit:
+                        text = "--- output too long: the rest is not shown live ---\n"
+                    handle.write(text)
+                    if lines.empty():
+                        handle.flush()               # a quiet moment: what there is becomes visible
+            except Exception:
+                pass
+            finally:
+                try:
+                    handle.close()
+                except Exception:
+                    pass
+
+        worker = threading.Thread(target=drain, daemon=True)
+        worker.start()
+
+        def write(phase: str, line: str) -> None:
+            try:
+                lines.put_nowait((phase, line))
+            except queue.Full:
+                pass                                  # the live view misses a line; the run and its record do not
+
+        def close() -> None:
+            try:
+                lines.put(None, timeout=2)
+            except queue.Full:
+                return
+            worker.join(timeout=3)
+        write.close = close
+        return write
+
+    def _verify(self, run_id: str, worktree_path: str, live: bool = False) -> Dict[str, Any]:
         """Director verification. In ARCHITECT proxy mode, files the verification run itself created or changed (a CLI
         under test writing its data file, report output, ...) are recorded as verification artifacts: they are the
         product's runtime output, not Maker changes, and must not later read as out-of-scope Maker edits."""
         build_cmd, test_cmd, lint_cmd = self._verification_cmds()
         before = self._dirty_state(worktree_path) if self._proxy() else None
-        result = Verifier.verify(worktree_path=worktree_path, build_cmd=build_cmd, test_cmd=test_cmd, lint_cmd=lint_cmd,
-                                 timeout=self._verification_timeout())
+        watcher = self._live_log(run_id) if live else None
+        try:
+            result = Verifier.verify(worktree_path=worktree_path, build_cmd=build_cmd, test_cmd=test_cmd, lint_cmd=lint_cmd,
+                                     timeout=self._verification_timeout(), **({"on_line": watcher} if watcher else {}))
+        finally:
+            if watcher:
+                watcher.close()
         if before is not None:
             self._settle_verification_artifacts(run_id, worktree_path, before)
         return result
@@ -787,7 +854,7 @@ class Orchestrator:
             logger.warning(f"Money-moving code detected before test execution: {msg}")
             return None, self._stop(run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "LIVE_MONEY_CODE", money)
 
-        verification = self._verify(run_id, worktree_path)
+        verification = self._verify(run_id, worktree_path, live=True)     # the run's own test round: watchable
         if repairable:
             verification['passed'] = False
             verification['scope_repairs'] = repairable

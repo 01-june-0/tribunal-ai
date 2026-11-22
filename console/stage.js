@@ -770,17 +770,19 @@ function paintCore(){
   const m=lastModel,d=insideData&&insideData.known?insideData:null,box=$('inside'),live=!!(m&&m.phase==='VERIFYING');
   box.style.setProperty('--c',TRIBUNAL_CSS);box.dataset.view='core';
   $('in-kicker').textContent=T('핵 속')+' · TRIBUNAL · '+STAGE_LABEL.VERIFYING;$('in-name').textContent='TRIBUNAL';$('in-track-k').textContent=T('테스트 결과');
-  const done=d&&d.found&&!d.skipped;
+  const done=d&&d.found&&!d.skipped,going=live&&d&&d.live&&!done?d.live:null;       // going: the run's output so far, straight from the engine
   $('in-what').textContent=insideKey===null?T('아직 실행한 테스트가 없습니다'):live&&!done?T('테스트를 직접 실행하는 중'):!insideData?T('불러오는 중…'):!d?T('기록에 없는 줄'):live?T('테스트를 막 마쳤습니다'):T('지금은 쉬는 중');
-  $('in-sub').textContent=insideKey===null?T('작업이 제작을 마치면 TRIBUNAL이 테스트를 실행하고, 그 결과가 여기에 나타납니다.'):!d?'':live&&!done?T('AI가 아니라 Tribunal AI 프로그램이 직접 실행합니다')+' · '+T('결과는 실행이 끝나면 나옵니다.'):T('마지막으로 실행한 테스트를 다시 보여 줍니다 · {0} 끝남',ago(utc(d.ended_at||d.at)));
+  $('in-sub').textContent=insideKey===null?T('작업이 제작을 마치면 TRIBUNAL이 테스트를 실행하고, 그 결과가 여기에 나타납니다.'):!d?'':live&&!done?T('AI가 아니라 Tribunal AI 프로그램이 직접 실행합니다')+' · '+(going?T('출력을 나오는 대로 보여 줍니다.'):T('결과는 실행이 끝나면 나옵니다.')):T('마지막으로 실행한 테스트를 다시 보여 줍니다 · {0} 끝남',ago(utc(d.ended_at||d.at)));
   $('in-live').classList.toggle('off',!live);$('in-live').lastChild.textContent=live?T('실시간'):T('다시 보기');
   const left=$('in-left'),right=$('in-right'),out=$('in-output'),ticks=$('in-ticks');
   $('in-events').hidden=true;out.hidden=false;$('in-quiet').textContent='';
   if(!d){left.replaceChildren();right.replaceChildren();delete left.dataset.sig;delete right.dataset.sig;out.textContent=live?T('테스트를 실행하고 있습니다…'):'';ticks.replaceChildren();$('in-note').textContent='';return;}
-  const {group,...rest}=d,sig=JSON.stringify([rest,live]);
-  if(left.dataset.sig===sig)return;left.dataset.sig=sig;right.dataset.sig=sig;
+  // The panes are rebuilt only when the record itself changes; the output of a run in progress is updated on its
+  // own below, so a focused button or a selection in the panes survives every poll.
+  const {group,live:_l,...rest}=d,sig=JSON.stringify([rest,live]),t=d.test||{},c=d.counts;
+  if(left.dataset.sig!==sig){left.dataset.sig=sig;right.dataset.sig=sig;
   const parts=verifyFacts(d);left.replaceChildren(parts[0]);
-  const t=d.test||{},c=d.counts,word=!done?(d.skipped?T('테스트 실행 전'):live?T('진행 중'):T('기록 없음')):!t.ran?T('실행한 테스트 없음'):d.passed?T('통과'):T('실패');
+  const word=!done?(d.skipped?T('테스트 실행 전'):live?T('진행 중'):T('기록 없음')):!t.ran?T('실행한 테스트 없음'):d.passed?T('통과'):T('실패');
   const head=el('div','','in-clock'),big=el('b',word,'in-big'+(done&&t.ran?(d.passed?' ok':' bad'):''));head.append(big,el('small',done&&d.ended_at?T('걸린 시간')+' '+took(d.at,d.ended_at):''));
   const cells=el('div','','in-cells'),cell=(v,label,cls)=>{const x=el('div','',cls||'');x.append(el('b',v),el('span',label));return x;};
   cells.append(cell(c?String(c.passed):'—',T('통과')),cell(c?String(c.failed):'—',T('실패'),c&&c.failed?'bad':''),cell(c?String(c.total):'—',T('전체')),cell(d.baseline&&d.baseline.counts?String(d.baseline.counts.passed)+'/'+d.baseline.counts.total:'—',T('시작 전 기준')));
@@ -788,11 +790,14 @@ function paintCore(){
   const changed=done?d.changed||[]:[];
   right.replaceChildren(el('span',T('이 테스트 실행'),'kicker'),head,cells,el('span',T('이때 바뀌어 있던 파일'),'kicker'),
     changed.length?listEl(changed.slice(0,12).map(codeEl)):el('small',done?T('바뀐 파일이 없습니다.'):T('기록 없음'),'cp-hint'),more);
-  out.textContent=done?(t.output_tail||T('출력이 기록되지 않았습니다.')):d.skipped?T('테스트를 실행하기 전에, 바뀐 내용을 검사하는 단계에서 멈췄습니다. 이때는 테스트가 실행되지 않았습니다. 멈춘 이유는 바로 위 줄에 있습니다.'):live?T('테스트를 실행하고 있습니다…'):T('이 회차의 검증 기록은 남아 있지 않습니다.');
-  out.scrollTop=out.scrollHeight;
   ticks.replaceChildren();
   if(c&&c.total>0){const a=el('i','','bar ok'),b=el('i','','bar bad');a.style.width=(c.passed/c.total*100)+'%';b.style.left=(c.passed/c.total*100)+'%';b.style.width=(c.failed/c.total*100)+'%';ticks.append(a,b);}
-  $('in-note').textContent=d.skipped?T('테스트 실행 전'):T('{0}회차 · 전체 {1}회',d.round,d.rounds)+(c?' · '+passFail(c,d.passed):'');
+  }
+  const stick=out.scrollHeight-out.scrollTop-out.clientHeight<40;
+  const text=done?(t.output_tail||T('출력이 기록되지 않았습니다.')):going&&going.tail?going.tail:d.skipped?T('테스트를 실행하기 전에, 바뀐 내용을 검사하는 단계에서 멈췄습니다. 이때는 테스트가 실행되지 않았습니다. 멈춘 이유는 바로 위 줄에 있습니다.'):live?T('테스트를 실행하고 있습니다…'):T('이 회차의 검증 기록은 남아 있지 않습니다.');
+  if(out.textContent!==text)out.textContent=text;
+  if(stick)out.scrollTop=out.scrollHeight;             // follows the newest line unless the reader scrolled up
+  $('in-note').textContent=d.skipped?T('테스트 실행 전'):T('{0}회차 · 전체 {1}회',d.round,d.rounds)+(c?' · '+passFail(c,d.passed):going?' · '+T('실행 중')+(going.lines!=null?' · '+T('출력 {0}줄',going.lines):''):'');
 }
 function tickInside(){                                    // the clock and the quiet time move every second
   if(inside<0||inside===CORE)return;const d=insideData&&insideData.known?insideData:null,big=document.querySelector('#in-right .in-big'),q=$('in-quiet-n');
@@ -1166,7 +1171,9 @@ function start(){
   const every=(fn,ms)=>setInterval(()=>{if(!document.hidden)fn();},ms);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollActivity();pollStatus();pollChat();pollRoles();pollCall();pollInside();pollAI();}});
   pollActivity();pollStatus();pollChat();pollRoles();every(pollRoles,8000);
-  every(pollActivity,3000);every(pollStatus,6000);every(pollChat,3000);every(pollCall,2000);every(pollInside,2000);pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
+  every(pollActivity,3000);every(pollStatus,6000);every(pollChat,3000);every(pollCall,2000);every(pollInside,2000);
+  every(()=>{if(inside===CORE&&lastModel&&lastModel.phase==='VERIFYING')pollInside();},700);   // a test run is watched more closely
+  pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
      // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
 }
 window.TrinityStage={model:()=>lastModel};

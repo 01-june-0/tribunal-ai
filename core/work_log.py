@@ -17,6 +17,8 @@ KEY_RE = re.compile(r"^(call|tr|au)-(\d{1,12})$")
 RUN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$")
 SLACK_SEC = 10                         # a result file is written just after the call that produced it returns
 TAIL_CHARS = 2400
+LIVE_LOG = "verification_live.log"     # written line by line by the orchestrator while a test run is in progress
+LIVE_CHARS = 6000
 TEXT_CHARS = 1600
 LIST_MAX = 40
 
@@ -62,6 +64,26 @@ def _read(run_id: Any, name: str, start: Optional[str] = None, end: Optional[str
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _live_output(run_id: Any, since: Optional[str]) -> Optional[dict]:
+    """The end of the live test output, when the file belongs to the test run that started at `since`."""
+    folder = _run_dir(run_id)
+    if not folder:
+        return None
+    path = folder / LIVE_LOG
+    try:
+        info, first = path.stat(), _epoch(since)
+        if first is None or info.st_mtime < first - 1:   # left over from an earlier round
+            return None
+        with open(path, "rb") as fh:
+            if info.st_size > LIVE_CHARS * 4:
+                fh.seek(info.st_size - LIVE_CHARS * 4)
+            text = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    return {"tail": text[-LIVE_CHARS:], "bytes": info.st_size, "lines": text.count("\n") if info.st_size <= LIVE_CHARS * 4 else None,
+            "at": datetime.utcfromtimestamp(info.st_mtime).isoformat()}
 
 
 def _text(value: Any, limit: int = TEXT_CHARS) -> str:
@@ -363,6 +385,9 @@ def _transition_detail(tr_id: int) -> dict:
                                (run_id, tr_id)).fetchone()
             out.update(event="verify", round=nth, rounds=rounds, found=found is not None, skipped=nth == 0,
                        ended_at=nxt["timestamp"] if nxt else None)
+            if not nxt and not found and nth:         # this test run is still going: what it has printed so far
+                out["running"] = True
+                out["live"] = _live_output(run_id, t["timestamp"])
             if found:
                 test = found.get("test") if isinstance(found.get("test"), dict) else {}
                 out["test"] = {"command": _text(test.get("command"), 300) or None, "ran": bool(test.get("executed")),

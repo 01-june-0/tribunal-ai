@@ -125,12 +125,14 @@ class ProcessTreeRunner:
         no_output_timeout: Optional[float] = None,
         heartbeat_interval: float = 30.0,
         on_heartbeat: Optional[Callable[[int, float], None]] = None,
-        stdin_data: Optional[str] = None
+        stdin_data: Optional[str] = None,
+        on_output_line: Optional[Callable[[str], None]] = None
     ) -> ProcessResult:
         """Every AI CLI call is written to the work ledger (core.usage) around the real execution; ledger problems
-        never affect the call itself."""
+        never affect the call itself. `on_output_line` (for commands that are not AI calls: a test run) is handed each
+        line of stdout and stderr as it arrives; it only observes."""
         row_id = None
-        on_stdout_line = None
+        on_stdout_line = on_output_line
         try:
             from core import usage
             provider = usage.provider_of(argv[0] if argv else "")
@@ -146,7 +148,7 @@ class ProcessTreeRunner:
         try:
             result = cls._run_process(argv, cwd=cwd, env=env, timeout=timeout, no_output_timeout=no_output_timeout,
                                       heartbeat_interval=heartbeat_interval, on_heartbeat=on_heartbeat,
-                                      stdin_data=stdin_data, on_stdout_line=on_stdout_line)
+                                      stdin_data=stdin_data, on_stdout_line=on_stdout_line, on_stderr_line=on_output_line)
         except BaseException as exc:
             try:
                 from core import usage
@@ -177,7 +179,8 @@ class ProcessTreeRunner:
         heartbeat_interval: float = 30.0,
         on_heartbeat: Optional[Callable[[int, float], None]] = None,
         stdin_data: Optional[str] = None,
-        on_stdout_line: Optional[Callable[[str], None]] = None
+        on_stdout_line: Optional[Callable[[str], None]] = None,
+        on_stderr_line: Optional[Callable[[str], None]] = None
     ) -> ProcessResult:
         """
         Executes a CLI command via Popen (shell=False).
@@ -244,7 +247,7 @@ class ProcessTreeRunner:
                 pass
 
         out_thread = threading.Thread(target=_reader, args=(process.stdout, stdout_chunks, on_stdout_line), daemon=True)
-        err_thread = threading.Thread(target=_reader, args=(process.stderr, stderr_chunks), daemon=True)
+        err_thread = threading.Thread(target=_reader, args=(process.stderr, stderr_chunks, on_stderr_line), daemon=True)
         out_thread.start()
         err_thread.start()
 

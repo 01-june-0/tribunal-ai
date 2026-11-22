@@ -220,3 +220,72 @@ def test_the_overview_has_one_record_and_one_panel():
     src = Path(d.__file__).read_text(encoding="utf-8")
     block = src[src.index("elif parsed.path == '/ops/record':"):]
     assert "is_request_origin_allowed" in block[:400]                        # same care as /ops/call
+
+
+def test_a_test_run_in_progress_shows_what_it_has_printed_so_far(run):
+    for state in ("PLANNING", "ORDER_READY", "BUILDING", "VERIFYING"):
+        run.sm.transition_to(run.id, state, "x")
+    row = next(r for r in work_log.rows() if r.get("event") == "verify" and r["run_id"] == run.id)
+    assert work_log.detail(row["key"]).get("live") is None and work_log.detail(row["key"])["running"] is True   # nothing printed yet
+    (run.dir / work_log.LIVE_LOG).write_text("--- test ---\ncollected 3 items\ntests/test_a.py ..", encoding="utf-8")
+    live = work_log.detail(row["key"])["live"]
+    assert live["tail"].endswith("tests/test_a.py ..") and live["lines"] == 2 and live["bytes"] > 0
+    # a long output: only its end travels
+    (run.dir / work_log.LIVE_LOG).write_text("x" * 50_000 + "\nTHE END", encoding="utf-8")
+    live = work_log.detail(row["key"])["live"]
+    assert len(live["tail"]) == work_log.LIVE_CHARS and live["tail"].endswith("THE END") and live["lines"] is None
+    # a file left over from an earlier round is not this run's output
+    old = time.time() - 3600
+    os.utime(run.dir / work_log.LIVE_LOG, (old, old))
+    assert work_log.detail(row["key"])["live"] is None
+    # once the run has moved on, the record is the result file, not the live output
+    os.utime(run.dir / work_log.LIVE_LOG, None)
+    run.sm.transition_to(run.id, "REVIEWING", "x")
+    after = work_log.detail(row["key"])
+    assert "live" not in after and "running" not in after
+
+
+def test_the_engine_writes_the_test_output_line_by_line(tmp_path, monkeypatch):
+    import sys
+    from core.orchestrator import Orchestrator
+    from core.verifier import Verifier
+    seen = []
+    script = tmp_path / "t.py"
+    script.write_text("import sys\nprint('one')\nprint('two', file=sys.stderr)\nprint('three')\n", encoding="utf-8")
+    out = Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(script)], git_checks=False,
+                          on_line=lambda phase, line: seen.append((phase, line.strip())))
+    assert out["passed"] and sorted(seen) == [("test", "one"), ("test", "three"), ("test", "two")]      # stdout and stderr both
+    assert Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(script)], git_checks=False)["passed"]   # unwatched: as before
+    orch = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(orch, "_get_run_dir", lambda run_id: tmp_path, raising=False)
+    write = orch._live_log("RUN-X")
+    assert (tmp_path / Orchestrator.LIVE_LOG).read_text(encoding="utf-8") == ""                          # every test run starts empty
+    write("test", "a\n"); write("test", "b"); write("lint", "c\n"); write.close()
+    assert (tmp_path / Orchestrator.LIVE_LOG).read_text(encoding="utf-8") == "--- test ---\na\nb\n--- lint ---\nc\n"
+    monkeypatch.setattr(Orchestrator, "LIVE_LOG_MAX", 40)
+    write = orch._live_log("RUN-X")
+    began = time.time()
+    for _ in range(20000):
+        write("test", "0123456789\n")                                    # the reader side only queues: it never waits for the disk
+    assert time.time() - began < 1.0
+    write.close()
+    text = (tmp_path / Orchestrator.LIVE_LOG).read_text(encoding="utf-8")
+    assert text.endswith("--- output too long: the rest is not shown live ---\n") and len(text) < 200   # a runaway run cannot fill the disk
+    watched = Path(sys.modules["core.verifier"].__file__).read_text(encoding="utf-8")
+    assert 'env["PYTHONUNBUFFERED"] = "1"' in watched and "if on_line is not None:\n                env" not in watched   # the same environment watched or not
+    src = Path(sys.modules["core.orchestrator"].__file__).read_text(encoding="utf-8")
+    assert "self._verify(run_id, worktree_path, live=True)" in src and "baseline = self._verify(run_id, worktree_path)" in src   # the baseline run is not shown as the round
+
+
+def test_the_core_follows_a_running_test():
+    core = JS[JS.index("function paintCore(){"):JS.index("function tickInside(){")]
+    assert "going&&going.tail?going.tail" in core and "if(stick)out.scrollTop=out.scrollHeight;" in core
+    assert "going=live&&d&&d.live&&!done?d.live:null;" in core              # only while the scene says a test run is going
+    assert "const {group,live:_l,...rest}=d" in core                        # the panes are not rebuilt for every new line
+    assert "if(inside===CORE&&lastModel&&lastModel.phase==='VERIFYING')pollInside();},700)" in JS
+    # a comment once swallowed the rest of this line: every poller must be real code
+    at = JS.index("  pollActivity();pollStatus();pollChat();pollRoles();every(pollRoles,8000);")
+    boot = JS[at:at + 1500]
+    code = "\n".join(line.split("//")[0] for line in boot.splitlines())
+    for poller in ("every(pollActivity,", "every(pollStatus,", "every(pollChat,", "every(pollCall,", "every(pollInside,", "pollAI();every(pollAI,20000)"):
+        assert poller in code, poller
