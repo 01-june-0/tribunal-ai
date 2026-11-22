@@ -57,7 +57,7 @@ class Verifier:
                 env=env,
                 timeout=timeout,
                 no_output_timeout=None,
-                on_output_line=on_line
+                on_output=on_line
             )
 
             if res.timed_out:
@@ -98,7 +98,8 @@ class Verifier:
         git_checks: bool = True,
         on_line=None
     ) -> Dict[str, Any]:
-        """`on_line(phase, line)` observes the commands' output while they run (phase: build / test / lint)."""
+        """`on_line(phase, text)` observes the commands' output while they run (phase: build / test / lint). The text
+        comes in pieces as it arrives, not necessarily whole lines."""
         def watch(phase):
             return (lambda line: on_line(phase, line)) if on_line is not None else None
 

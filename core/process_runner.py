@@ -1,4 +1,6 @@
 import os
+import io
+import codecs
 import sys
 import time
 import logging
@@ -126,13 +128,13 @@ class ProcessTreeRunner:
         heartbeat_interval: float = 30.0,
         on_heartbeat: Optional[Callable[[int, float], None]] = None,
         stdin_data: Optional[str] = None,
-        on_output_line: Optional[Callable[[str], None]] = None
+        on_output: Optional[Callable[[str], None]] = None
     ) -> ProcessResult:
         """Every AI CLI call is written to the work ledger (core.usage) around the real execution; ledger problems
-        never affect the call itself. `on_output_line` (for commands that are not AI calls: a test run) is handed each
-        line of stdout and stderr as it arrives; it only observes."""
+        never affect the call itself. `on_output` (for commands that are not AI calls: a test run) is handed stdout
+        and stderr text the moment it arrives - pieces, not whole lines - and only observes."""
         row_id = None
-        on_stdout_line = on_output_line
+        on_stdout_line = None
         try:
             from core import usage
             provider = usage.provider_of(argv[0] if argv else "")
@@ -148,7 +150,7 @@ class ProcessTreeRunner:
         try:
             result = cls._run_process(argv, cwd=cwd, env=env, timeout=timeout, no_output_timeout=no_output_timeout,
                                       heartbeat_interval=heartbeat_interval, on_heartbeat=on_heartbeat,
-                                      stdin_data=stdin_data, on_stdout_line=on_stdout_line, on_stderr_line=on_output_line)
+                                      stdin_data=stdin_data, on_stdout_line=on_stdout_line, on_output=on_output)
         except BaseException as exc:
             try:
                 from core import usage
@@ -180,7 +182,7 @@ class ProcessTreeRunner:
         on_heartbeat: Optional[Callable[[int, float], None]] = None,
         stdin_data: Optional[str] = None,
         on_stdout_line: Optional[Callable[[str], None]] = None,
-        on_stderr_line: Optional[Callable[[str], None]] = None
+        on_output: Optional[Callable[[str], None]] = None
     ) -> ProcessResult:
         """
         Executes a CLI command via Popen (shell=False).
@@ -246,8 +248,46 @@ class ProcessTreeRunner:
             except Exception:
                 pass
 
-        out_thread = threading.Thread(target=_reader, args=(process.stdout, stdout_chunks, on_stdout_line), daemon=True)
-        err_thread = threading.Thread(target=_reader, args=(process.stderr, stderr_chunks, on_stderr_line), daemon=True)
+        def _piece_reader(pipe, chunk_list, on_text):
+            """For a watched command: whatever has arrived is passed on at once, so a progress line that is still
+            being written (pytest's dots) is seen before its newline. What is COLLECTED for the result is exactly what
+            the line reader collects - UTF-8 with replacement, newlines translated the way text mode does, and an
+            unfinished last line only once the stream ends - so watching a run never changes its result."""
+            try:
+                raw = pipe.buffer
+                decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")(errors="replace"), translate=True)
+                pending = ""                        # the line still being written: shown to the observer, not yet collected
+                while True:
+                    data = raw.read1(8192)
+                    text = decoder.decode(data, final=not data)
+                    if text:
+                        cut = text.rfind("\n") + 1
+                        if cut:
+                            chunk_list.append(pending + text[:cut])
+                            pending = text[cut:]
+                            last_output_time[0] = time.time()      # as the line reader: a finished line counts as output
+                        else:
+                            pending += text
+                        if on_text:
+                            try:
+                                on_text(text)
+                            except Exception:
+                                on_text = None      # an observer must never disturb the run
+                    if not data:
+                        if pending:
+                            chunk_list.append(pending)
+                            last_output_time[0] = time.time()
+                        break
+                pipe.close()
+            except Exception:
+                pass
+
+        if on_output is not None:
+            out_thread = threading.Thread(target=_piece_reader, args=(process.stdout, stdout_chunks, on_output), daemon=True)
+            err_thread = threading.Thread(target=_piece_reader, args=(process.stderr, stderr_chunks, on_output), daemon=True)
+        else:
+            out_thread = threading.Thread(target=_reader, args=(process.stdout, stdout_chunks, on_stdout_line), daemon=True)
+            err_thread = threading.Thread(target=_reader, args=(process.stderr, stderr_chunks), daemon=True)
         out_thread.start()
         err_thread.start()
 

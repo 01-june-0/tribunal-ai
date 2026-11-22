@@ -686,7 +686,7 @@ class Orchestrator:
         limit = self.LIVE_LOG_MAX
 
         def drain() -> None:
-            written, phase_now = 0, None
+            written, phase_now, at_line_start = 0, None, True
             try:
                 while True:
                     item = lines.get()
@@ -694,14 +694,16 @@ class Orchestrator:
                         break
                     if written > limit:
                         continue                      # keep emptying the queue so the readers never wait
-                    phase, line = item
-                    text = line if line.endswith("\n") else line + "\n"
+                    phase, text = item                # a piece of output, not necessarily a whole line
+                    if not text:
+                        continue
                     if phase != phase_now:
-                        text, phase_now = f"--- {phase} ---\n" + text, phase
+                        text, phase_now = ("" if at_line_start else "\n") + f"--- {phase} ---\n" + text, phase
                     written += len(text.encode("utf-8", "replace"))
                     if written > limit:
-                        text = "--- output too long: the rest is not shown live ---\n"
+                        text = ("" if at_line_start else "\n") + "--- output too long: the rest is not shown live ---\n"
                     handle.write(text)
+                    at_line_start = text.endswith("\n")      # judged by what was really written
                     if lines.empty():
                         handle.flush()               # a quiet moment: what there is becomes visible
             except Exception:

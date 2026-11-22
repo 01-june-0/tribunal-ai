@@ -253,15 +253,34 @@ def test_the_engine_writes_the_test_output_line_by_line(tmp_path, monkeypatch):
     script = tmp_path / "t.py"
     script.write_text("import sys\nprint('one')\nprint('two', file=sys.stderr)\nprint('three')\n", encoding="utf-8")
     out = Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(script)], git_checks=False,
-                          on_line=lambda phase, line: seen.append((phase, line.strip())))
-    assert out["passed"] and sorted(seen) == [("test", "one"), ("test", "three"), ("test", "two")]      # stdout and stderr both
-    assert Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(script)], git_checks=False)["passed"]   # unwatched: as before
+                          on_line=lambda phase, text: seen.append((phase, text)))
+    assert out["passed"] and {p for p, _ in seen} == {"test"}
+    assert sorted("".join(t for _, t in seen).split()) == ["one", "three", "two"]                        # stdout and stderr both
+    # a line still being written is seen before its newline: the child waits for the observer's signal to go on
+    go = tmp_path / "go"
+    slow = tmp_path / "slow.py"
+    slow.write_text("import os, sys, time\nsys.stdout.write('a.py .'); sys.stdout.flush()\n"
+                    "t = time.time()\nwhile not os.path.exists(sys.argv[1]) and time.time() - t < 10: time.sleep(.02)\n"
+                    "sys.stdout.write('.\\r\\nend\\n' if os.path.exists(sys.argv[1]) else 'NOT SEEN\\n'); sys.stdout.flush()\n", encoding="utf-8")
+    pieces = []
+
+    def see(phase, text):
+        pieces.append(text)
+        if "".join(pieces) == "a.py .":
+            go.write_text("", encoding="utf-8")
+    watched = Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(slow), str(go)], git_checks=False, on_line=see)
+    assert "".join(pieces) == "a.py ..\nend\n"                                    # the dot was seen before its line ended
+    plain = Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(slow), str(go)], git_checks=False)
+    assert watched["test"]["output"] == plain["test"]["output"] == "a.py ..\nend"  # same text, same newline handling
+    # what is collected for the result is line by line, exactly as unwatched: an unfinished line only when the stream ends
+    src_runner = Path(sys.modules["core.process_runner"].__file__).read_text(encoding="utf-8")
+    assert 'chunk_list.append(pending + text[:cut])' in src_runner and "if pending:\n                            chunk_list.append(pending)" in src_runner
     orch = Orchestrator.__new__(Orchestrator)
     monkeypatch.setattr(orch, "_get_run_dir", lambda run_id: tmp_path, raising=False)
     write = orch._live_log("RUN-X")
     assert (tmp_path / Orchestrator.LIVE_LOG).read_text(encoding="utf-8") == ""                          # every test run starts empty
-    write("test", "a\n"); write("test", "b"); write("lint", "c\n"); write.close()
-    assert (tmp_path / Orchestrator.LIVE_LOG).read_text(encoding="utf-8") == "--- test ---\na\nb\n--- lint ---\nc\n"
+    write("test", "a\n"); write("test", "b ."); write("test", ".\n"); write("test", "tail"); write("lint", "c\n"); write.close()
+    assert (tmp_path / Orchestrator.LIVE_LOG).read_text(encoding="utf-8") == "--- test ---\na\nb ..\ntail\n--- lint ---\nc\n"   # pieces join as written
     monkeypatch.setattr(Orchestrator, "LIVE_LOG_MAX", 40)
     write = orch._live_log("RUN-X")
     began = time.time()
