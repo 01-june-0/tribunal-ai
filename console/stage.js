@@ -380,9 +380,14 @@ function paintResult(){
     note.textContent=!d?T('변경 내용을 불러오는 중…'):T('변경 내용을 불러오지 못했습니다 · ')+d.error;return;}
   const list=d.changed_files||[],diffs=d.file_diffs||{};let add=0,del=0;const per={};
   for(const f of list){per[f.path]=diffLines(diffs[f.path]);add+=per[f.path][0];del+=per[f.path][1];}
-  once(sum,'s'+result.ms.deliverableRun,()=>{
+  const av=d.apply_view||{},clash=av.conflicts||[],kept=av.deleted_not_applied||[];
+  once(sum,'s'+result.ms.deliverableRun+'|'+clash.length+'|'+kept.length,()=>{
     const tile=(big,small,cls)=>{const t=el('div','','rp-tile'+(cls?' '+cls:''));t.append(el('b',big),el('span',small));sum.append(t);};
     tile(T('파일 {0}개',list.length),T('+{0}줄 · −{1}줄',add,del));
+    const steps=av.steps||1;if(steps>1)tile(T('{0}개 단계의 변경',steps),T('앞 단계의 결과물도 함께 적용됩니다'));
+    // Files the list above leaves out because applying will not write them - said here, so nothing is a surprise.
+    if(clash.length){const t=el('div','','rp-tile bad');t.append(el('b',T('충돌 {0}개',clash.length)),el('span',T('내가 고친 파일이라 적용하지 않습니다')));t.title=clash.join('\n');sum.append(t);}
+    if(kept.length){const t=el('div','','rp-tile');t.append(el('b',T('삭제 {0}개',kept.length)),el('span',T('AI가 지운 파일은 원본에서 지우지 않습니다')));t.title=kept.join('\n');sum.append(t);}
     const post=(d.tests||{}).post;
     if(post&&post.total){const bad=Math.max(post.failed||0,post.total-(post.passed||0));tile(bad?T('{0}개 실패',bad):T('{0}개 통과',post.passed||0),bad?T('테스트 {0}개 중',post.total):T('테스트 · 실패 없음'),bad?'bad':'ok');}
     else tile(T('테스트 결과 없음'),T('테스트'),'');

@@ -114,6 +114,71 @@ def test_milestone_chain_resolves_to_the_project_snapshot_it_started_from(tmp_pa
     assert kinds == {"a.py": "M", "new.py": "A"}                                # both milestones are delivered
 
 
+def test_the_change_screen_of_a_task_of_several_steps_shows_everything_applying_would_write(tmp_path, cleanup_runs):
+    """Found in a real run: the last step's own change set held 2 files while applying wrote 4 (the earlier step's
+    too), so the person approved less than they got. The screen is given the whole apply set instead."""
+    proj = project(tmp_path)
+    base = snapshot(str(proj))
+    r1, r2 = "RUN-TEST-DLV7A", "RUN-TEST-DLV7B"; cleanup_runs += [r1, r2]
+    wt1 = fake_run(proj, r1, base)
+    (wt1 / "a.py").write_text("a = 2\n", encoding="utf-8")                    # step 1
+    (wt1 / "b.py").write_text("b = 2\n", encoding="utf-8")                    # step 1 ... and the user too, below
+    wt2 = fake_run(proj, r2, snapshot(str(wt1)), base_worktree=str(wt1))
+    (wt2 / "new.py").write_text("new = 1\n", encoding="utf-8")                # step 2
+    (proj / "b.py").write_text("b = 99\n", encoding="utf-8")
+    rm = ResultManager()
+    from core import result_manager
+    result_manager._APPLY_VIEW_CACHE.clear()
+    view = rm.apply_view(r2)
+    assert {f["path"]: f["type"] for f in view["changed_files"]} == {"a.py": "M", "new.py": "A"}
+    assert view["changed_count"] == 2 and view["counts"] == {"A": 1, "M": 1, "D": 0} and view["steps"] == 2
+    assert "-a = 1" in view["file_diffs"]["a.py"] and "+a = 2" in view["file_diffs"]["a.py"]   # against the project, not step 1
+    assert "new = 1" in view["file_diffs"]["new.py"]
+    assert view["conflicts"] == ["b.py"] and view["deleted_not_applied"] == []
+    assert rm.apply_view(r1)["steps"] == 1
+
+
+def test_the_change_screen_shows_a_file_the_project_lacks_whole_and_reads_odd_names_literally(tmp_path, cleanup_runs):
+    from core import result_manager
+    proj = project(tmp_path)
+    (proj / "c[1].py").write_text("c = 1\n", encoding="utf-8"); (proj / "c1.py").write_text("other = 1\n", encoding="utf-8")
+    base = snapshot(str(proj))
+    rid = "RUN-TEST-DLV9"; cleanup_runs.append(rid)
+    wt = fake_run(proj, rid, base)
+    (wt / "a.py").write_text("a = 1\nmore = 2\n", encoding="utf-8")
+    (wt / "c[1].py").write_text("c = 2\n", encoding="utf-8"); (wt / "c1.py").write_text("other = 2\n", encoding="utf-8")
+    (proj / "a.py").unlink()                                                  # the person deleted it since the snapshot
+    result_manager._APPLY_VIEW_CACHE.clear()
+    view = ResultManager().apply_view(rid)
+    assert {f["path"]: f["type"] for f in view["changed_files"]}["a.py"] == "A"
+    assert view["file_diffs"]["a.py"] == "(new file)\na = 1\nmore = 2\n"      # all of what gets written, not one hunk
+    assert "other" not in view["file_diffs"]["c[1].py"] and "+c = 2" in view["file_diffs"]["c[1].py"]
+    (wt / "late.py").write_text("x = 1\n", encoding="utf-8")
+    assert ResultManager().apply_view(rid) is view                            # asked again within seconds: not recomputed
+
+
+def test_the_change_screen_keeps_the_runs_own_changes_when_there_is_nothing_to_resolve(tmp_path, cleanup_runs):
+    proj = project(tmp_path)
+    rid = "RUN-TEST-DLV8"; cleanup_runs.append(rid)
+    wt = fake_run(proj, rid, snapshot(str(proj)))
+    rm = ResultManager()
+    (RUNS / rid / "source_snapshot.json").unlink()                           # a run from before snapshots
+    assert rm.apply_view(rid) is None
+    assert rm.apply_view("RUN-TEST-NOPE") is None
+    shutil.rmtree(wt, ignore_errors=True)
+
+
+def test_result_endpoint_swaps_in_the_whole_apply_set_only_for_a_result_still_waiting():
+    src = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
+    at = src.index("whole = _result_manager().apply_view(run_id)")
+    block = src[at - 300:at + 900]
+    assert 'not in ("APPLIED", "DISCARDED")' in block and 'payload.get("is_pass")' in block
+    assert 'payload["run_changed_files"] = payload.get("changed_files")' in block      # the run's own set is kept
+    stage = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "av.steps" in stage and "앞 단계의 결과물도 함께 적용됩니다" in stage
+    assert "av.conflicts" in stage and "av.deleted_not_applied" in stage       # what the list leaves out is said
+
+
 def test_apply_tree_requires_full_pass_evidence(tmp_path, cleanup_runs):
     proj = project(tmp_path)
     rid = "RUN-TEST-DLV4"; cleanup_runs.append(rid)

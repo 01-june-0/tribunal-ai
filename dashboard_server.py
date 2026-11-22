@@ -2862,6 +2862,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload = _result_manager().summary(run_id, with_diffs=True) if run_id else {"error": "run_id required"}
                 payload["preconditions"] = _result_manager().preconditions(run_id) if run_id and payload.get("is_pass") else {"ok": False, "blocks": ["not a PASS run"]}
                 payload["preconditions"].pop("manifest", None)
+                # The screen shows what applying would write. For a task of several steps that is more than this
+                # run's own changes (the earlier steps come with it), so the whole of it replaces the run's change set.
+                whole = None
+                if run_id and payload.get("is_pass") and (payload.get("result") or {}).get("state") not in ("APPLIED", "DISCARDED"):
+                    try:
+                        whole = _result_manager().apply_view(run_id)
+                    except Exception:
+                        whole = None                    # the run's own change set stays on the screen
+                if whole:
+                    payload["run_changed_files"] = payload.get("changed_files")
+                    for key in ("changed_files", "file_diffs", "changed_count", "counts"):
+                        payload[key] = whole[key]
+                    payload["diff_stat"] = [f"{f['type']} {f['path']}" for f in whole["changed_files"]]
+                    payload["apply_view"] = {k: whole[k] for k in ("steps", "conflicts", "deleted_not_applied")}
             except Exception as e:
                 payload = {"error": str(e)[:300], "run_id": run_id}
             self._send_json(payload)

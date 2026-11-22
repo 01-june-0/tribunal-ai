@@ -13,6 +13,7 @@ import json
 import hashlib
 import shutil
 import subprocess
+import time
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,10 @@ _RECENT_APPLY_REQUESTS: Dict[str, str] = {}        # request_id -> status
 
 def _sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+_APPLY_VIEW_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_APPLY_VIEW_TTL = 6.0          # seconds; short, because the person's own edits in the project change the conflicts
 
 
 def _git(args: List[str], cwd: str) -> Tuple[int, str, str]:
@@ -681,6 +686,53 @@ class ResultManager:
                    and not SafetyPolicy.is_control_plane_path(rel)]
         return {"ok": True, "blocks": [], "manifest": manifest, "conflicts": conflicts, "deleted": deleted,
                 "unchanged": unchanged, "origin_ref": origin}
+
+    def apply_view(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """What applying this result would really write into the project - for the "see the changes, then apply"
+        screen. A task of several steps is applied as one: the last step's worktree holds every earlier step's work
+        too, so the run's own change set (its difference from the step before) would show only the last part of what
+        gets written. This is the whole of it: the files of tree_manifest, each with its difference from the project
+        snapshot the chain started from. None when the result is not applied that way (no snapshot) or cannot be read."""
+        if not (self.run_dir(run_id) / "source_snapshot.json").exists():
+            return None
+        kept = _APPLY_VIEW_CACHE.get(run_id)            # a screen that polls asks again every few seconds
+        if kept and time.monotonic() - kept[0] < _APPLY_VIEW_TTL:
+            return kept[1]
+        run = self.sm.get_run(run_id) or {}
+        wt = run.get("worktree_path") or ""
+        if not wt or not Path(wt).exists():
+            return None
+        try:
+            tree = self.tree_manifest(run_id)
+        except Exception:
+            return None
+        if not tree.get("ok"):
+            return None
+        origin, wt_root = tree.get("origin_ref"), Path(wt).resolve()
+        files = [{"type": m["type"], "path": m["path"]} for m in tree["manifest"]]
+        diffs: Dict[str, str] = {}
+        for entry in files:
+            rel, text = entry["path"], ""
+            # "A" is a file the project does not have: it is written whole, so it is shown whole - also when the
+            # snapshot had it and the person deleted it since (a diff against the snapshot would show a part of it).
+            if origin and entry["type"] != "A":
+                rc, out, _ = _git(["--literal-pathspecs", "diff", "--no-color", origin, "--", rel], str(wt_root))
+                text = out if rc == 0 else ""
+            if not text.strip():
+                try:
+                    text = "(new file)\n" + (wt_root / rel).read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    text = "(new binary/unreadable file)"
+            diffs[rel] = text[:20000]
+        view = {"changed_files": files, "file_diffs": diffs, "changed_count": len(files),
+                "counts": {k: sum(1 for f in files if f["type"] == k) for k in ("A", "M", "D")},
+                "steps": len(self.builds_on(run_id)) + 1,
+                "conflicts": [c.get("path") for c in tree.get("conflicts") or []][:50],
+                "deleted_not_applied": list(tree.get("deleted") or [])[:50]}
+        if len(_APPLY_VIEW_CACHE) > 32:
+            _APPLY_VIEW_CACHE.clear()
+        _APPLY_VIEW_CACHE[run_id] = (time.monotonic(), view)
+        return view
 
     def tree_preconditions(self, run_id: str, on_conflict: str = "block") -> Dict[str, Any]:
         blocks: List[str] = []
