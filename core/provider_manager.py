@@ -614,21 +614,35 @@ class ProviderManager:
                 assigned['can_proceed'] = False
                 assigned['reason'] = 'Manually selected CLI unavailable: ' + ', '.join(missing)
                 return assigned
-        elif not openai_healthy:
-            # OpenAI down -> Claude steps in as ARCHITECT & INSPECTOR
-            assigned["architect_provider"] = "claude"
-            assigned["inspector_provider"] = "claude"
-            assigned["reason"] = "OpenAI unavailable. Degraded mode active: Claude acting as Architect and Inspector."
-        elif not google_healthy:
-            # Google down -> Codex steps in as Maker, Claude as Inspector
-            assigned["maker_provider"] = "codex"
-            assigned["inspector_provider"] = "claude"
-            assigned["reason"] = "Google unavailable. Degraded mode active: Codex acting as Maker."
-        elif not anthropic_healthy:
-            # Anthropic down -> OpenAI handles Architect & Inspector
-            assigned["architect_provider"] = "openai"
-            assigned["inspector_provider"] = "codex"
-            assigned["reason"] = "Anthropic unavailable. Degraded mode active: OpenAI handling Architect & Inspector."
+        elif not (openai_healthy and anthropic_healthy and google_healthy):
+            # One AI is down: every role it held moves to an AI that works. The rule does not depend on which AI
+            # was configured for which role (the defaults have changed over time; the console can set any layout).
+            from core.role_settings import ALIASES, DOMAINS
+            domain_of = lambda p: DOMAINS.get(ALIASES.get(str(p).lower(), ""), "")
+            alive = lambda p: domain_of(p) in usable or not domain_of(p)   # not one of the three (a mock, a typo): never moved here
+
+            def pick(order, avoid=None):
+                """First working AI in `order`, preferring one that is not `avoid` (to keep the review independent)."""
+                working = [p for p in order if alive(p)]
+                apart = [p for p in working if avoid is None or domain_of(p) != domain_of(avoid)]
+                return (apart or working or [None])[0]
+
+            moved = []
+            if not alive(assigned["architect_provider"]):
+                assigned["architect_provider"] = pick(("claude", "openai", "antigravity")) or assigned["architect_provider"]
+                moved.append("Architect")
+            if not alive(assigned["maker_provider"]):
+                assigned["maker_provider"] = pick(("codex", "claude", "antigravity")) or assigned["maker_provider"]
+                moved.append("Maker")
+            # The inspector moves when its own AI is down, and also when the maker has just moved onto it.
+            inspector, maker = assigned["inspector_provider"], assigned["maker_provider"]
+            if not alive(inspector) or ("Maker" in moved and domain_of(inspector) == domain_of(maker)):
+                assigned["inspector_provider"] = pick(("codex", "claude", "antigravity"), avoid=maker) or inspector
+                moved.append("Inspector")
+            names = {"OPENAI": "OpenAI", "ANTHROPIC": "Anthropic", "GOOGLE": "Google"}
+            gone = ", ".join(names[d] for d in ("OPENAI", "ANTHROPIC", "GOOGLE") if d not in usable)
+            assigned["reason"] = (f"{gone} unavailable. Degraded mode active: "
+                                  + (", ".join(f"{r} -> {assigned[r.lower() + '_provider']}" for r in moved) or "no role was on it") + ".")
 
         # Update roles in DB
         try:

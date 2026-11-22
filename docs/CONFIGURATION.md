@@ -16,13 +16,17 @@
 ### 역할
 
 ```yaml
-architect: {provider: claude}                       # 설계 · 판단
-maker:     {provider: antigravity, mode: proposal}  # 제작 — 파일 전체를 JSON으로 제안
-inspector: {provider: codex}                        # 감리
+architect: {provider: claude}                    # 설계 · 판단
+maker:     {provider: codex, mode: proposal}     # 제작 — 파일 전체를 JSON으로 제안
+inspector: {provider: antigravity}               # 감리
 ```
 
 `provider`는 `claude` / `codex` / `antigravity` 중 하나입니다. 실행 파일은 자동으로 찾습니다(`executable: null`). 그 CLI가 없는
 컴퓨터에서는 다른 것으로 바꾸면 되고, CLI 두 개로도 돌아갑니다. 콘솔의 역할 메뉴에서 바꾸면 그 선택이 다음 호출부터 적용됩니다.
+
+AI 하나를 쓸 수 없게 되면(한도 소진, 로그인 풀림 등) 그 AI가 맡던 역할을 살아 있는 AI로 옮깁니다. 감리는 가능하면 제작과 다른
+AI에 둡니다. 옮긴 사실은 감사 기록에 남습니다. 대리 판단(`autonomy.architect_proxy`)을 끈 상태에서 콘솔의 역할 메뉴로 직접 배정했다면
+바꾸지 않고, 그 CLI를 쓸 수 없으면 멈춰서 알립니다.
 
 ### 시간 제한
 

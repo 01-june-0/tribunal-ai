@@ -9,9 +9,9 @@ architect:
 
 maker:
   mode: proposal          # Maker returns whole files as JSON; the Director validates and writes them.
-  provider: antigravity   # Primary MAKER: Google Antigravity CLI (failover: codex / claude)
-  model: antigravity-cli
-  executable: null        # Discovered automatically via resolve_cli('agy')
+  provider: codex         # Primary MAKER: OpenAI Codex CLI (if it is down: claude, then antigravity)
+  model: cli-default
+  executable: null        # Discovered automatically via resolve_cli('codex')
 
 # Per-machine model for a CLI goes in the untracked config.local.yaml (see core/cli_models.py), e.g.
 #   cli_models:
@@ -21,9 +21,9 @@ maker:
 #     codex_light: true
 #     codex_reasoning_effort: high
 inspector:
-  provider: codex         # Primary INSPECTOR: OpenAI Codex CLI (failover: claude)
-  model: codex-cli
-  executable: null        # Discovered automatically via resolve_cli('codex')
+  provider: antigravity   # Primary INSPECTOR: Google Antigravity CLI (if it is down: an AI other than the maker)
+  model: cli-default
+  executable: null        # Discovered automatically via resolve_cli('agy')
 
 timeouts:
   architect: 300

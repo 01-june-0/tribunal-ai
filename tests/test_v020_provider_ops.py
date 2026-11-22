@@ -142,3 +142,51 @@ def test_g_no_api_keys(tmp_path):
     pm = ProviderManager(db_path=str(db_path))
     # We just ensure it works without API keys
     assert True
+
+
+# ---------------------------------------------------------------------------------- one AI down, whatever the layout
+
+def _down(tmp_path, domain):
+    pm = ProviderManager(db_path=str(tmp_path / "f.db"))
+    for d in ("OPENAI", "ANTHROPIC", "GOOGLE"):
+        pm.set_status(d, ProviderStatus.QUOTA_EXHAUSTED if d == domain else ProviderStatus.HEALTHY, "test")
+    return pm
+
+
+@pytest.mark.parametrize("layout,domain,expected", [
+    # the current defaults: claude designs, codex builds, antigravity inspects
+    (("claude", "codex", "antigravity"), "OPENAI", ("claude", "claude", "antigravity")),
+    (("claude", "codex", "antigravity"), "GOOGLE", ("claude", "codex", "claude")),
+    (("claude", "codex", "antigravity"), "ANTHROPIC", ("openai", "codex", "antigravity")),
+    # the layout this rule was first written for must come out exactly as before
+    (("claude", "antigravity", "codex"), "OPENAI", ("claude", "antigravity", "claude")),
+    (("claude", "antigravity", "codex"), "GOOGLE", ("claude", "codex", "claude")),
+    (("claude", "antigravity", "codex"), "ANTHROPIC", ("openai", "antigravity", "codex")),
+    (("openai", "antigravity", "codex"), "OPENAI", ("claude", "antigravity", "claude")),
+])
+def test_a_role_on_a_dead_ai_moves_to_a_working_one(tmp_path, layout, domain, expected):
+    """No role may stay on an AI that is down, and the inspector stays apart from the maker when it can."""
+    from core.role_settings import ALIASES, DOMAINS
+    out = _down(tmp_path, domain).resolve_roles(*layout)
+    got = (out["architect_provider"], out["maker_provider"], out["inspector_provider"])
+    assert got == expected and out["can_proceed"] is True
+    assert all(DOMAINS[ALIASES[p]] != domain for p in got)
+    assert DOMAINS[ALIASES[got[1]]] != DOMAINS[ALIASES[got[2]]]
+    assert "unavailable. Degraded mode active" in out["reason"]
+
+
+def test_the_default_roles_in_config_are_codex_maker_and_antigravity_inspector():
+    import yaml
+    from pathlib import Path as _P
+    cfg = yaml.safe_load((_P(__file__).resolve().parents[1] / "config.yaml").read_text(encoding="utf-8"))
+    assert (cfg["architect"]["provider"], cfg["maker"]["provider"], cfg["inspector"]["provider"]) == ("claude", "codex", "antigravity")
+    assert cfg["maker"]["mode"] == "proposal"
+
+
+def test_what_is_not_one_of_the_three_is_left_alone_and_shared_roles_all_move(tmp_path):
+    out = _down(tmp_path, "GOOGLE").resolve_roles("mock", "antigravity", "mock")
+    assert (out["architect_provider"], out["maker_provider"], out["inspector_provider"]) == ("mock", "codex", "mock")   # a mock is never replaced
+    out = _down(tmp_path, "OPENAI").resolve_roles("codex", "codex", "codex")
+    assert (out["architect_provider"], out["maker_provider"], out["inspector_provider"]) == ("claude", "claude", "antigravity")
+    out = _down(tmp_path, "OPENAI").resolve_roles("anthropic", "google", "openai")        # other spellings of the same three
+    assert (out["architect_provider"], out["maker_provider"], out["inspector_provider"]) == ("anthropic", "google", "claude")

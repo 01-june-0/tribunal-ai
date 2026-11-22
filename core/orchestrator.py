@@ -1020,14 +1020,19 @@ class Orchestrator:
                 stop_summary = self._handle_provider_failure(rev_domain, cli_err, run_id, "REVIEWING", logger, provenance_records)
                 if stop_summary:
                     return review_result, stop_summary
-                if rev_domain == "OPENAI":
-                    logger.warning(f"[FAILOVER TRIGGERED] Primary Inspector (Codex) failed ({cat.value}). Switching to backup Inspector (Claude)...")
-                    assigned = self.pm.resolve_roles(requested_architect=getattr(self.architect, "provider", "openai"), requested_maker="antigravity", requested_inspector="claude")
+                # Whichever AI inspects, a working one takes over - preferably not the maker's, so the review stays
+                # independent. (This used to exist for a Codex inspector only, the default of the time.)
+                maker_domain = self._get_agent_domain(self.maker)
+                backup = autopilot.pick_alternative(self.pm, exclude={rev_domain}, avoid={maker_domain}) if rev_domain in autopilot.ALIAS_BY_DOMAIN else None
+                if backup:
+                    logger.warning(f"[FAILOVER TRIGGERED] Inspector ({rev_domain}) failed ({cat.value}). Switching to backup Inspector ({backup})...")
+                    assigned = self.pm.resolve_roles(requested_architect=getattr(self.architect, "provider", "openai"),
+                                                     requested_maker=autopilot.ALIAS_BY_DOMAIN.get(maker_domain, "antigravity"), requested_inspector=backup)
                     if assigned["can_proceed"]:
                         self.current_failover_mode = assigned["mode"]
-                        self.current_inspector_name = "CLAUDE"
-                        self.inspector = self._init_inspector("claude")
-                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_INSPECTOR", f"Switched to Claude Inspector due to {cli_err}")
+                        self.current_inspector_name = backup.upper()
+                        self.inspector = self._init_inspector(backup)
+                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_INSPECTOR", f"Switched to {backup.capitalize()} Inspector due to {cli_err}")
                         stop_trial = self._claim_trial_for(self.inspector, run_id, "REVIEWING_BACKUP", logger)
                         if stop_trial:
                             return review_result, stop_trial
