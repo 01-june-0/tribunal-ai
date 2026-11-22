@@ -581,3 +581,12 @@ body.inside #inside{opacity:1;visibility:visible;pointer-events:auto;transition:
 .cloud-hit[hidden]{display:none}
 body.broadcast .cloud-hit{display:none}                 /* watching only: nothing on the scene is a control */
 body.inside #attention,body.inside #limit-alert{top:auto;bottom:84px}   /* a banner never covers the way back out */
+/* ---- inside the core: the tests Tribunal runs itself ---- */
+#in-events[hidden],#in-output[hidden]{display:none}
+#in-output{position:absolute;left:50%;bottom:10%;transform:translateX(-50%);width:min(720px,100%);max-height:72%;margin:0;padding:16px;border-radius:16px;border:1px solid color-mix(in srgb,var(--c) 45%,transparent);background:rgba(5,8,16,.78);box-shadow:0 0 40px color-mix(in srgb,var(--c) 14%,transparent);font:var(--fs-xs)/1.6 ui-monospace,Menlo,Consolas,monospace;color:#d6dff2;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;scrollbar-width:thin;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#in-output:focus-visible{outline:1px solid var(--line2);outline-offset:2px}
+#inside[data-view="core"] #in-stream{mask-image:none}
+#inside[data-view="core"] #in-focus{display:none}
+.in-big.ok{color:var(--ok)}.in-big.bad{color:var(--bad)}
+#in-ticks i.bar{top:6px;bottom:6px;left:0;width:0;border-radius:4px;opacity:.85}
+#in-ticks i.bar.ok{background:var(--ok)}#in-ticks i.bar.bad{background:var(--bad)}

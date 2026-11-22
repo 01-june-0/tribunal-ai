@@ -342,7 +342,8 @@ return {init,set,
   resume(){paused=false;start();},
   focus(r){rect=r;},
   // slot<0: the whole scene. Otherwise lean `pull` (0..1) of the way to that cloud and come to distance factor `d`.
-  look(slot,pull,d,k){if(!(slot>=0&&slot<3)){camT.x=0;camT.y=0;camT.d=1;}else{camT.x=SLOTS[slot][0]*pull;camT.d=Math.min(1,Math.max(.05,d));camT.y=(SLOTS[slot][1]-.06*camT.d)*pull;}camT.k=k||2.4;},                                  // stage rect inside the canvas, normalised {x,y,w,h}
+  look(slot,pull,d,k){const to=slot===3?[0,0,0]:SLOTS[slot];                 // 3: the core in the middle
+    if(!to){camT.x=0;camT.y=0;camT.d=1;}else{camT.x=to[0]*pull;camT.d=Math.min(1,Math.max(.05,d));camT.y=(to[1]-.06*camT.d)*pull;}camT.k=k||2.4;},                                  // stage rect inside the canvas, normalised {x,y,w,h}
   step(sec){for(let s=0;s<sec;s+=1/30){time+=1/30;approach(1/30);}render(0);},   // deterministic advance (captures, hidden tabs)
   state(){return {cam:{...cam},camT:{...camT},cur,tgt,pulse,boot,time,size:size.slice(),hdr,webgl:!failed,points:total};}};
 })();

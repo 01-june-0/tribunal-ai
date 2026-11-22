@@ -55,6 +55,7 @@
     <button type="button" class="cloud-hit" data-slot="0" aria-label="ARCHITECT 구름 안으로 들어가기" title="안으로 들어가기"></button>
     <button type="button" class="cloud-hit" data-slot="1" aria-label="MAKER 구름 안으로 들어가기" title="안으로 들어가기"></button>
     <button type="button" class="cloud-hit" data-slot="2" aria-label="INSPECTOR 구름 안으로 들어가기" title="안으로 들어가기"></button>
+    <button type="button" class="cloud-hit" data-slot="3" aria-label="TRIBUNAL 핵 안으로 들어가기" title="테스트 보기"></button>
     <div class="slot-label" data-slot="0"><span class="slot-role">ARCHITECT · 설계</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
     <div class="slot-label" data-slot="1"><span class="slot-role">MAKER · 제작</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
     <div class="slot-label" data-slot="2"><span class="slot-role">INSPECTOR · 감리</span><strong class="slot-name">—</strong><span class="slot-status">대기</span><span class="slot-stat"></span><span class="slot-cfg"></span></div>
@@ -111,9 +112,9 @@
     <button type="button" id="in-back">← 밖으로 (Esc)</button>
   </header>
   <aside class="glass in-pane" id="in-left" aria-label="받은 지시"></aside>
-  <div id="in-stream"><ol id="in-events" aria-label="이 호출 안에서 한 일"></ol><div id="in-focus" aria-hidden="true"></div><p id="in-quiet"></p></div>
+  <div id="in-stream"><ol id="in-events" aria-label="이 호출 안에서 한 일"></ol><pre id="in-output" tabindex="0" aria-label="테스트 출력 끝부분" hidden></pre><div id="in-focus" aria-hidden="true"></div><p id="in-quiet"></p></div>
   <aside class="glass in-pane" id="in-right" aria-label="이 호출"></aside>
-  <footer class="glass" id="in-track"><span class="kicker">이 호출의 흐름</span><div id="in-ticks" aria-hidden="true"></div><small id="in-note"></small></footer>
+  <footer class="glass" id="in-track"><span class="kicker" id="in-track-k">이 호출의 흐름</span><div id="in-ticks" aria-hidden="true"></div><small id="in-note"></small></footer>
 </section>
 <section id="call-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="cp-title" hidden>
   <header><div><span class="kicker" id="cp-kicker">기록</span><h3 id="cp-title">—</h3><p id="cp-meta"></p></div><button type="button" id="cp-close" aria-label="닫기">닫기</button></header>

@@ -210,7 +210,7 @@ def test_record_lines_in_the_chat_are_put_in_words():
 def test_the_camera_follows_the_work_and_a_cloud_can_be_entered(tmp_path):
     scene = (CONSOLE / "trinity.js").read_text(encoding="utf-8")
     assert "look(slot,pull,d,k){" in scene and "const dist=need*f*cam.d" in scene and "still=true;" in scene   # reduced motion: no camera travel
-    assert HTML.count('class="cloud-hit"') == 3 and 'id="inside"' in HTML and 'id="in-back"' in HTML
+    assert HTML.count('class="cloud-hit"') == 4 and 'id="inside"' in HTML and 'id="in-back"' in HTML
     assert "$('inside').inert=true;" in JS and "enterCloud(+b.dataset.slot)" in JS and "if(work){leaveCloud();" in JS
     assert "getJSON('/ops/record?key='+encodeURIComponent(key))" in JS[JS.index("async function pollInside(){"):JS.index("function enterCloud(slot){")]
     assert "if(inside!==at||insideKey!==key)return;" in JS                 # a late answer never paints another cloud or call
@@ -220,12 +220,23 @@ def test_the_camera_follows_the_work_and_a_cloud_can_be_entered(tmp_path):
     assert "body.inside #panel-now" in CSS and ".slot-label.aside{" in CSS
     # one AI at work: the camera leans to it; none, two, or the intro: the whole scene; inside: that cloud, whatever works
     src = JS[JS.index("const LEAN="):JS.index("function insideCall(m){")]
-    script = ("const T=s=>s,ROLES=['ARCHITECT','MAKER','INSPECTOR'];let calls=[],cls={has:false};"
+    script = ("const T=s=>s,ROLES=['ARCHITECT','MAKER','INSPECTOR'],CORE=3,CORE_DIVE=.13;let calls=[],cls={has:false};"
               "const Trinity={look(...a){calls.push(a);}},document={body:{classList:{contains:()=>cls.has}},querySelectorAll:()=>[]};\n"
               + src + "\nconst w=(...r)=>({working:r.map(role=>({role}))});\n"
               "aimCamera(w('MAKER'));aimCamera(w());aimCamera(w('MAKER','INSPECTOR'));cls.has=true;aimCamera(w('ARCHITECT'));cls.has=false;"
-              "inside=2;aimCamera(w('MAKER'));console.log(JSON.stringify(calls));")
-    assert json.loads(_node(tmp_path, script)) == [[1, .42, .78, 1.6], [-1], [-1], [-1], [2, 1, .085, 1.9]]
+              "aimCamera({working:[],phase:'VERIFYING'});inside=2;aimCamera(w('MAKER'));inside=3;aimCamera(w());console.log(JSON.stringify(calls));")
+    assert json.loads(_node(tmp_path, script)) == [[1, .42, .78, 1.6], [-1], [-1], [-1], [3, 1, .84, 1.6], [2, 1, .085, 1.9], [3, 1, .13, 1.9]]
+
+
+def test_the_core_shows_the_tests_tribunal_runs_itself():
+    scene = (CONSOLE / "trinity.js").read_text(encoding="utf-8")
+    assert "const to=slot===3?[0,0,0]:SLOTS[slot];" in scene              # the core is a place the camera can go
+    assert 'data-slot="3" aria-label="TRIBUNAL 핵 안으로 들어가기"' in HTML and 'id="in-output"' in HTML
+    assert "if(inside===3){if(m.logLost)return undefined;const run=(m.log||[]).find(r=>r.event==='verify');return run?run.key:null;}" in JS
+    core = JS[JS.index("function paintCore(){"):JS.index("function tickInside(){")]
+    assert "innerHTML" not in core and "out.textContent=" in core          # test output goes in as text
+    assert "T('결과는 실행이 끝나면 나옵니다.')" in core                    # a run in progress has no record to stream: said, not faked
+    assert "d.kind==='ai'&&d.run_id&&!orders.has(d.run_id)" in JS          # the order is fetched for calls only
 
 
 def test_elapsed_time_and_time_of_day_are_two_functions(tmp_path):
