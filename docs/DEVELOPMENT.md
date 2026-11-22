@@ -15,7 +15,7 @@
 
 ### 현재 결과
 
-2026-11-22 기준 **752개 통과, 7개 실패**입니다. 실패 7개는 원본 때부터 이어진 것으로, macOS 환경과 맞지 않는 전제 때문이며
+2026-11-22 기준 **754개 통과, 5개 실패**입니다. 실패 5개는 원본 때부터 이어진 것으로, macOS 환경과 맞지 않는 전제 때문이며
 제품 동작과는 무관합니다. 새 변경이 이 목록을 늘리지 않는 것을 기준으로 삼습니다.
 
 | 테스트 | 실패하는 이유 |
@@ -23,10 +23,12 @@
 | `test_v014_qualification.py::test_a2_permission_guard_hook_blocks_escapes` | `python`이라는 이름의 실행 파일을 전제 (macOS에는 `python3`만 있음) |
 | `test_v0232_e2e_blockers.py::test_e_dashboard_single_instance` | 다른 프로세스의 정보를 읽는 권한이 macOS에서 거부됨 |
 | `test_v0233_codex_fixes.py::test_l_resolve_cli_permission_error_no_crash` | 이 컴퓨터에 설치된 CLI가 실제로 발견되어 기대와 달라짐 |
-| `test_v0246_result_center.py::test_d_open_worktree_canonical_only` | 작업 사본 폴더 열기가 이 환경에서 거부됨 |
 | `test_v300h_maker_headless.py::test_exit_zero_without_task_changes_is_failed_and_settings_restore` | 임시 폴더 경로 형태가 기대와 다름 |
 | `test_v300j_chat_order_path_normalization.py::test_a_unfixed_order_would_have_escalated` | 윈도우 경로를 전제 |
-| `test_v302_bootstrap.py::test_snapshot_excludes_untracked_sensitive_directories` | 스냅샷 제외 목록과 테스트 픽스처가 어긋남 |
+
+원래 7개였는데, 두 개는 원인을 확인해 보니 기능이 아니라 테스트가 틀린 것이어서 고쳤습니다. 작업 사본 폴더 열기 테스트는
+Windows인 척하는 방식이 macOS에서 경로 처리 자체를 깨뜨렸고, 스냅샷 테스트는 예전 규칙(데이터 폴더 제외)을 기대하고 있었습니다.
+남은 5개는 원인을 끝까지 확인하지 않았습니다.
 
 ### 화면 코드의 테스트
 

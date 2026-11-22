@@ -47,13 +47,17 @@ def test_snapshot_preserves_staged_and_unstaged_versions(tmp_path):
     assert git(p, 'status', '--porcelain') == before
 
 def test_snapshot_excludes_untracked_sensitive_directories(tmp_path):
+    """Paths that look like secrets never enter the snapshot. A plain data file does: it used to be left out too, and
+    then a step's new 'data/*.json' fixtures were missing for the next step (see SUFFIXES in core/bootstrap.py). The
+    test kept expecting the old rule until 2026-11-22."""
     p = Path(prepare_project(tmp_path / 'new'))
-    for rel in ['secrets/settings.json', 'credentials/config.json', 'data/fixture.json']:
+    for rel in ['secrets/settings.json', 'credentials/config.json', 'config/api_token.json', '.env.local', 'keys/private_key.json',
+                'data/fixture.json', '.venv/lib/site.py', 'node_modules/x/index.js']:
         target = p / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('{}')
     sha = snapshot(p)
-    assert git(p, 'ls-tree', '-r', '--name-only', sha) == ''
+    assert git(p, 'ls-tree', '-r', '--name-only', sha) == 'data/fixture.json'
 
 def test_control_root_rejected():
     from core.bootstrap import SOURCE_ROOT
