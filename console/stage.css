@@ -75,6 +75,7 @@ body.broadcast button.meta-chip::after{content:""}
 .steps .warn{background:#ffc46b1c;border-color:#ffc46b77;color:var(--warn)}
 .steps .run{background:#6aa5ff2b;border-color:var(--agy);color:#dbe9ff;animation:steprun 1.6s ease-in-out infinite}
 .steps .todo{border-style:dashed}
+.steps .off{color:var(--muted)}
 @keyframes steprun{50%{box-shadow:0 0 16px #6aa5ff99}}
 #mission-meta{display:block;margin-top:8px;color:var(--muted);font-size:var(--fs-xs)}
 #mission-meta .itest{margin-top:6px;font-size:var(--fs-xs)}

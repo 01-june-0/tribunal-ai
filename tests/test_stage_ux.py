@@ -68,7 +68,7 @@ def test_escape_closes_one_layer_and_panels_do_not_stack():
 def test_the_now_panel_does_not_announce_every_tick():
     assert 'id="panel-now" class="glass" aria-label=' in HTML and 'id="now-headline" aria-live="polite"' in HTML
     assert "if(node.textContent===who+rest)return;" in JS
-    assert "STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''}" in JS
+    assert "STEP_MARK={ok:'✓',bad:'✗',warn:'!',off:'—',run:'▶',todo:''}" in JS
 
 
 def test_short_windows_scroll_the_side_panels_instead_of_cutting_buttons_off():
@@ -160,6 +160,40 @@ def test_which_block_the_card_shows_for_each_server_state(tmp_path):
         "){status={approval:ap};out.push(attentionKind({mission:ms}));}\n" \
         "console.log(JSON.stringify(out));"
     assert json.loads(_node(tmp_path, script)) == [k for k, _, _ in cases]
+
+
+def test_a_rejected_step_reads_as_closed_not_as_waiting(tmp_path):
+    """The user said no: the chip, the badge and the box say so, and nothing asks for attention."""
+    assert "state:s.rejected?'REJECTED':s.state" in JS and "REJECTED:'off'" in JS and ".steps .off{" in CSS
+    assert "PULSE[STEP_CLASS[s.state]]" in JS                              # a class without a pulse colour sends none
+    assert "kind==='stuck'||(kind==='stopped'&&!turnedDown(ms))" in JS     # no red frame around a decision the user made
+    src = "const T=s=>s;const MISSION_BADGE={BLOCKED:['확인 필요','warn'],FAILED:['실패','bad']};\n" + \
+        JS[JS.index("function turnedDown(ms){"):JS.index("\n", JS.index("function missionBadge(ms){"))]
+    cases = [{"status": "BLOCKED", "live": False, "steps": [{"state": "PASS"}, {"state": "REJECTED"}]},
+             {"status": "BLOCKED", "live": False, "steps": [{"state": "REJECTED"}, {"state": "HUMAN_REQUIRED"}]},   # a later step waits
+             {"status": "RUNNING", "live": True, "steps": [{"state": "REJECTED"}]},                                 # planned again
+             {"status": "FAILED", "live": False, "steps": [{"state": "FAIL"}]},
+             {"status": "BLOCKED", "live": False, "steps": []}]
+    out = json.loads(_node(tmp_path, src + "\nconsole.log(JSON.stringify(" + json.dumps(cases) + ".map(ms=>[turnedDown(ms),missionBadge(ms)[0]])));"))
+    assert out == [[True, "거절함"], [False, "확인 필요"], [False, "RUNNING"], [False, "실패"], [False, "확인 필요"]]
+
+
+def test_the_server_marks_a_step_the_user_rejected():
+    import dashboard_server as d
+
+    class SM:
+        def __init__(self, audits): self.audits = audits
+        def get_transitions(self, run_id): return [{"timestamp": "2026-01-01T00:00:01"}, {"timestamp": "2026-01-01T00:00:05"}]
+        def get_audit_logs(self, run_id): return self.audits
+        def get_run(self, run_id): return {"current_state": "HUMAN_REQUIRED"}
+    no = [{"action": "HUMAN_REJECTED", "timestamp": "2026-01-01T00:00:09"}]
+    assert d._step_rejected(SM(no), "RUN-1") is True
+    assert d._step_rejected(SM([{"action": "HUMAN_REJECTED", "timestamp": "2026-01-01T00:00:03"}]), "RUN-1") is False   # an older stop
+    assert d._step_rejected(SM([{"action": "HUMAN_APPROVAL", "timestamp": "2026-01-01T00:00:09"}]), "RUN-1") is False
+    assert d._step_rejected(object(), "RUN-1") is False                    # unreadable record: not marked
+    mission = {"mission_id": "M-1", "status": "BLOCKED", "steps": [{"index": 1, "run_id": "RUN-1", "order": {}, "result": {}}]}
+    assert d.mission_view(mission, SM(no))["steps"][0]["rejected"] is True
+    assert d.mission_view(mission, SM([]))["steps"][0]["rejected"] is False
 
 
 def test_a_diff_keeps_lines_that_only_look_like_a_header(tmp_path):

@@ -430,6 +430,17 @@ def _run_in_mission(run_id) -> bool:
         return True
 
 
+def _step_rejected(sm, run_id) -> bool:
+    """True when the user said no to this stopped step. Same rule as Orchestrator.approval_state: the decision
+    counts only if it was recorded after the latest transition. Read-only."""
+    try:
+        trans = sm.get_transitions(run_id)
+        since = (trans[-1].get("timestamp") or "") if trans else ""
+        return any(a.get("action") == "HUMAN_REJECTED" and (a.get("timestamp") or "") >= since for a in sm.get_audit_logs(run_id))
+    except Exception:
+        return False
+
+
 def _reason_ko(code) -> dict:
     """The Korean wording of a gate for the stage (the English one is `title` / `why`); empty when there is none."""
     try:
@@ -834,6 +845,7 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
                 "tests": res.get("tests"), "review": res.get("review_verdict"), "repairs": res.get("repair_rounds"),
                 "inspector_tests": _inspector_tests(step.get("run_id")),
                 "builds_on_failed_attempt": bool(step.get("builds_on_failed_attempt")),
+                "rejected": state == State.HUMAN_REQUIRED and bool(step.get("run_id")) and _step_rejected(sm, step["run_id"]),
                 "note": (res.get("stop_detail") or "")[:220] if state not in ("PASS", None) else ""}
     applied = m.get("applied") or None
     return {"mission_id": m["mission_id"], "goal": m.get("goal", "")[:400], "status": m.get("status"),

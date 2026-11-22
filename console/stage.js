@@ -22,9 +22,12 @@ const STAGE_TEXT={CHAT:T('요청을 읽고 있습니다'),MISSION_PLANNING:T('�
 const SHORT={CHAT:T('요청 확인 중'),MISSION_PLANNING:T('다음 단계 계획 중'),PLANNING:T('지시서 작성 중'),ORDER_READY:T('지시서 작성 중'),BUILDING:T('코드 작성 중'),REVIEWING:T('감리 중'),DECIDING:T('판단 중')};
 const STAGE_LABEL={PLANNING:T('설계'),ORDER_READY:T('제작 준비'),BUILDING:T('제작'),VERIFYING:T('테스트'),REVIEWING:T('감리'),DECIDING:T('판단'),PASS:T('통과'),FAIL:T('실패'),
   HUMAN_REQUIRED:T('사용자 확인'),TIMEOUT:T('시간 초과'),IDLE:T('대기'),MISSION_PLANNING:T('다음 단계 계획'),ENTRY_REVIEW:T('오더 검토'),CHAT:T('대화')};
-const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료')};
-const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',run:'▶',todo:''};
+const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료'),REJECTED:T('거절함')};
+const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn',REJECTED:'off'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',off:'—',run:'▶',todo:''};
 const MISSION_BADGE={DONE:[T('완료'),'ok'],INCOMPLETE:[T('단계 한도 도달'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
+// A task whose last step the user rejected is closed by their own decision: nothing waits, nothing failed.
+function turnedDown(ms){const last=ms&&ms.steps[ms.steps.length-1];return !!(last&&last.state==='REJECTED'&&ms.status==='BLOCKED'&&!ms.live);}
+function missionBadge(ms){return turnedDown(ms)?[T('거절함'),'']:(MISSION_BADGE[ms.status]||[ms.status,'']);}
 // The inspector's own tests in one step (server: inspector_tests.summary) → what to show, or null when there is no record.
 const ITEST_REASON={'no acceptable test file':T('받아들일 수 있는 테스트 파일이 없습니다'),'no test command is configured':T('테스트 명령이 설정되어 있지 않습니다'),"the project's own tests do not pass yet":T('프로젝트 자체 테스트가 아직 통과하지 못했습니다'),'the worktree is too large to copy':T('작업 폴더가 너무 커서 복사하지 않았습니다'),'the run record is inside the worktree':T('실행 기록이 작업 폴더 안에 있습니다'),'the work folder is missing':T('작업 폴더를 찾지 못했습니다'),'could not be run':T('실행하는 중에 오류가 났습니다'),
   'path and content must be text':T('경로와 내용이 글자가 아닙니다'),'must be a repo-relative path with forward slashes':T('프로젝트 기준 상대 경로가 아닙니다'),'must be a plain relative path inside a test directory':T('테스트 폴더 안의 단순한 상대 경로가 아닙니다'),'file name must mark it as an inspector test (e.g. test_inspector_<topic>.py)':T('파일 이름이 감리 테스트 형식이 아닙니다'),'must be inside a test directory (tests/, test/, __tests__/, spec/)':T('테스트 폴더 안이 아닙니다'),'protected path':T('보호된 경로입니다'),'its directory does not exist in the project':T('프로젝트에 없는 폴더입니다'),'a file with this name already exists':T('같은 이름의 파일이 이미 있습니다'),'outside the worktree':T('작업 폴더 밖입니다'),'listed twice':T('두 번 적혀 있습니다'),'contains code that could move real money':T('실제 돈을 움직일 수 있는 코드가 들어 있습니다')};
@@ -137,7 +140,7 @@ function liveModel(){
   for(const p of Object.keys(AI))stats[p]=today[p]?T('오늘 {0}회 · {1} 토큰',today[p].calls,(today[p].exact_tokens<today[p].tokens?'~':'')+tok(today[p].tokens)):T('오늘 호출 없음');
   return {working,assign:assignment(),...phaseOf(working,verifying,!!(focus&&focus.live)),
     mission:focus&&{goal:focus.goal,project:focus.project,status:focus.status,live:focus.live,max:Math.max(focus.max_steps||0,focus.steps.length),
-      steps:focus.steps.map(s=>({index:s.index,state:s.state,tests:s.tests,itests:s.inspector_tests,run:s.run_id,note:s.note,review:s.review,repairs:s.repairs})),passed:focus.passed_steps,blocked:focus.blocked_reason,summary:focus.summary,deliverableRun:focus.deliverable_run_id,updated:utc(focus.updated_at),id:focus.mission_id,
+      steps:focus.steps.map(s=>({index:s.index,state:s.rejected?'REJECTED':s.state,tests:s.tests,itests:s.inspector_tests,run:s.run_id,note:s.note,review:s.review,repairs:s.repairs})),passed:focus.passed_steps,blocked:focus.blocked_reason,summary:focus.summary,deliverableRun:focus.deliverable_run_id,updated:utc(focus.updated_at),id:focus.mission_id,
       deliverable:focus.deliverable,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
     usage:usage[win]||{by_role:{},by_provider:{},total:{calls:0,seconds:0,tokens:0,exact_tokens:0}},windows:{mission:!!usage.mission,today:!!usage.today,all:!!usage.all},
     calls:(a.recent_calls||[]).slice(0,6).map(c=>({id:c.id,key:c.at+c.role+c.provider,role:c.role,provider:c.provider,seconds:c.seconds,tokens:c.tokens,exact:c.exact,status:c.status,at:utc(c.at)})),
@@ -159,7 +162,7 @@ function paintNow(m){
   document.documentElement.style.setProperty('--actor',actorColor(m));
   setSentence($('now-headline'),m);setSentence($('caption'),m);
   const ms=m.mission,step=ms&&ms.steps.length?ms.steps[ms.steps.length-1].index:0;
-  $('now-sub').textContent=m.phase==='IDLE'?(ms?(T('마지막 작업 ')+(MISSION_BADGE[ms.status]||[ms.status])[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
+  $('now-sub').textContent=m.phase==='IDLE'?(ms?(T('마지막 작업 ')+missionBadge(ms)[0]+' · '+ago(ms.updated)):T('아래 입력창에 지시하면 세 AI가 일을 시작합니다.'))
     :(ms&&ms.live?T('{0}단계 진행 중 · 최대 {1}단계',step,ms.max)+' · '+ms.project:PHASE[m.phase].sub);
   $('now-stage').textContent=m.w?ROLE_KO[m.w.role]||m.w.role:PHASE[m.phase].word;
   timerBase=m.w?{at:m.w.at,fixed:null,estimate:m.w.estimate}:null;tickTimer();
@@ -188,7 +191,7 @@ function tickTimer(){
 function paintMission(m){
   const ms=m.mission,badge=$('mission-badge'),steps=$('mission-steps');
   if(!ms){badge.textContent='—';badge.className='badge';$('mission-goal').textContent=T('아직 작업 기록이 없습니다. 지시를 보내면 여기에 단계별 진행이 표시됩니다.');steps.replaceChildren();$('mission-meta').textContent='';delete $('mission-meta').dataset.sig;paintAttention(m);paintDelivery(m);paintLoose(m);return;}
-  const running=ms.status==='RUNNING',b=running?(ms.live?[T('진행 중'),'run']:[T('중단됨 · 재개 대기'),'warn']):(MISSION_BADGE[ms.status]||[ms.status,'']);
+  const running=ms.status==='RUNNING',b=running?(ms.live?[T('진행 중'),'run']:[T('중단됨 · 재개 대기'),'warn']):missionBadge(ms);
   badge.textContent=b[0];badge.className='badge '+b[1];$('mission-goal').textContent=ms.goal;$('mission-goal').title=ms.goal;
   while(steps.children.length>ms.max)steps.lastChild.remove();
   while(steps.children.length<ms.max)steps.append(el('span',String(steps.children.length+1)));
@@ -202,7 +205,7 @@ function paintMission(m){
     if(it){const box=el('details','','itest '+it.cls);box.open=open&&it.tip.length>0;box.append(el('summary',it.label));for(const line of it.tip)box.append(el('p',line));meta.append(box);}}
   paintAttention(m);paintDelivery(m);paintLoose(m);
   for(const s of ms.steps){const key=ms.id+':'+s.index,prev=seenSteps.get(key);seenSteps.set(key,s.state);
-    if(!firstPaint&&prev!==s.state&&STEP_CLASS[s.state])Trinity.pulse(PULSE[STEP_CLASS[s.state]]);}
+    if(!firstPaint&&prev!==s.state&&PULSE[STEP_CLASS[s.state]])Trinity.pulse(PULSE[STEP_CLASS[s.state]]);}
   const mk=ms.id+':status',prev=seenSteps.get(mk);seenSteps.set(mk,ms.status);
   if(!firstPaint&&prev&&prev!==ms.status&&ms.status==='DONE')Trinity.pulse(PULSE.done);
 }
@@ -295,7 +298,7 @@ function paintAttention(m){
   let box=$('mission-attention');
   if(!box){box=el('div','','delivery attention-box');box.id='mission-attention';$('mission-card').append(box);}
   const ms=m.mission,ap=(status&&status.approval)||{},kind=attentionKind(m);
-  $('mission-card').classList.toggle('attn',kind==='approve');$('mission-card').classList.toggle('stopped',kind==='stuck'||kind==='stopped');
+  $('mission-card').classList.toggle('attn',kind==='approve');$('mission-card').classList.toggle('stopped',kind==='stuck'||(kind==='stopped'&&!turnedDown(ms)));
   const dstate=ms?((ms.applied&&ms.applied.status)||ms.applyState||'pending'):'',offered=!!(ms&&ms.deliverable&&dstate!=='applied'&&dstate!=='discarded');   // the delivery box below offers "이어서 진행"
   const own=!!(ms&&ms.steps.some(s=>s.run===ap.run_id));                // false: a new task that has no card yet
   const sig=JSON.stringify(!kind?[]:[kind,own,ap.goal,ms&&ms.id,ms&&ms.status,ms&&ms.blocked,ms&&ms.summary,ms&&ms.steps,ap.run_id,ap.stage,ap.items,ap.blocking,approvalBusy,deliveryBusy,offered]);
@@ -319,10 +322,11 @@ function paintAttention(m){
   }else if(kind==='wait'){
     box.append(el('strong',T('작업을 다시 시작하는 중')),el('p',T('안전 검사를 거친 뒤 이어서 진행합니다.')));
   }else{
-    box.append(el('strong',T('멈춘 이유')));
+    const no=kind==='stopped'&&turnedDown(ms);
+    box.append(el('strong',no?T('거절한 작업'):T('멈춘 이유')));
     if(kind==='stuck'){box.append(el('p',T('승인으로 풀 수 없는 문제로 멈췄습니다. ARCHITECT에게 다시 지시해 주세요.')));if(!own&&ap.goal)box.append(el('p',ap.goal,'new-goal'));box.append(list(ap.blocking));
       const first=ap.blocking[0];if(why(first))box.append(el('small',why(first),'ai-sub'));}
-    else box.append(el('p',stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
+    else box.append(el('p',no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
     if(ms&&ms.steps.length&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='steps';d.append(el('summary',T('단계별 결과')));const ol=el('ol');
       for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
       d.append(ol);box.append(d);}
@@ -504,7 +508,7 @@ function paintFeed(list,items,seen,render){
   if(!items.length)list.append(el('li',T('아직 기록이 없습니다.')));
 }
 function stateColor(m,state){
-  if(STEP_CLASS[state])return {ok:'#5ef2b0',bad:'#ff6b7a',warn:'#ffc46b'}[STEP_CLASS[state]];
+  if(STEP_CLASS[state])return {ok:'#5ef2b0',bad:'#ff6b7a',warn:'#ffc46b',off:'#8794ad'}[STEP_CLASS[state]];
   if(state==='BUILDING')return AI[m.assign.MAKER].css;if(state==='REVIEWING')return AI[m.assign.INSPECTOR].css;
   if(state==='VERIFYING')return '#b9ffe2';return AI[m.assign.ARCHITECT].css;
 }
