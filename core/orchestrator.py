@@ -1677,10 +1677,13 @@ class Orchestrator:
         # 3. Create isolated worktree
         try:
             if base_worktree or self.config.get('bootstrap', {}).get('enabled'):
-                from core.bootstrap import snapshot
-                base_ref = snapshot(base_worktree or proj_path)
+                from core.bootstrap import snapshot, snapshot_excludes
+                seen: Dict[str, Any] = {}             # which untracked files went in, which stayed out and why
+                # The operator's exclude list is for their own untracked files. A previous step's worktree holds none of
+                # those any more - only that step's new work, which the next step must get whatever its name is.
+                base_ref = snapshot(base_worktree or proj_path, exclude=None if base_worktree else snapshot_excludes(self.config, proj_path), report=seen)
                 self._save_json(run_id, 'source_snapshot.json', {'base_ref': base_ref, 'source_head_unchanged': True,
-                                                                 'base_worktree': base_worktree})
+                                                                 'base_worktree': base_worktree, **seen})
                 if base_worktree:
                     self.sm.log_audit(run_id, "ORCHESTRATOR", "BUILDS_ON", f"{base_worktree} @ {base_ref}")
                 worktree_path, branch_name = GitManager.create_worktree(proj_path, run_id, base_ref=base_ref)
@@ -1932,10 +1935,11 @@ class Orchestrator:
                     if mission_base and not Path(mission_base).exists():
                         mission_base = None
                     if mission_base or self.config.get('bootstrap', {}).get('enabled'):
-                        from core.bootstrap import snapshot
-                        base_ref = snapshot(mission_base or project_path)
+                        from core.bootstrap import snapshot, snapshot_excludes
+                        seen: Dict[str, Any] = {}
+                        base_ref = snapshot(mission_base or project_path, exclude=None if mission_base else snapshot_excludes(self.config, project_path), report=seen)
                         self._save_json(run_id, 'source_snapshot.json', {'base_ref': base_ref, 'source_head_unchanged': True,
-                                                                         'base_worktree': mission_base})
+                                                                         'base_worktree': mission_base, **seen})
                         worktree_path, branch_name = GitManager.create_worktree(project_path, run_id, base_ref=base_ref)
                     else:
                         worktree_path, branch_name = GitManager.create_worktree(project_path, run_id)

@@ -100,6 +100,7 @@ Tribunal AI는 [AI DEV DIRECTOR](https://github.com/digilogd-cmd/ai-dev-director
 - 모든 검증을 같은 환경(`PYTHONUNBUFFERED=1`)에서 실행.
 - **기본 역할 배정 변경** — 제작 Codex, 감리 Antigravity(원본은 제작 Antigravity, 감리 Codex). AI 하나를 쓸 수 없을 때 역할을 옮기는
   규칙을 배정과 무관하게 동작하도록 고침.
+- **작업 사본에 들어간 추적 안 된 파일을 기록하고 화면에 표시**, **제외 목록 설정**(`snapshot_exclude`), **폐기할 때 실행 브랜치도 삭제**.
 - 멈춘 실행의 화면 표시용 상태 추가: 내가 거절한 실행은 "거절한 작업"으로(실행 기록 자체는 감사용이라 그대로).
 
 ### 이름

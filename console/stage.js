@@ -584,6 +584,15 @@ function facts(title,rows,extra){
 function listEl(items){const ul=el('ul','','cp-list');for(const it of items){const li=el('li');if(it instanceof Node)li.append(it);else li.textContent=it;ul.append(li);}return ul;}
 function codeEl(t){return el('code',t);}
 function titled(label,node){const d=el('div','','cp-sub');d.append(el('small',label),node);return d;}
+// which files git did not track yet were copied into the worktree: said plainly, because the AIs can read them
+const SKIP_WHY={tool_folder:T('도구 · 의존성 폴더'),secret_name:T('비밀처럼 보이는 이름'),excluded_by_config:T('설정의 제외 목록'),not_a_source_type:T('소스 형식이 아님'),too_large:T('2MB 초과')};
+function snapshotFacts(sn){
+  if(!sn)return null;
+  const skipped=Object.entries(sn.skipped||{}).map(([k,n])=>(SKIP_WHY[k]||k)+' '+T('{0}개',n)).join(' · ');
+  return facts(T('작업 사본에 함께 들어간 파일'),[[T('추적하지 않던 파일'),sn.included_count?T('{0}개',sn.included_count):T('없음')],[T('빠진 파일'),skipped||T('없음')]],
+    [sn.included.length?listEl(sn.included.map(codeEl)):null,sn.included_count>sn.included.length?el('small',T('앞의 {0}개만 표시합니다.',sn.included.length),'cp-hint'):null,
+     el('small',sn.from_previous_step?T('앞 단계의 작업 사본에서 이어받은 새 파일입니다.'):T('git이 아직 추적하지 않는 파일입니다. 작업 사본에 복사되어 AI가 읽을 수 있습니다. 넣고 싶지 않은 파일은 설정의 제외 목록이나 .gitignore에 적으세요.'),'cp-hint')]);
+}
 function callFacts(d){
   const out=[],both=d.tokens_in!=null&&d.tokens_out!=null,bar=both&&d.tokens>0?el('div','','cp-bar'):null,x=d.result;
   const live=d.status==='RUNNING'?T('끝나면 기록됩니다'):null;   // still at work: not a gap in the record
@@ -606,7 +615,8 @@ function callFacts(d){
     [x.findings.length?listEl(x.findings.map(f=>f.level.toUpperCase()+' · '+f.text)):null,x.summary?el('p',x.summary,'cp-quote'):null]));
   else if(x&&x.type==='decision')out.push(facts(x.changed_by_tribunal?T('Tribunal이 바꾼 최종 판단'):T('이 호출의 판단'),[[T('결정'),DECISION_KO[x.decision]||x.decision]],
     [x.changed_by_tribunal?el('p',T('Tribunal의 마침 검사나 대리 판단이 ARCHITECT의 답을 바꿔 저장했습니다. 이 호출이 실제로 한 답은 아래 "안에서 한 일"에 있습니다.'),'cp-hint'):null,x.rationale?el('p',x.rationale,'cp-quote'):null,x.next_steps.length?titled(T('다음에 할 일'),listEl(x.next_steps)):null]));
-  else if(d.result_missing)out.push(el('p',T('이 호출에 해당하는 결과 파일을 찾지 못했습니다. 이 호출이 한 답은 아래 "안에서 한 일"에 있습니다.'),'cp-hint'));
+  if(d.snapshot)out.push(snapshotFacts(d.snapshot));
+  if(!x&&d.result_missing)out.push(el('p',T('이 호출에 해당하는 결과 파일을 찾지 못했습니다. 이 호출이 한 답은 아래 "안에서 한 일"에 있습니다.'),'cp-hint'));
   return out;
 }
 function verifyFacts(d){
@@ -632,6 +642,7 @@ function endFacts(d){
   if(d.details)out.push(facts(stop?T('멈춘 이유 원문'):T('마지막 판단 원문'),null,[el('p',d.details,'cp-quote')]));
   if(d.gates)out.push(facts(T('마칠 때의 검사'),Object.entries(d.gates).map(([k,v])=>[GATE_KO[k]||k,{PASS:T('통과'),FAIL:T('실패'),MISSING:T('기록 없음')}[String(v).toUpperCase()]||String(v)]),[d.gate_reasons&&d.gate_reasons.length?listEl(d.gate_reasons):null]));
   if(d.changed)out.push(facts(T('바뀐 파일'),null,[d.changed.length?listEl(d.changed.map(f=>{const s=el('span');s.append(codeEl(f.path),' ',el('small',{A:T('새 파일'),D:T('삭제'),M:T('수정')}[f.status]||f.status));return s;})):el('p',T('바뀐 파일이 없습니다.'),'cp-hint')]));
+  if(d.snapshot)out.push(snapshotFacts(d.snapshot));
   if(!d.is_last)out.push(el('p',T('이 실행은 이 뒤에 다시 이어졌습니다.'),'cp-hint'));
   const ms=lastModel&&lastModel.mission;
   if(ms&&ms.deliverableRun&&ms.deliverableRun===d.run_id){const row=el('div','','delivery-actions'),b=el('button',T('변경 내용 보기'));b.type='button';b.onclick=()=>openResult(ms);row.append(b);out.push(row);}

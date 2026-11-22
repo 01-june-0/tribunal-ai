@@ -59,6 +59,69 @@ def test_snapshot_excludes_untracked_sensitive_directories(tmp_path):
     sha = snapshot(p)
     assert git(p, 'ls-tree', '-r', '--name-only', sha) == 'data/fixture.json'
 
+def test_the_snapshot_says_which_untracked_files_went_in_and_which_stayed_out(tmp_path):
+    from core.bootstrap import snapshot_excludes
+    p = Path(prepare_project(tmp_path / 'proj'))
+    for rel in ['src/app.py', 'data/fixture.json', 'data/private/customers.csv', 'exports/report.csv', 'notes.txt',
+                'secrets/key.json', 'node_modules/x/index.js', 'photo.raw']:
+        target = p / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('x')
+    (p / 'big.json').write_text('x' * 2_000_001)
+    config = {'bootstrap': {'snapshot_exclude': ['*.csv']}, 'projects': {str(p): {'snapshot_exclude': ['data/private/**', 'notes.txt']},
+                                                                        str(tmp_path / 'other'): {'snapshot_exclude': ['src/**']}}}
+    patterns = snapshot_excludes(config, p)
+    assert patterns == ['*.csv', 'data/private/**', 'notes.txt']           # another project's patterns do not apply here
+    seen = {}
+    sha = snapshot(p, exclude=patterns, report=seen)
+    assert git(p, 'ls-tree', '-r', '--name-only', sha).split() == ['data/fixture.json', 'src/app.py']
+    assert seen['untracked_included'] == ['data/fixture.json', 'src/app.py'] and seen['untracked_included_count'] == 2
+    assert seen['untracked_skipped'] == {'excluded_by_config': ['data/private/customers.csv', 'exports/report.csv', 'notes.txt'],
+                                         'secret_name': ['secrets/key.json'], 'tool_folder': ['node_modules/x/index.js'],
+                                         'not_a_source_type': ['photo.raw'], 'too_large': ['big.json']}
+    assert seen['untracked_skipped_count']['excluded_by_config'] == 3 and seen['exclude_patterns'] == patterns
+    assert git(p, 'status', '--porcelain') != ''                           # the real index and working copy are untouched
+    assert snapshot(p) and snapshot_excludes({}, p) == []                  # no patterns, no report: as before
+
+
+@pytest.mark.parametrize("rel,pattern,excluded", [
+    ("x/priv/y.json", "**/priv/**", True), ("priv/u.csv", "**/priv/**", True),       # a leading ** once matched nothing at all
+    ("priv/sub/deep.csv", "priv/*", True), ("priv/sub/deep.csv", "priv/*.csv", False), ("priv/a.csv", "priv/*.csv", True),
+    ("top.csv", "**/*.csv", True), ("a/b/top.csv", "**/*.csv", True),
+    ("x/priv/a.py", "priv", True), ("private/a.py", "priv", False),                  # a bare name: any folder or file of that name
+    ("data/private/c.csv", "data/private/**", True), ("data/privatex/c.csv", "data/private/**", False),
+    ("data/private/c.csv", "data/private/", True), ("data/public/c.csv", "data/private", False),
+    ("src/app.py", "*.csv", False), ("a/B.CSV", "*.csv", True), ("docs/notes.txt", "notes.txt", True),
+    ("a/b/c.py", "a/**/c.py", True), ("a/c.py", "a/**/c.py", True), ("a/bc.py", "a/**/c.py", False),
+    ("data/x1.json", "data/x[0-9].json", True), ("data/x1.json", "data/x[!0-9].json", False),
+    ("Data/Private/C.csv", "data\\private\\**", True),
+])
+def test_exclude_patterns_mean_what_gitignore_means(rel, pattern, excluded):
+    from core.bootstrap import excluded_by
+    assert excluded_by(rel, [pattern]) is excluded
+
+
+def test_an_exclude_setting_that_cannot_be_read_stops_instead_of_excluding_nothing(tmp_path):
+    from core.bootstrap import excluded_by, snapshot_excludes
+    for unreadable in ("", "**", "/", "   "):
+        with pytest.raises(ValueError):
+            excluded_by("a.py", [unreadable])
+    assert snapshot_excludes({"bootstrap": {"snapshot_exclude": "*.csv"}}, tmp_path) == ["*.csv"]     # one pattern, not five letters
+    for wrong in (5, {"a": 1}, ["ok", 3], [""], ["**"]):
+        with pytest.raises(ValueError):
+            snapshot_excludes({"bootstrap": {"snapshot_exclude": wrong}}, tmp_path)
+    with pytest.raises(ValueError):
+        snapshot_excludes({"projects": {str(tmp_path): {"snapshot_exclude": 7}}}, tmp_path)
+
+
+def test_a_later_step_keeps_the_previous_steps_new_files_whatever_their_names():
+    """The exclude list is for the operator's own untracked files; a step's deliverable must reach the next step."""
+    import core.orchestrator as o
+    src = Path(o.__file__).read_text(encoding="utf-8")
+    assert "exclude=None if base_worktree else snapshot_excludes(self.config, proj_path)" in src
+    assert "exclude=None if mission_base else snapshot_excludes(self.config, project_path)" in src
+
+
 def test_control_root_rejected():
     from core.bootstrap import SOURCE_ROOT
     with pytest.raises(ValueError): prepare_project(SOURCE_ROOT)

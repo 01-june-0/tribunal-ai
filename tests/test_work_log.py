@@ -309,3 +309,23 @@ def test_the_core_follows_a_running_test():
     code = "\n".join(line.split("//")[0] for line in boot.splitlines())
     for poller in ("every(pollActivity,", "every(pollStatus,", "every(pollChat,", "every(pollCall,", "every(pollInside,", "pollAI();every(pollAI,20000)"):
         assert poller in code, poller
+
+
+def test_the_record_says_which_untracked_files_reached_the_worktree(run):
+    for state in ("PLANNING", "ORDER_READY", "BUILDING"):
+        run.sm.transition_to(run.id, state, "x")
+    rid = _call("BUILDING", "MAKER", run.id)
+    assert work_log.detail(f"call-{rid}")["snapshot"] is None                # an older run: nothing was recorded, nothing is claimed
+    (run.dir / "source_snapshot.json").write_text(json.dumps({
+        "base_ref": "abc", "base_worktree": None, "untracked_included": ["data/fixture.json", "src/new.py"], "untracked_included_count": 2,
+        "untracked_skipped": {"secret_name": ["secrets/key.json"]}, "untracked_skipped_count": {"secret_name": 1, "too_large": 0},
+        "exclude_patterns": ["*.csv"]}), encoding="utf-8")
+    snap = work_log.detail(f"call-{rid}")["snapshot"]
+    assert snap == {"included": ["data/fixture.json", "src/new.py"], "included_count": 2, "skipped": {"secret_name": 1},
+                    "from_previous_step": False, "patterns": 1}
+    assert "secrets/key.json" not in json.dumps(snap)                        # names of what stayed out are not sent to the page
+    run.sm.transition_to(run.id, "VERIFYING", "x"); run.sm.transition_to(run.id, "REVIEWING", "x")
+    run.sm.transition_to(run.id, "DECIDING", "x"); run.sm.transition_to(run.id, "PASS", "Final decision: ok")
+    end = next(r for r in work_log.rows() if r.get("event") == "end" and r["run_id"] == run.id)
+    assert work_log.detail(end["key"])["snapshot"]["included_count"] == 2
+    assert "function snapshotFacts(sn){" in JS and "if(d.snapshot)out.push(snapshotFacts(d.snapshot));" in JS

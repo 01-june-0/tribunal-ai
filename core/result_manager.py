@@ -760,7 +760,8 @@ class ResultManager:
         proj, wt = run.get("project_path") or "", run.get("worktree_path") or ""
         if not wt or not Path(wt).exists():
             self._set_state(run_id, RESULT_DISCARDED, "worktree already absent", request_id)
-            self.sm.log_audit(run_id, by, "RESULT_DISCARDED", json.dumps({"worktree": wt, "removed": False, "request_id": request_id}))
+            branch_removed = self._drop_run_branch(run, proj)
+            self.sm.log_audit(run_id, by, "RESULT_DISCARDED", json.dumps({"worktree": wt, "removed": False, "branch_removed": branch_removed, "request_id": request_id}))
             return {"status": "discarded", "run_id": run_id, "removed": False}
         if not self.worktree_contained(proj, wt) or Path(wt).resolve().name != run_id:
             return {"status": "refused", "reason": "worktree is not this run's directory inside the project's .director_worktrees"}
@@ -780,8 +781,25 @@ class ResultManager:
             self.sm.upsert_result_state(run_id, worktree_state="MISSING")
         except Exception:
             pass
-        self.sm.log_audit(run_id, by, "RESULT_DISCARDED", json.dumps({"worktree": wt, "removed": True, "request_id": request_id}))
+        branch_removed = self._drop_run_branch(run, proj)
+        self.sm.log_audit(run_id, by, "RESULT_DISCARDED", json.dumps({"worktree": wt, "removed": True, "branch_removed": branch_removed, "request_id": request_id}))
         return {"status": "discarded", "run_id": run_id, "removed": True}
+
+    @staticmethod
+    def _drop_run_branch(run: Dict[str, Any], proj: str) -> bool:
+        """After a discard nothing uses the run's branch any more; left behind, one piles up per run. Only the branch
+        this run created (its name is the run id) is deleted, and never one that is checked out somewhere."""
+        name = str(run.get("branch_name") or "")
+        if not proj or not name or name != run.get("run_id") or not name.startswith("RUN-") or not Path(proj).exists():
+            return False
+        try:
+            rc, out, _ = _git(["worktree", "list", "--porcelain"], proj)
+            if rc != 0 or f"branch refs/heads/{name}\n" in out + "\n":
+                return False                          # still the branch of a worktree (or we cannot tell): keep it
+            rc, _, _ = _git(["branch", "-D", name], proj)
+            return rc == 0
+        except Exception:
+            return False
 
 
 def _verification_timeout(v) -> float:

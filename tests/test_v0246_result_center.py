@@ -255,6 +255,11 @@ def test_o_discard(rm, server):
         assert code == 200 and j["status"] == "discarded" and j["removed"] is True
         assert not wt.exists() and other_wt.exists()
         assert _git(["rev-parse", "HEAD"], proj) == head and _git(["status", "--porcelain", "--untracked-files=no"], proj) == ""
+        # the run's own branch goes with its worktree (one used to pile up per run); every other branch stays
+        branches = _git(["branch", "--format=%(refname:short)"], proj).split()
+        assert run_id not in branches and "OTHER" in branches
+        audit = [json.loads(x["payload"]) for x in orch.sm.get_audit_logs(run_id) if x["action"] == "RESULT_DISCARDED"]
+        assert audit and audit[-1]["branch_removed"] is True
         assert not (Path(proj) / "src" / "n.py").exists()
         d = rm.run_dir(run_id)
         for f in ("final_evidence.json", "verification.json", "provenance.json", "order.json", "discard_evidence.json", "result_state.json"):
@@ -291,3 +296,14 @@ def test_q_no_git_mutation_commands_in_result_manager():
         assert forbidden not in src, forbidden
     # v3.1.8: the folder is opened with the platform file manager (explorer.exe / open / xdg-open), still argv-only
     assert '["worktree", "remove", "--force"' in src and '"explorer.exe"' in src and '"xdg-open"' in src and "Popen(argv)" in src
+
+
+def test_a_branch_that_is_not_the_runs_own_or_is_still_in_use_is_never_deleted(rm):
+    with make_git_project() as proj:
+        run_id, orch = _pass_run(proj)
+        run = dict(orch.sm.get_run(run_id))
+        assert ResultManager._drop_run_branch(run, proj) is False                      # its worktree still uses the branch
+        assert ResultManager._drop_run_branch({**run, "branch_name": "main"}, proj) is False
+        assert ResultManager._drop_run_branch({**run, "branch_name": "RUN-SOMEONE-ELSE"}, proj) is False
+        assert ResultManager._drop_run_branch({**run, "branch_name": ""}, proj) is False
+        assert run_id in _git(["branch", "--format=%(refname:short)"], proj).split()

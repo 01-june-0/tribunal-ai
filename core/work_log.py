@@ -86,6 +86,20 @@ def _live_output(run_id: Any, since: Optional[str]) -> Optional[dict]:
             "at": datetime.utcfromtimestamp(info.st_mtime).isoformat()}
 
 
+def _snapshot_info(run_id: Any) -> Optional[dict]:
+    """Which files that git did not track yet were copied into this run's worktree (and so could be read by the
+    AIs), and how many stayed out and why. None for a run from before this was recorded."""
+    snap = _read(run_id, "source_snapshot.json")
+    if not snap or "untracked_included" not in snap:
+        return None
+    counts = snap.get("untracked_skipped_count") if isinstance(snap.get("untracked_skipped_count"), dict) else {}
+    return {"included": _strings(snap.get("untracked_included"), LIST_MAX, 300),
+            "included_count": int(snap.get("untracked_included_count") or 0),
+            "skipped": {str(k): int(v) for k, v in counts.items() if isinstance(v, int) and v > 0},
+            "from_previous_step": bool(snap.get("base_worktree")),
+            "patterns": len(snap.get("exclude_patterns") or [])}
+
+
 def _text(value: Any, limit: int = TEXT_CHARS) -> str:
     text = str(value or "").strip()
     return text if len(text) <= limit else text[:limit] + "…"
@@ -355,6 +369,8 @@ def _call_detail(row_id: int) -> dict:
                    run_id=r["run_id"], backfilled=r["source"] == "backfill",
                    group=_group(conn, _mission_index(), r["run_id"], r["mission_id"], {}))
         out["result"] = _call_result(conn, r)
+        if r["stage"] == "BUILDING" and r["run_id"]:
+            out["snapshot"] = _snapshot_info(r["run_id"])      # what the maker's worktree started with
         # A finished call of a stage that saves a file, and no file of its own: said as that, without a guessed cause.
         out["result_missing"] = (out["result"] is None and bool(r["run_id"]) and r["status"] == "OK"
                                  and r["stage"] in RESULT_FILE and bool(r["ended_at"]))
@@ -409,6 +425,7 @@ def _transition_detail(tr_id: int) -> dict:
                    repairs=conn.execute("SELECT COUNT(*) FROM state_transitions WHERE run_id=? AND from_state='DECIDING' AND to_state='BUILDING' AND id<?",
                                         (run_id, tr_id)).fetchone()[0])
         sources = ["transitions", "ledger"]
+        out["snapshot"] = _snapshot_info(run_id)
         if t["to_state"] == "HUMAN_REQUIRED":
             reason = str(t["details"] or "")             # the same two prefixes Orchestrator.approval_state goes by
             out["stage"] = ("ENTRY" if reason.startswith("APPROVAL_REQUIRED") else "POST_BUILD" if reason.startswith("Scope violation: ")
