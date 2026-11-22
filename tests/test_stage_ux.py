@@ -59,9 +59,9 @@ def test_escape_closes_one_layer_and_panels_do_not_stack():
     order = [esc.index(x) for x in ("closeRoleMenu(true)", "setChatLog(false)", "setAIPanel(false)", "closeResult()", "closeCall()")]
     assert order == sorted(order) and esc.count("else if") == 4
     assert "replay" not in JS.lower() and "attract" not in JS      # the replay of a past task was removed
-    assert "function openCall(id){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();" in JS
-    assert "if(open){if(openId!=null)closeCall();if(result)closeResult();" in JS
-    assert "if(!$('ai-panel').hidden)setAIPanel(false,true);if(openId!=null)closeCall();\n  resultOpener=document.activeElement;" in JS
+    assert "function openRecord(key){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();" in JS
+    assert "if(open){if(openKey!=null)closeCall();if(result)closeResult();" in JS
+    assert "if(!$('ai-panel').hidden)setAIPanel(false,true);if(openKey!=null)closeCall();\n  resultOpener=document.activeElement;" in JS
     assert "closest('textarea,input,select,[contenteditable]')" in JS and "e.isComposing||e.repeat" in JS
 
 

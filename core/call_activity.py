@@ -27,6 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 MAX_EVENTS = 200                      # what one answer carries (the newest ones)
 DETAIL_CHARS = 160
+SAY_CHARS = 1200                      # the model's own words: the record panel shows them, the live strip shortens them
 MAX_FILE_BYTES = 20 * 1024 * 1024     # a transcript bigger than this is not read
 TRACE_KEEP_DAYS = 14
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -204,7 +205,7 @@ def claude_events(session_id: Optional[str], cwd: Optional[str] = None) -> Optio
                 by_tool_id[str(block.get("id"))] = event
                 events.append(event)
             elif record.get("type") == "assistant" and kind == "text" and str(block.get("text") or "").strip():
-                events.append(_event(at, "say", "", _short(block.get("text"))))
+                events.append(_event(at, "say", "", _short(block.get("text"), SAY_CHARS)))
             elif record.get("type") == "assistant" and kind == "thinking":
                 events.append(_event(at, "think"))
             elif record.get("type") == "user" and kind == "tool_result" and block.get("is_error"):
@@ -316,7 +317,7 @@ def codex_events(path: Path, cwd: Optional[str] = None) -> List[Dict[str, Any]]:
             parts = item.get("content") if isinstance(item.get("content"), list) else []
             text = " ".join(str(p.get("text") or "") for p in parts if isinstance(p, dict))
             if text.strip():
-                events.append(_event(at, "say", "", _short(text)))
+                events.append(_event(at, "say", "", _short(text, SAY_CHARS)))
         elif kind == "Reasoning":
             events.append(_event(at, "think"))
         elif kind and kind != "UserMessage":

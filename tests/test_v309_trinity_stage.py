@@ -55,7 +55,7 @@ def test_stage_page_needs_no_inline_code_or_external_host():
 def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     js = (CONSOLE / "stage.js").read_text(encoding="utf-8")
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
-    assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
+    assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/record", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
                       "/result", "/run/inspect"}                       # read-only: what changed, and the ORDER of a run awaiting approval
     assert js.count("method:'POST'") == 9                             # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST'" in js

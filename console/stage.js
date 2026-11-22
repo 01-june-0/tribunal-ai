@@ -56,7 +56,7 @@ function inspectorTests(t){
 const PULSE={ok:[.35,1,.7],bad:[1,.32,.4],warn:[1,.78,.4],done:[1,.93,.75]};
 
 let activity=null,status=null,win=null,winAuto=true,lastModel=null,center=null,timerBase=null;
-const seenSteps=new Map(),seenFeed={event:new Set(),call:new Set()};let firstPaint=true;
+const seenSteps=new Map();let firstPaint=true;
 
 function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;}
 function utc(iso){return iso?new Date(iso+(/Z|[+]\d\d:\d\d$/.test(iso)?'':'Z')).getTime():0;}
@@ -143,8 +143,7 @@ function liveModel(){
       steps:focus.steps.map(s=>({index:s.index,state:s.rejected?'REJECTED':s.state,tests:s.tests,itests:s.inspector_tests,run:s.run_id,note:s.note,review:s.review,repairs:s.repairs})),passed:focus.passed_steps,blocked:focus.blocked_reason,summary:focus.summary,deliverableRun:focus.deliverable_run_id,updated:utc(focus.updated_at),id:focus.mission_id,
       deliverable:focus.deliverable,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
     usage:usage[win]||{by_role:{},by_provider:{},total:{calls:0,seconds:0,tokens:0,exact_tokens:0}},windows:{mission:!!usage.mission,today:!!usage.today,all:!!usage.all},
-    calls:(a.recent_calls||[]).slice(0,6).map(c=>({id:c.id,key:c.at+c.role+c.provider,role:c.role,provider:c.provider,seconds:c.seconds,tokens:c.tokens,exact:c.exact,status:c.status,at:utc(c.at)})),
-    events:(a.events||[]).slice(0,7).map(e=>({key:e.at+e.run_id+e.to_state,state:e.to_state,label:STAGE_LABEL[e.to_state]||e.state_ko||e.to_state,sub:e.project,at:utc(e.at)})),
+    log:a.log||[],logLost:a.log===null,
     stats,project:(status&&status.project_name)||(focus&&focus.project)||'—'};
 }
 
@@ -348,7 +347,7 @@ function diffBody(text){                                   // the file header (u
 }
 function diffLines(text){let a=0,d=0;for(const l of diffBody(text)){if(l[0]==='+')a++;else if(l[0]==='-')d++;}return [a,d];}
 async function openResult(ms){
-  if(!$('ai-panel').hidden)setAIPanel(false,true);if(openId!=null)closeCall();
+  if(!$('ai-panel').hidden)setAIPanel(false,true);if(openKey!=null)closeCall();
   resultOpener=document.activeElement;const mine=result={ms,data:null,file:null,done:null};
   for(const id of ['rp-sum','rp-files','rp-diff','rp-actions'])delete $(id).dataset.sig;
   $('result-panel').hidden=false;paintResult();$('rp-close').focus();
@@ -499,34 +498,13 @@ function paintWork(m){
     countTo(n[2],b?b.tokens:0,v=>(b&&b.exact_tokens<b.tokens?'~':'')+tok(v));
     row.querySelector('.role-bar i').style.width=((b?b.tokens:0)/(total.tokens||1)*100)+'%';}
 }
-function paintFeed(list,items,seen,render){
-  const frag=[];
-  for(const it of items){const li=el('li');render(li,it);if(!seen.has(it.key)){seen.add(it.key);if(!firstPaint)li.classList.add('new');}frag.push(li);}
-  const held=list.contains(document.activeElement)?document.activeElement.dataset.key:null;   // the list is rebuilt every poll
-  list.replaceChildren(...frag);
-  if(held)for(const li of frag)if(li.dataset.key===held){li.focus();break;}
-  if(!items.length)list.append(el('li',T('아직 기록이 없습니다.')));
-}
-function stateColor(m,state){
-  if(STEP_CLASS[state])return {ok:'#5ef2b0',bad:'#ff6b7a',warn:'#ffc46b',off:'#8794ad'}[STEP_CLASS[state]];
-  if(state==='BUILDING')return AI[m.assign.MAKER].css;if(state==='REVIEWING')return AI[m.assign.INSPECTOR].css;
-  if(state==='VERIFYING')return '#b9ffe2';return AI[m.assign.ARCHITECT].css;
-}
-function paintFeeds(m){
-  paintFeed($('event-feed'),m.events,seenFeed.event,(li,e)=>{li.style.setProperty('--dot',e.color||stateColor(m,e.state));li.append(el('b',e.label),el('span',e.sub||''),el('time',e.when||ago(e.at)));});
-  paintFeed($('call-feed'),m.calls,seenFeed.call,(li,c)=>{li.style.setProperty('--dot',c.status&&c.status!=='OK'?'#ff6b7a':(AI[c.provider]||{}).css||'#8fa0bd');
-    li.append(el('b',(AI[c.provider]||{name:c.provider}).name),el('span',(c.role||'?')+' · '+span(c.seconds)+(c.tokens?' · '+(c.exact?'':'~')+tok(c.tokens)+T(' 토큰'):'')+(c.status&&c.status!=='OK'?' · '+c.status:'')),el('time',c.when||ago(c.at)));
-    if(c.id){li.classList.add('openable');li.dataset.key='call-'+c.id;li.tabIndex=0;li.setAttribute('role','button');li.title=T('이 호출 안에서 한 일 보기');
-      li.onclick=()=>openCall(c.id);li.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCall(c.id);}};}});
-}
-
 // ------------------------------------------------------------------ inside one call (/ops/call)
 // The CLIs' own records say which tools ran and what was said; nothing here is estimated. When a record is
 // missing the panel says so instead of showing an empty success.
 const SOURCE_KO={transcript:T('Claude 세션 기록'),rollout:T('Codex 세션 기록'),stream:T('Antigravity 실시간 출력')};
 const CALL_STATUS={RUNNING:T('진행 중'),OK:T('완료'),ERROR:T('실패'),FAILED:T('실패'),TIMEOUT:T('시간 초과'),INTERRUPTED:T('중단됨')};
 const QUIET_SHOW=60,QUIET_WARN=120;   // seconds without a new event before it is mentioned / highlighted (the runner stops a silent CLI on its own)
-let liveCall=null,openId=null,openData=null,callFilter='all',callBusy=false,callOpener=null,callRetry=0;
+let liveCall=null,openKey=null,openData=null,callFilter='all',callBusy=false,callOpener=null,callRetry=0;
 function eventText(e){return e.kind==='tool'?[e.name,e.detail]:e.kind==='say'?[T('말'),e.detail]:e.kind==='think'?[T('생각'),'']:[T('응답 끝'),e.detail];}
 function paintDoing(){
   const b=$('now-doing'),d=liveCall,ev=d&&d.found?d.events.filter(e=>e.kind!=='done'):[];
@@ -537,24 +515,166 @@ function paintDoing(){
   b.children[2].textContent=[d.found?T('도구 {0}회',d.tools)+(d.errors?T(' · 오류 {0}건',d.errors):''):'',quiet>=QUIET_SHOW?T('{0}째 새 활동 없음',span(quiet)):''].filter(Boolean).join(' · ');
   b.classList.toggle('bad',!!(last&&last.error));b.classList.toggle('quiet',quiet>=QUIET_WARN);
 }
-function paintCall(){
-  const d=openData,list=$('cp-events');
-  if(!d){$('cp-title').textContent=T('불러오는 중…');$('cp-meta').textContent='';$('cp-note').textContent='';list.replaceChildren();return;}
-  $('cp-title').textContent=d.known?(d.provider_name||d.provider)+' · '+(ROLE_KO[d.role]||d.role||T('역할 없음')):T('기록에 없는 호출');
-  $('cp-meta').textContent=d.known?[CALL_STATUS[d.status]||d.status,d.seconds!=null?span(d.seconds):'',d.found?T('도구 {0}회',d.tools):'',d.found&&d.errors?T('오류 {0}건',d.errors):'',SOURCE_KO[d.source]||''].filter(Boolean).join(' · '):'';
-  const stick=list.scrollHeight-list.scrollTop-list.clientHeight<40;
-  const shown=(d.events||[]).filter(e=>callFilter==='all'||(callFilter==='tool'?e.kind==='tool':e.error));
-  list.replaceChildren(...shown.map(e=>{const li=el('li','',e.kind+(e.error?' bad':'')),[name,detail]=eventText(e);
-    li.append(el('time',e.at?hms(utc(e.at)):''),el('b',name),el('span',detail||''));
-    if(e.error)li.append(el('em',T('오류')));return li;}));
-  if(stick)list.scrollTop=list.scrollHeight;
-  $('cp-note').textContent=!d.known?T('이 번호의 호출 기록이 없습니다.')
-    :!d.found?(d.status==='RUNNING'?T('CLI가 아직 기록을 남기지 않았습니다. 곧 다시 확인합니다.'):T('이 호출의 내부 기록을 찾지 못했습니다. 이 기능이 생기기 전의 호출이거나, CLI가 기록을 남기지 않았거나, 기록 형식이 바뀐 경우입니다.'))
-    :!shown.length?(callFilter==='error'?T('오류가 난 도구 호출이 없습니다.'):callFilter==='tool'?T('도구를 쓰지 않은 호출입니다.'):T('기록된 활동이 없습니다.'))
-    :d.total>d.events.length?T('최근 {0}건만 표시합니다 (전체 {1}건).',d.events.length,d.total):'';
+// ------------------------------------------------------------------ the record: AI calls, Tribunal's own steps, my decisions (/ops/record)
+// One list by time. Every line opens the same panel; what it shows comes from records that exist, and a value
+// nobody recorded reads "기록 없음" instead of a guess.
+const CALL_DID={PLANNING:T('지시서를 썼습니다'),ENTRY_REVIEW:T('지시서를 검토했습니다'),BUILDING:T('코드를 만들었습니다'),REVIEWING:T('결과물을 감리했습니다'),DECIDING:T('결과를 판단했습니다'),MISSION_PLANNING:T('다음 단계를 계획했습니다'),CHAT:T('대화에 답했습니다')};
+const END_DID={PASS:[T('통과로 마쳤습니다'),T('통과'),'ok'],FAIL:[T('통과하지 못하고 마쳤습니다'),T('실패'),'bad'],TIMEOUT:[T('시간이 초과되어 멈췄습니다'),T('시간 초과'),'bad'],HUMAN_REQUIRED:[T('사용자 확인이 필요해 멈췄습니다'),T('확인 필요'),'warn']};
+const MY_DID={HUMAN_APPROVAL:[T('승인했습니다'),T('승인함'),'ok'],HUMAN_REJECTED:[T('거절했습니다'),T('거절함'),'off'],RESULT_APPLY_COMPLETED:[T('결과물을 원본에 적용했습니다'),T('적용함'),'ok'],RESULT_DISCARDED:[T('결과물을 폐기했습니다'),T('폐기함'),'off']};
+const VERDICT_KO={pass:T('통과'),changes_required:T('수정 요청')},DECISION_KO={PASS:T('통과'),FAIL:T('수정 필요'),HUMAN_REQUIRED:T('사용자 확인 요청')};
+const SRC_KO={ledger:T('Tribunal 호출 기록'),transitions:T('Tribunal 상태 전환 기록'),audit:T('Tribunal 감사 기록'),...SOURCE_KO};
+const GATE_KO={order_paths:T('지시서의 경로'),canonical_containment:T('작업 폴더 안에서만 변경'),baseline:T('시작 전 테스트'),verification:T('검증'),regression:T('기존 테스트 유지'),inspector_verdict:T('감리 판정'),architect_decision:T('ARCHITECT 판단')};
+const TRIBUNAL_CSS='#b9ffe2',ME_CSS='#d9c2ff';
+function clock(ms){const d=new Date(ms),t=hms(ms).slice(0,5);return d.toDateString()===new Date().toDateString()?t:(d.getMonth()+1)+'/'+d.getDate()+' '+t;}
+function stamp(iso){if(!iso)return null;const ms=utc(iso),d=new Date(ms);return (d.getMonth()+1)+'/'+d.getDate()+' '+hms(ms);}
+function span1(sec){return sec==null?null:sec<10?(Math.round(sec*10)/10)+T('초'):span(sec);}
+function took(a,b){return a&&b?span1(Math.max(0,(utc(b)-utc(a))/1000)):null;}
+function num(n){return Number(n).toLocaleString(LANG==='ko'?'ko-KR':'en-US');}
+function passFail(c,passed){return c?T('{0}개 통과 · {1}개 실패',c.passed,c.failed):passed?T('통과'):T('실패');}
+function callOutcome(r){                                   // [words, class] for one AI call
+  if(r.status==='RUNNING')return [T('진행 중'),'run'];
+  if(r.status!=='OK')return [CALL_STATUS[r.status]||r.status,r.status==='INTERRUPTED'?'warn':'bad'];
+  const x=r.result;if(!x)return [T('완료'),'ok'];
+  if(x.type==='build')return [T('파일 {0}개 변경',x.files),'ok'];
+  if(x.type==='review')return [(VERDICT_KO[x.verdict]||x.verdict)+' · '+(x.findings?T('지적 {0}건',x.findings):T('지적 없음')),x.verdict==='pass'?'ok':'warn'];
+  if(x.type==='decision')return x.changed_by_tribunal?[T('완료'),'ok']:[DECISION_KO[x.decision]||x.decision,x.decision==='PASS'?'ok':'warn'];   // changed: the saved decision is not this call's answer
+  return x.needs_approval?[T('사람 승인 필요로 표시'),'warn']:[T('완료'),'ok'];
 }
-function openCall(id){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();callOpener=document.activeElement;openId=id;callRetry=5;openData=liveCall&&liveCall.id===id?liveCall:null;$('call-panel').hidden=false;paintCall();pollCall();$('cp-close').focus();}
-function closeCall(){openId=null;openData=null;$('call-panel').hidden=true;
+function verifyOutcome(r){
+  if(!(r.known||r.found))return [T('기록 없음'),'off'];
+  const ran=r.test?r.test.ran:r.ran;
+  if(ran===false)return [T('실행한 테스트 없음'),'off'];
+  return [r.counts?testLine(r.counts):r.passed?T('통과'):T('실패'),r.passed?'ok':'bad'];
+}
+function logLine(r){                                       // {who,color,what,out:[words,class]}
+  if(r.kind==='ai')return {who:(AI[r.provider]||{name:r.provider}).name,color:(AI[r.provider]||{}).css||'#8fa0bd',what:CALL_DID[r.stage]||ROLE_KO[r.role]||r.role||'',out:callOutcome(r)};
+  if(r.kind==='me'){const d=MY_DID[r.action]||[r.action,r.action,''];return {who:T('나'),color:ME_CSS,what:d[0],out:[d[1],d[2]]};}
+  if(r.event==='verify')return {who:'TRIBUNAL',color:TRIBUNAL_CSS,what:T('테스트를 직접 실행했습니다')+(r.rounds>1?' · '+T('{0}회차',r.round):''),out:verifyOutcome(r)};
+  const d=END_DID[r.state]||[r.state,r.state,''];
+  return {who:'TRIBUNAL',color:TRIBUNAL_CSS,what:r.state==='HUMAN_REQUIRED'&&r.stage==='ENTRY'?T('시작 전에 승인을 요청했습니다'):d[0],out:[d[1],d[2]]};
+}
+function taskName(d){const g=d.group||{};return g.key==='chat'?T('대화'):(g.title||'')+(g.step?' · '+T('{0}단계',g.step):'');}
+let logFilter='all';
+function paintLog(m){
+  const list=$('log-list'),rows=(m.log||[]).map(r=>({r,l:logLine(r)})).filter(x=>logFilter==='all'||(logFilter==='ai'?x.r.kind==='ai':x.r.kind==='me'||x.l.out[1]==='bad'||x.l.out[1]==='warn'));
+  const sig=JSON.stringify([logFilter,openKey,!!m.logLost,new Date().toDateString(),rows.map(x=>[x.r.key,x.l.out[0],x.r.seconds,x.r.tokens,x.r.group.key,x.r.group.step])]);
+  if(list.dataset.sig===sig)return;list.dataset.sig=sig;   // rebuilt only on a real change: the scroll position and the focus survive every poll
+  const held=list.contains(document.activeElement)?document.activeElement.dataset.key:null,frag=[];let group=null;
+  for(const {r,l} of rows){
+    if(r.group.key!==group){group=r.group.key;const h=el('li','','log-group');h.append(el('b',r.group.key==='chat'?T('대화'):r.group.title||T('작업')));
+      const meta=[r.group.project,r.group.step?T('{0}단계',r.group.step):''].filter(Boolean).join(' · ');if(meta)h.append(el('i',meta));h.title=r.group.title||'';frag.push(h);}
+    const li=el('li'),b=el('button','','log-row'),body=el('div'),l1=el('div','','l1'),l2=el('div','','l2');
+    b.type='button';b.dataset.key=r.key;b.style.setProperty('--dot',l.color);b.title=T('자세한 내용 보기');if(openKey===r.key)b.setAttribute('aria-current','true');
+    l1.append(el('b',l.who),el('span',l.what));l2.append(el('span',l.out[0],'res '+l.out[1]));
+    if(r.kind==='ai'&&r.status!=='RUNNING'){if(r.seconds!=null)l2.append(el('span',span1(r.seconds)));if(r.tokens)l2.append(el('span',(r.exact?'':'~')+tok(r.tokens)+T(' 토큰')));}
+    body.append(l1,l2);b.append(el('time',clock(utc(r.at))),body);b.onclick=()=>openRecord(r.key);li.append(b);frag.push(li);}
+  if(!frag.length)frag.push(el('li',m.logLost?T('기록을 읽지 못했습니다. 곧 다시 시도합니다.'):logFilter==='all'?T('아직 기록이 없습니다.'):T('해당하는 기록이 없습니다.'),'log-empty'));
+  list.replaceChildren(...frag);
+  if(held){const again=list.querySelector('[data-key="'+held+'"]');if(again)again.focus();}
+}
+// the panel's fact blocks. Text only ever goes in as text.
+function facts(title,rows,extra){
+  const s=el('section','','cp-sec');s.append(el('span',title,'kicker'));
+  if(rows&&rows.length){const dl=el('dl');for(const [k,v] of rows){const dd=el('dd');if(v==null||v==='')dd.append(el('span',T('기록 없음'),'none'));else if(v instanceof Node)dd.append(v);else dd.textContent=String(v);dl.append(el('dt',k),dd);}s.append(dl);}
+  for(const n of extra||[])if(n)s.append(n);
+  return s;
+}
+function listEl(items){const ul=el('ul','','cp-list');for(const it of items){const li=el('li');if(it instanceof Node)li.append(it);else li.textContent=it;ul.append(li);}return ul;}
+function codeEl(t){return el('code',t);}
+function titled(label,node){const d=el('div','','cp-sub');d.append(el('small',label),node);return d;}
+function callFacts(d){
+  const out=[],both=d.tokens_in!=null&&d.tokens_out!=null,bar=both&&d.tokens>0?el('div','','cp-bar'):null,x=d.result;
+  const est=d.exact?'':'~',only=d.exact&&!both&&d.tokens!=null?T('CLI가 알려 주지 않음'):null;      // a fact about this CLI, not a gap in our record
+  out.push(facts(T('호출'),[[T('상태'),(CALL_STATUS[d.status]||d.status)+(d.exit_code!=null?' · '+T('종료 코드 {0}',d.exit_code):'')],
+    [T('시작 → 끝'),d.started_at?stamp(d.started_at)+' → '+(d.ended_at?hms(utc(d.ended_at)):T('진행 중')):null],[T('걸린 시간'),span1(d.seconds)],
+    [T('모델 · 추론 강도'),d.model==null?null:(d.model||T('CLI 기본 모델'))+' · '+(d.effort||T('CLI 기본 강도'))],
+    [T('작업'),taskName(d)],[T('실행 번호'),d.run_id?codeEl(d.run_id):(d.group||{}).key==='chat'?T('없음 · 작업 밖에서 한 호출'):T('없음 · 단계와 단계 사이에 한 호출')]],
+    [d.model==null?el('small',T('모델과 추론 강도는 이 기능이 생긴 뒤의 호출부터 기록됩니다.'),'cp-hint'):null]));
+  if(bar){const a=el('i'),b=el('i');a.style.width=(d.tokens_in/d.tokens*100)+'%';b.style.width=(d.tokens_out/d.tokens*100)+'%';bar.append(a,b);}
+  out.push(facts(T('토큰'),[[T('입력'),d.tokens_in!=null?est+num(d.tokens_in):only],[T('출력'),d.tokens_out!=null?est+num(d.tokens_out):only],
+    [T('합계'),d.tokens!=null?est+num(d.tokens)+' · '+(d.exact?T('CLI가 보고한 값'):T('글자 수로 추정한 값')):null],
+    [T('보낸 지시 · 받은 답'),d.prompt_chars!=null&&d.output_chars!=null?T('{0}자 · {1}자',num(d.prompt_chars),num(d.output_chars)):null]],
+    [bar,d.exact&&!both&&d.tokens!=null?el('small',T('이 CLI는 입력과 출력을 나누지 않고 합계만 알려 줍니다.'),'cp-hint'):null]));
+  if(x&&x.type==='order')out.push(facts(T('이 호출이 쓴 지시서'),[[T('목표'),x.goal],[T('사람 승인'),x.needs_approval?T('필요'):T('필요 없음')],[T('위험도'),x.risk]],
+    [x.allowed.length?titled(T('바꿀 수 있는 파일:'),listEl(x.allowed.map(codeEl))):null,x.criteria.length?titled(T('완료 기준:'),listEl(x.criteria)):null]));
+  else if(x&&x.type==='build')out.push(facts(T('이 호출이 만든 것'),[[T('상태'),x.status==='COMPLETED'?T('완료'):x.status],[T('MAKER의 요약'),x.summary]],
+    [x.files.length?titled(T('바뀐 파일'),listEl(x.files.map(codeEl))):el('p',T('바뀐 파일이 없습니다.'),'cp-hint'),x.error?el('p',x.error,'cp-quote'):null]));
+  else if(x&&x.type==='review')out.push(facts(T('이 호출의 감리 결과'),[[T('판정'),VERDICT_KO[x.verdict]||x.verdict],[T('지적'),x.findings.length?T('지적 {0}건',x.findings.length):T('지적 없음')]],
+    [x.findings.length?listEl(x.findings.map(f=>f.level.toUpperCase()+' · '+f.text)):null,x.summary?el('p',x.summary,'cp-quote'):null]));
+  else if(x&&x.type==='decision')out.push(facts(x.changed_by_tribunal?T('Tribunal이 바꾼 최종 판단'):T('이 호출의 판단'),[[T('결정'),DECISION_KO[x.decision]||x.decision]],
+    [x.changed_by_tribunal?el('p',T('Tribunal의 마침 검사나 대리 판단이 ARCHITECT의 답을 바꿔 저장했습니다. 이 호출이 실제로 한 답은 아래 "안에서 한 일"에 있습니다.'),'cp-hint'):null,x.rationale?el('p',x.rationale,'cp-quote'):null,x.next_steps.length?titled(T('다음에 할 일'),listEl(x.next_steps)):null]));
+  else if(d.result_missing)out.push(el('p',T('이 호출에 해당하는 결과 파일을 찾지 못했습니다. 이 호출이 한 답은 아래 "안에서 한 일"에 있습니다.'),'cp-hint'));
+  return out;
+}
+function verifyFacts(d){
+  const round=[T('회차'),T('{0}회차 · 전체 {1}회',d.round,d.rounds)];
+  if(!d.found)return [facts(T('검증'),[round,[T('시작'),stamp(d.at)]],[el('p',T('이 회차의 검증 기록은 남아 있지 않습니다.'),'cp-hint')])];
+  const t=d.test||{},b=d.baseline;
+  const out=[facts(T('검증'),[round,[T('명령'),t.command?codeEl(t.command):T('설정된 테스트 명령이 없습니다')],[T('결과'),t.ran?passFail(d.counts,t.passed):T('실행한 테스트 없음')],
+    [T('종료 코드'),t.exit_code!=null?String(t.exit_code):null],[T('시작 전 기준'),b?passFail(b.counts,b.passed):null],[T('시작 → 끝'),stamp(d.at)+' → '+(d.ended_at?hms(utc(d.ended_at)):'—')],[T('걸린 시간'),took(d.at,d.ended_at)],
+    [T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]])];
+  if(t.output_tail)out.push(facts(T('출력 끝부분'),null,[el('pre',t.output_tail)]));
+  out.push(facts(T('이때 바뀌어 있던 파일'),null,[d.changed.length?listEl(d.changed.map(codeEl)):el('p',T('바뀐 파일이 없습니다.'),'cp-hint')]));
+  if(d.missing_outputs.length)out.push(facts(T('만들어지지 않은 필수 결과물'),null,[listEl(d.missing_outputs.map(codeEl))]));
+  return out;
+}
+function endFacts(d){
+  const e=END_DID[d.state]||[d.state,d.state,''],t=d.totals||{},stop=d.state==='HUMAN_REQUIRED';
+  const rows=[[T('결과'),e[1]],[T('시작 → 끝'),stamp(d.started_at)+' → '+hms(utc(d.at))],[T('걸린 시간'),took(d.started_at,d.at)],
+    [T('AI 호출'),t.calls?T('{0}회',t.calls)+(t.tokens?' · '+(t.exact?'':'~')+tok(t.tokens)+T(' 토큰'):''):T('없음')],[T('자동 수정'),T('{0}회',d.repairs||0)],[T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]];
+  if(stop)rows.splice(1,0,[T('멈춘 때'),d.stage==='ENTRY'?T('시작 전 · 제작 전'):d.stage==='POST_BUILD'?T('제작 후'):null],[T('내 결정'),d.answer?(MY_DID[d.answer.action]||['',d.answer.action])[1]+' · '+stamp(d.answer.at):T('아직 없음')]);
+  const early=stop&&d.stage==='ENTRY';                     // stopped before anything ran: there is no span, call or repair to report
+  const out=[facts(T('요약'),early?[rows[0],rows[1],rows[2],[T('멈춘 시각'),stamp(d.at)],rows[7],rows[8]]:rows)];
+  if(d.details)out.push(facts(stop?T('멈춘 이유 원문'):T('마지막 판단 원문'),null,[el('p',d.details,'cp-quote')]));
+  if(d.gates)out.push(facts(T('마칠 때의 검사'),Object.entries(d.gates).map(([k,v])=>[GATE_KO[k]||k,String(v).toUpperCase()==='PASS'?T('통과'):String(v)]),[d.gate_reasons&&d.gate_reasons.length?listEl(d.gate_reasons):null]));
+  if(d.changed)out.push(facts(T('바뀐 파일'),null,[d.changed.length?listEl(d.changed.map(f=>{const s=el('span');s.append(codeEl(f.path),' ',el('small',{A:T('새 파일'),D:T('삭제'),M:T('수정')}[f.status]||f.status));return s;})):el('p',T('바뀐 파일이 없습니다.'),'cp-hint')]));
+  if(!d.is_last)out.push(el('p',T('이 실행은 이 뒤에 다시 이어졌습니다.'),'cp-hint'));
+  const ms=lastModel&&lastModel.mission;
+  if(ms&&ms.deliverableRun&&ms.deliverableRun===d.run_id){const row=el('div','','delivery-actions'),b=el('button',T('변경 내용 보기'));b.type='button';b.onclick=()=>openResult(ms);row.append(b);out.push(row);}
+  return out;
+}
+function myFacts(d){
+  const m=MY_DID[d.action]||[d.action,d.action,''],rows=[[T('결정'),m[1]],[T('결정한 때'),stamp(d.at)],[T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]];
+  if(d.stage)rows.push([T('멈춘 때'),d.stage==='ENTRY'?T('시작 전 · 제작 전'):T('제작 후')]);
+  if(d.action==='HUMAN_REJECTED')rows.push([T('그 뒤'),d.maker_ran?T('이 실행은 더 진행되지 않았습니다.'):T('MAKER는 실행되지 않았고 바뀐 파일이 없습니다.')]);
+  if(d.action==='HUMAN_APPROVAL')rows.push([T('그 뒤'),d.resumed?T('안전 검사를 거쳐 작업이 이어졌습니다.'):T('이어진 기록이 아직 없습니다.')]);
+  if(d.verified)rows.push([T('적용 전 테스트'),passFail(d.verified,true)]);
+  const out=[facts(T('내 결정'),rows)];
+  if(d.reason)out.push(facts(T('승인을 요청받은 이유 원문'),null,[el('p',d.reason,'cp-quote')]));
+  if(d.scope.length)out.push(facts(T('승인한 범위'),null,[listEl(d.scope.map(codeEl))]));
+  if(d.files.length)out.push(facts(T('원본에 적용한 파일'),null,[listEl(d.files.map(codeEl))]));
+  return out;
+}
+function paintRecord(){
+  const d=openData,list=$('cp-events'),box=$('cp-facts'),body=$('cp-body'),ai=d?d.kind==='ai':String(openKey).startsWith('call-');
+  $('cp-ev').hidden=!ai||!d||!d.known;
+  if(!d){$('cp-kicker').textContent=T('기록');$('cp-title').textContent=T('불러오는 중…');$('cp-meta').textContent='';$('cp-note').textContent='';$('cp-src').textContent='';box.replaceChildren();delete box.dataset.sig;list.replaceChildren();delete list.dataset.sig;return;}
+  if(!d.known){$('cp-kicker').textContent=T('기록');$('cp-title').textContent=T('기록에 없는 줄');$('cp-meta').textContent='';$('cp-note').textContent=T('이 번호의 기록이 없습니다.');$('cp-src').textContent='';box.replaceChildren();delete box.dataset.sig;list.replaceChildren();delete list.dataset.sig;return;}
+  const l=logLine(d.kind==='ai'?{...d,result:null}:d.event==='verify'?{...d,known:d.found}:d);
+  $('cp-kicker').textContent=d.kind==='ai'?T('AI 호출')+(STAGE_LABEL[d.stage]?' · '+STAGE_LABEL[d.stage]:''):d.kind==='me'?T('내 결정'):T('TRIBUNAL이 직접 한 일');
+  $('cp-title').textContent=d.kind==='ai'?(d.provider_name||d.provider)+' · '+(ROLE_KO[d.role]||d.role||T('역할 없음')):l.who+' · '+l.what;
+  $('cp-title').style.setProperty('--c',l.color);
+  $('cp-meta').textContent=d.kind==='ai'?[CALL_STATUS[d.status]||d.status,d.seconds!=null?span1(d.seconds):'',d.found?T('도구 {0}회',d.tools):'',d.found&&d.errors?T('오류 {0}건',d.errors):''].filter(Boolean).join(' · '):l.out[0]+' · '+stamp(d.at);
+  const stick=body.scrollHeight-body.scrollTop-body.clientHeight<40&&d.status==='RUNNING';
+  const {events,quiet_sec,total,tools,errors,...rest}=d,sig=JSON.stringify(rest);
+  if(box.dataset.sig!==sig){box.dataset.sig=sig;box.replaceChildren(...(d.kind==='ai'?callFacts(d):d.kind==='me'?myFacts(d):d.event==='verify'?verifyFacts(d):endFacts(d)));}
+  let note='';
+  if(ai){
+    const shown=(d.events||[]).filter(e=>callFilter==='all'||(callFilter==='tool'?e.kind==='tool':e.error));
+    const evSig=JSON.stringify([callFilter,shown.length,shown.length?shown[shown.length-1]:0]);
+    if(list.dataset.sig!==evSig){list.dataset.sig=evSig;list.replaceChildren(...shown.map(e=>{const li=el('li','',e.kind+(e.error?' bad':'')),[name,detail]=eventText(e);
+      li.append(el('time',e.at?hms(utc(e.at)):''),el('b',name),el('span',detail||''));
+      if(e.error)li.append(el('em',T('오류')));return li;}));}
+    note=!d.found?(d.status==='RUNNING'?T('CLI가 아직 기록을 남기지 않았습니다. 곧 다시 확인합니다.'):T('이 호출의 내부 기록을 찾지 못했습니다. 이 기능이 생기기 전의 호출이거나, CLI가 기록을 남기지 않았거나, 기록 형식이 바뀐 경우입니다.'))
+      :!shown.length?(callFilter==='error'?T('오류가 난 도구 호출이 없습니다.'):callFilter==='tool'?T('도구를 쓰지 않은 호출입니다.'):T('기록된 활동이 없습니다.'))
+      :d.total>d.events.length?T('최근 {0}건만 표시합니다 (전체 {1}건).',d.events.length,d.total):'';
+  }
+  $('cp-note').textContent=note;
+  $('cp-src').textContent=T('출처: ')+(d.sources||[]).map(x=>SRC_KO[x]||x).join(' · ')+T(' · 기록에 없는 값은 추정하지 않고 "기록 없음"으로 표시합니다.');
+  if(stick)body.scrollTop=body.scrollHeight;
+}
+function openRecord(key){if(!$('ai-panel').hidden)setAIPanel(false,true);if(result)closeResult();callOpener=document.activeElement;openKey=key;callRetry=5;openData=null;$('call-panel').hidden=false;$('cp-body').scrollTop=0;paintRecord();if(lastModel)paintLog(lastModel);pollCall();$('cp-close').focus();}
+function closeCall(){openKey=null;openData=null;$('call-panel').hidden=true;if(lastModel)paintLog(lastModel);
   const back=callOpener&&callOpener.dataset.key?document.querySelector('[data-key="'+callOpener.dataset.key+'"]'):callOpener;callOpener=null;if(back&&back.isConnected)back.focus();}
 async function pollCall(){
   if(callBusy)return;callBusy=true;                      // one round at a time: a slow answer never overwrites a newer one
@@ -563,9 +683,9 @@ async function pollCall(){
     if(w&&w.id){try{const d=await getJSON('/ops/call?id='+w.id);liveCall=d;}catch(e){/* keep the last one */}}else liveCall=null;
     paintDoing();
     // A finished call is read once more while its record is still missing: the CLI may flush it a moment late.
-    const again=openData&&(openData.status==='RUNNING'||(!openData.found&&callRetry>0));
-    if(openId!=null&&(!openData||again)){const id=openId;if(openData&&openData.status!=='RUNNING')callRetry--;
-      try{const d=liveCall&&liveCall.id===id?liveCall:await getJSON('/ops/call?id='+id);if(openId===id){openData=d;paintCall();}}catch(e){/* next tick */}}
+    // An open line is read again on every round: a result file may land a moment later, a stop may get its answer.
+    if(openKey!=null){const key=openKey;
+      try{const d=await getJSON('/ops/record?key='+encodeURIComponent(key));if(openKey===key){openData=d;paintRecord();}}catch(e){/* next tick */}}
   }finally{callBusy=false;}
 }
 function paintScene(m){
@@ -591,7 +711,7 @@ function stinger(m){
   const s=$('stinger');s.replaceChildren(el('small',m.w?(AI[m.w.provider]||{name:''}).name+' · '+(m.w.role||''):'TRIBUNAL'),el('strong',PHASE[m.phase].word));
   s.style.setProperty('--c',actorColor(m));s.classList.remove('show');void s.offsetWidth;s.classList.add('show');
 }
-function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintFeeds(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');if(result)paintResult();}
+function paint(m){lastModel=m;stinger(m);paintNow(m);paintMission(m);paintWork(m);paintLog(m);paintScene(m);firstPaint=false;document.body.classList.add('ready');if(result)paintResult();}
 const params=new URLSearchParams(location.search);
 function repaint(){paint(liveModel());}
 
@@ -828,7 +948,7 @@ function grow(){const t=$('chat-text');t.style.height='48px';const h=t.scrollHei
 
 // ------------------------------------------------------------------ views
 function setAIPanel(open,quiet){const p=$('ai-panel');p.hidden=!open;$('btn-ai').setAttribute('aria-expanded',String(open));
-  if(open){if(openId!=null)closeCall();if(result)closeResult();paintAI(true);pollAI();$('ai-close').focus();}else if(!quiet)$('btn-ai').focus();
+  if(open){if(openKey!=null)closeCall();if(result)closeResult();paintAI(true);pollAI();$('ai-close').focus();}else if(!quiet)$('btn-ai').focus();
   paintLimitAlert();}
 function setChatLog(open){const log=$('chat-log');log.hidden=!open;$('chat-peek').setAttribute('aria-expanded',String(open));if(open)log.scrollTop=log.scrollHeight;}
 function setView(view){
@@ -837,7 +957,7 @@ function setView(view){
   $('tab-stage').setAttribute('aria-pressed',String(!work));$('tab-workshop').setAttribute('aria-pressed',String(work));
   if(work&&!frame.getAttribute('src'))frame.src='/classic';
   if(work)Trinity.pause();else Trinity.resume();   // the workshop covers the whole scene
-  if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openId!=null)closeCall();if(result)closeResult();if(!$('ai-panel').hidden)setAIPanel(false,true);}
+  if(work){$('attention').hidden=true;setBroadcast(false);closeRoleMenu();setChatLog(false);if(openKey!=null)closeCall();if(result)closeResult();if(!$('ai-panel').hidden)setAIPanel(false,true);}
 }
 function setBroadcast(on){
   document.body.classList.toggle('broadcast',on);$('btn-broadcast').textContent=on?T('전체 화면 끝내기'):T('전체 화면');$('btn-broadcast').setAttribute('aria-pressed',String(on));if(on)closeRoleMenu();
@@ -858,7 +978,7 @@ function start(){
   $('btn-broadcast').onclick=()=>setBroadcast(!document.body.classList.contains('broadcast'));
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&document.body.classList.contains('broadcast'))setBroadcast(false);});
   for(const b of $('win-tabs').children)b.onclick=()=>{win=b.dataset.win;winAuto=false;repaint();};
-  $('now-doing').onclick=()=>{if(liveCall)openCall(liveCall.id);};$('cp-close').onclick=closeCall;
+  $('now-doing').onclick=()=>{if(liveCall)openRecord('call-'+liveCall.id);};$('cp-close').onclick=closeCall;
   $('btn-ai').onclick=()=>setAIPanel($('ai-panel').hidden);$('ai-close').onclick=()=>setAIPanel(false);
   $('limit-alert').onclick=()=>{if($('ai-panel').hidden)$('btn-ai').click();};
   $('ai-interval').onchange=()=>saveAI(s=>{s.usage_poll_minutes=Number($('ai-interval').value);});
@@ -873,7 +993,8 @@ function start(){
     try{const res=await fetch('/ops/ai/refresh',{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken},body:'{}'});if(!res.ok)throw Error(String(res.status));
       await pollAI(true);setTimeout(()=>pollAI(true),6000);notice(T('세 CLI에 다시 묻는 중입니다. 잠시 뒤 값이 바뀝니다.'));}
     catch(e){notice(T('조회 요청 실패 · ')+e.message);}finally{b.disabled=false;}};
-  for(const b of $('cp-filters').children)b.onclick=()=>{callFilter=b.dataset.f;for(const o of $('cp-filters').children){o.classList.toggle('on',o===b);o.setAttribute('aria-pressed',String(o===b));}paintCall();};
+  for(const b of $('cp-filters').children)b.onclick=()=>{callFilter=b.dataset.f;for(const o of $('cp-filters').children){o.classList.toggle('on',o===b);o.setAttribute('aria-pressed',String(o===b));}paintRecord();};
+  for(const b of $('log-filter').children)b.onclick=()=>{logFilter=b.dataset.f;for(const o of $('log-filter').children){o.classList.toggle('on',o===b);o.setAttribute('aria-pressed',String(o===b));}if(lastModel)paintLog(lastModel);};
   $('chat-peek').onclick=()=>setChatLog($('chat-log').hidden);
   $('chat-form').addEventListener('submit',e=>{e.preventDefault();send($('chat-text').value);});
   $('chat-text').addEventListener('input',grow);
@@ -881,7 +1002,7 @@ function start(){
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){   // one layer per press, the topmost first
       if(!$('role-menu').hidden)closeRoleMenu(true);else if(!$('chat-log').hidden){setChatLog(false);if(e.target.id!=='chat-text')$('chat-peek').focus();}
-      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openId!=null)closeCall();return;}
+      else if(!$('ai-panel').hidden)setAIPanel(false);else if(result)closeResult();else if(openKey!=null)closeCall();return;}
     if(e.target.closest('textarea,input,select,[contenteditable]')||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.repeat||document.body.dataset.view!=='stage')return;
     if(e.key==='b'||e.key==='B'||e.key==='ㅠ')setBroadcast(!document.body.classList.contains('broadcast'));
 });

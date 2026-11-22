@@ -790,6 +790,16 @@ STAGE_KO = {"PLANNING": "설계", "ORDER_READY": "제작 준비", "BUILDING": "�
             "ENTRY_REVIEW": "오더 검토", "CHAT": "대화"}
 
 
+def _work_log() -> Optional[list]:
+    """AI calls, Tribunal's own steps and the user's decisions as one list (core/work_log.py). Never breaks the poll;
+    None means the record could not be read, which the page says instead of showing an empty list."""
+    try:
+        from core import work_log
+        return work_log.rows(40)
+    except Exception:
+        return None
+
+
 def build_activity_payload(limit_missions: int = 5) -> dict:
     """What the three AIs are doing and have done: missions step by step, who is working right now, per-role work
     (calls, CLI time, tokens) and the latest pipeline events. Read-only; shared by 8080 and the 8081 console."""
@@ -820,6 +830,7 @@ def build_activity_payload(limit_missions: int = 5) -> dict:
     return {"server_time": datetime.utcnow().isoformat(), "missions": views,
             "focus_mission_id": focus["mission_id"] if focus else None, "working_now": running,
             "usage": usage.summary(focus["mission_id"] if focus else None), "recent_calls": usage.recent_calls(15),
+            "log": _work_log(),
             "events": events, "names": {"provider": usage.PROVIDER_NAME, "role": usage.ROLE_NAME}}
 
 
@@ -3141,9 +3152,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(parsed.query)
             try:
                 from core import call_activity
-                self._send_json(call_activity.activity(int(q.get('id', ['0'])[0][:12])))
+                live = call_activity.activity(int(q.get('id', ['0'])[0][:12]))
+                for ev in live.get("events") or []:          # the live strip shows one line; the full words are in /ops/record
+                    if len(ev.get("detail") or "") > call_activity.DETAIL_CHARS:
+                        ev["detail"] = ev["detail"][:call_activity.DETAIL_CHARS - 1] + "…"
+                self._send_json(live)
             except ValueError:
                 self._send_json({"error": "id must be a number"}, 400)
+            except Exception as e:
+                self._send_json({"error": str(e)[:300]}, 500)
+        elif parsed.path == '/ops/record':
+            # One line of the record in full: same care as /ops/call (commands, paths, the model's words).
+            if not is_request_origin_allowed(self.headers, self.server.server_address[1])[0]:
+                return self._send_json({"error": "local requests only"}, 403)
+            q = urllib.parse.parse_qs(parsed.query)
+            try:
+                from core import work_log
+                self._send_json(work_log.detail(q.get('key', [''])[0][:20]))
+            except ValueError:
+                self._send_json({"error": "unknown record key"}, 400)
             except Exception as e:
                 self._send_json({"error": str(e)[:300]}, 500)
         elif parsed.path == '/ops/digest':

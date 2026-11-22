@@ -55,7 +55,8 @@ def test_claude_events_tools_text_and_tool_errors(tmp_path, monkeypatch):
     assert [(e["kind"], e["name"], e["error"]) for e in events] == [
         ("think", "", False), ("tool", "Read", False), ("tool", "Grep", True), ("say", "", False)]
     assert events[1]["detail"] == "src/a.py" and events[2]["detail"] == "def in ."
-    assert len(events[3]["detail"]) == ca.DETAIL_CHARS
+    assert len(events[3]["detail"]) == 500 and ca.SAY_CHARS > ca.DETAIL_CHARS      # the model's words are kept longer than a tool line
+    assert len(ca._short("y" * 5000, ca.SAY_CHARS)) == ca.SAY_CHARS
     assert "SECRET" not in json.dumps(events) and "FILE BODY" not in json.dumps(events)
 
 

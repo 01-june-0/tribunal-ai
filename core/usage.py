@@ -86,7 +86,7 @@ def _conn() -> sqlite3.Connection:
         tokens_in INTEGER, tokens_out INTEGER, tokens_total INTEGER, tokens_exact INTEGER DEFAULT 0,
         exit_code INTEGER, source TEXT DEFAULT 'live')""")
     have = {r[1] for r in conn.execute("PRAGMA table_info(ai_usage)")}
-    for column in ("cwd", "trace_id"):               # added for core.call_activity; older databases gain them here
+    for column in ("cwd", "trace_id", "model", "effort"):   # model/effort: "" = the CLI's own default, NULL = not recorded               # added for core.call_activity; older databases gain them here
         if column not in have:
             try:
                 conn.execute(f"ALTER TABLE ai_usage ADD COLUMN {column} TEXT")
@@ -104,12 +104,14 @@ def call_started(argv: List[str], prompt: Optional[str], cwd: Optional[str] = No
     if not provider or not (prompt or "").strip():
         return None
     ctx = context()
+    from core.work_log import model_of
+    model, effort = model_of(argv)                   # what the command line asked for, for the console's record
     with _conn() as conn:
         cur = conn.execute(
             "INSERT INTO ai_usage (started_at, status, provider, role, stage, run_id, mission_id, pid, prompt_chars, "
-            "cwd, trace_id) VALUES (?, 'RUNNING', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "cwd, trace_id, model, effort) VALUES (?, 'RUNNING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (datetime.utcnow().isoformat(), provider, ctx.get("role"), ctx.get("stage"), ctx.get("run_id"),
-             ctx.get("mission_id"), os.getpid(), len(prompt or ""), str(cwd) if cwd else None, trace_id))
+             ctx.get("mission_id"), os.getpid(), len(prompt or ""), str(cwd) if cwd else None, trace_id, model, effort))
         return cur.lastrowid
 
 

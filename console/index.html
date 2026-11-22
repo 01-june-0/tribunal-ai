@@ -47,10 +47,6 @@
       <small id="mission-meta"></small>
     </section>
 
-    <section class="feed">
-      <span class="kicker">진행 기록</span>
-      <ol id="event-feed"></ol>
-    </section>
   </aside>
 
   <section id="stage-center" aria-label="세 AI 작업 무대">
@@ -83,11 +79,13 @@
     <small id="total-sub" class="total-sub">호출 0회 · CLI 0초</small>
     <div id="share-bar" class="share" aria-hidden="true"><i data-p="ANTHROPIC"></i><i data-p="GOOGLE"></i><i data-p="OPENAI"></i></div>
     <div id="role-rows"></div>
-    <section class="feed">
-      <span class="kicker">최근 AI 호출</span>
-      <ol id="call-feed"></ol>
+    <section id="log" aria-label="기록">
+      <div class="card-head"><span class="kicker">기록</span>
+        <div class="seg" id="log-filter" role="group" aria-label="기록 보기"><button type="button" data-f="all" class="on" aria-pressed="true">전체</button><button type="button" data-f="ai" aria-pressed="false">AI 호출</button><button type="button" data-f="warn" aria-pressed="false">확인·오류</button></div>
+      </div>
+      <ol id="log-list"></ol>
     </section>
-    <small class="footnote">~ 는 글자 수로 추정한 값, 없으면 CLI가 보고한 실제 토큰입니다. 호출을 누르면 그 안에서 한 일이 보입니다.</small>
+    <small class="footnote">~ 는 글자 수로 추정한 값, 없으면 CLI가 보고한 실제 토큰입니다. 줄을 누르면 자세한 내용이 보입니다.</small>
   </aside>
 </main>
 
@@ -104,10 +102,18 @@
 <div id="attention" hidden><span id="attention-text"></span><button type="button" id="attention-go">자세히 탭에서 확인</button></div>
 <div id="workshop" hidden><iframe id="workspace" title="Tribunal AI 자세히 보기"></iframe></div>
 <section id="call-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="cp-title" hidden>
-  <header><div><span class="kicker">호출 안 들여다보기</span><h3 id="cp-title">—</h3><p id="cp-meta"></p></div><button type="button" id="cp-close" aria-label="닫기">닫기</button></header>
-  <div id="cp-filters" role="group" aria-label="보기"><button type="button" data-f="all" class="on">전체</button><button type="button" data-f="tool">도구만</button><button type="button" data-f="error">오류만</button></div>
-  <ol id="cp-events"></ol>
-  <p id="cp-note"></p>
+  <header><div><span class="kicker" id="cp-kicker">기록</span><h3 id="cp-title">—</h3><p id="cp-meta"></p></div><button type="button" id="cp-close" aria-label="닫기">닫기</button></header>
+  <div id="cp-body" tabindex="0" aria-label="기록 상세">
+    <div id="cp-facts"></div>
+    <section id="cp-ev" class="cp-sec" hidden>
+      <div class="card-head"><span class="kicker">안에서 한 일</span>
+        <div id="cp-filters" role="group" aria-label="보기"><button type="button" data-f="all" class="on">전체</button><button type="button" data-f="tool">도구만</button><button type="button" data-f="error">오류만</button></div>
+      </div>
+      <ol id="cp-events"></ol>
+    </section>
+    <p id="cp-note"></p>
+    <p id="cp-src"></p>
+  </div>
 </section>
 <section id="result-panel" class="glass" role="dialog" aria-modal="false" aria-labelledby="rp-title" hidden>
   <header><div><span class="kicker">변경 내용</span><h3 id="rp-title">—</h3><p id="rp-meta"></p></div><button type="button" id="rp-close" aria-label="닫기">닫기</button></header>
