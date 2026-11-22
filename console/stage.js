@@ -802,8 +802,8 @@ const pollChat=guarded(async()=>{
   try{const data=await getJSON('/chat/messages?after_id='+lastMsg),log=$('chat-log'),stick=log.scrollTop+log.clientHeight>=log.scrollHeight-40;
     chatFails=0;
     for(const msg of data.messages||[]){if(msg.id<=lastMsg)continue;lastMsg=msg.id;const role=['USER','ARCHITECT','SYSTEM'].includes(msg.role)?msg.role:'SYSTEM';
-      const node=el('div','','chat-msg '+role);if(role!=='SYSTEM')node.append(el('small',role==='USER'?T('나'):'ARCHITECT'));const body=String(msg.content||'');node.append(role==='SYSTEM'&&body.length>260?body.slice(0,260)+'…':body);log.append(node);
-      $('peek-role').textContent=role==='USER'?T('나'):role;$('peek-role').dataset.role=role;$('peek-text').textContent=String(msg.content||'').replace(/\s+/g,' ').slice(0,200);}
+      const node=el('div','','chat-msg '+role);if(role!=='SYSTEM')node.append(el('small',role==='USER'?T('나'):'ARCHITECT'));const raw=String(msg.content||''),said=role==='SYSTEM'&&KO&&msg.content_ko,body=said||raw;if(said)node.title=raw.slice(0,400);node.append(role==='SYSTEM'&&body.length>260?body.slice(0,260)+'…':body);log.append(node);
+      $('peek-role').textContent=role==='USER'?T('나'):role;$('peek-role').dataset.role=role;$('peek-text').textContent=body.replace(/\s+/g,' ').slice(0,200);}
     while(log.children.length>80)log.firstChild.remove();
     if(stick)log.scrollTop=log.scrollHeight;
     if(!lastMsg)$('peek-text').textContent=T('아직 대화가 없습니다. 오른쪽에 지시를 입력해 보세요.');

@@ -356,7 +356,7 @@ _EVENT_RULES: List[Tuple[str, str, str]] = [   # (regex on raw SYSTEM text, Kore
     (r"Starting background run", "● 작업을 시작했습니다.", "ev-info"),
     (r"HUMAN_APPROVED\(ENTRY\)|HUMAN_APPROVED:", "✓ 사용자가 작업 범위를 승인했습니다.", "ev-ok"),
     (r"HUMAN_APPROVED\(POST_BUILD\)", "✓ 사용자가 변경을 승인했습니다. 검증을 계속합니다.", "ev-ok"),
-    (r"HUMAN_REJECTED", "✗ 사용자가 거절했습니다. 작업을 실행하지 않습니다.", "ev-bad"),
+    (r"HUMAN_REJECTED", "○ 사용자가 거절했습니다. 이 작업은 실행되지 않습니다.", "ev-info"),   # the user's own decision: not an alarm
     (r"RECOVERY TRIAL", "● 복구 중인 AI를 실제 호출 1회로 검증합니다.", "ev-info"),
     (r"SYSTEM STOP", "✗ 사용 가능한 AI가 부족해 실행할 수 없습니다.", "ev-bad"),
     (r"PROJECT_SELECTED", "✓ 프로젝트를 선택했습니다.", "ev-ok"),
@@ -377,6 +377,18 @@ def event_ko(raw: str) -> Tuple[str, str]:
         if re.search(pat, str(raw or "")):
             return text, kind
     return "· 시스템 알림", "ev-info"
+
+
+_ERROR_TEXT = "✗ 오류가 발생했습니다."
+
+
+def event_line(raw: str) -> str:
+    """The Korean sentence for a raw SYSTEM message, or "" when the raw text says more than the sentence would
+    (a message already in Korean, an unknown one, or an error whose detail is the point)."""
+    if re.search("[가-힣]", str(raw or "")):       # already written for the user (a step's plan, a result with its reason)
+        return ""
+    text, _kind = event_ko(raw)
+    return "" if text in ("· 시스템 알림", _ERROR_TEXT) else text
 
 
 def i18n_bundle() -> Dict[str, object]:

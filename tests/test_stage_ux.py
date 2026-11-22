@@ -196,6 +196,17 @@ def test_the_server_marks_a_step_the_user_rejected():
     assert d.mission_view(mission, SM([]))["steps"][0]["rejected"] is False
 
 
+def test_record_lines_in_the_chat_are_put_in_words():
+    import dashboard_i18n as i
+    assert i.event_line("HUMAN_REJECTED: run RUN-1 will not execute") == "○ 사용자가 거절했습니다. 이 작업은 실행되지 않습니다."
+    assert i.event_ko("HUMAN_REJECTED: run RUN-1 will not execute")[1] == "ev-info"        # a decision, not an alarm
+    assert i.event_line("HUMAN_APPROVED(ENTRY): resuming run RUN-1 (x)").startswith("✓ ")
+    assert i.event_line("[작업 1/3] ARCHITECT 계획: 계산기 고치기") == ""                  # already says more in Korean
+    assert i.event_line("ARCHITECT Error: timed out after 180s") == ""                     # the detail is the point
+    assert i.event_line("something nobody mapped") == ""
+    assert "said=role==='SYSTEM'&&KO&&msg.content_ko" in JS and "if(said)node.title=raw.slice(0,400);" in JS   # the record stays in the tooltip
+
+
 def test_a_diff_keeps_lines_that_only_look_like_a_header(tmp_path):
     src = JS[JS.index("function diffBody(text){"):JS.index("async function openResult(ms){")]
     text = "diff --git a/q.sql b/q.sql\nindex 1..2 100644\n--- a/q.sql\n+++ b/q.sql\n@@ -1,2 +1,2 @@\n keep\n--- old comment\n+++ new comment"

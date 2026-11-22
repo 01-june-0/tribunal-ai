@@ -1579,7 +1579,13 @@ def chat_messages_after(after_id: int, session_id: Optional[str] = None) -> list
         rows = conn.execute(
             "SELECT id, role, content, run_id, created_at FROM chat_messages WHERE session_id = ? AND id > ? ORDER BY id ASC",
             (session_id, int(after_id))).fetchall()
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    for m in out:                                   # the stage shows this sentence instead of the raw record line
+        if m.get("role") == "SYSTEM":
+            ko = I18N.event_line(m.get("content"))
+            if ko:
+                m["content_ko"] = ko
+    return out
 
 
 DASHBOARD_JS = r"""
