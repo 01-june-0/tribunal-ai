@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>스테이지 승인·변경 내용 시안</title>
+<style>
+:root{--claude:#ff8a5c;--codex:#3df2c0;--agy:#6aa5ff;--ok:#5ef2b0;--bad:#ff6b7a;--warn:#ffc46b;--text:#eef3ff;--muted:#9aabc7;--faint:#7586a4;
+  --glass:rgba(9,13,24,.5);--line:rgba(255,255,255,.1);--line2:rgba(255,255,255,.17);
+  --num:'Bahnschrift','Segoe UI Variable Display','Segoe UI',sans-serif;--body:'Pretendard','Apple SD Gothic Neo','Segoe UI','Malgun Gothic',sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#04060c;color:var(--text);font:14px/1.6 var(--body);word-break:keep-all;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.kicker{font:600 12px/1 var(--num);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+
+/* ---- mock chrome: which state is shown ---- */
+.mockbar{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px;background:#0b1120;border-bottom:1px solid var(--line2)}
+.mockbar b{font-size:13px;margin-right:6px}
+.mockbar button{height:32px;padding:0 13px;border-radius:99px;border:1px solid var(--line2);background:transparent;color:var(--muted);font-size:13px}
+.mockbar button[aria-pressed=true]{background:var(--text);color:#06101c;border-color:var(--text);font-weight:700}
+.mockbar small{color:var(--faint);font-size:12px;margin-left:auto}
+
+/* ---- stage ---- */
+.stage{position:relative;min-height:720px;padding:14px 16px 16px;overflow:hidden;
+  background:radial-gradient(60% 55% at 52% 46%,rgba(106,165,255,.20),transparent 70%),radial-gradient(34% 40% at 38% 60%,rgba(255,138,92,.14),transparent 70%),radial-gradient(30% 36% at 66% 62%,rgba(61,242,192,.12),transparent 70%),#04060c}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.brand{font:700 14px var(--num);letter-spacing:.18em}
+.chip{padding:4px 11px;border:1px solid var(--line2);border-radius:99px;font-size:12px;color:var(--muted)}
+.tabs{display:flex;gap:4px;margin-left:8px}.tabs span{padding:5px 12px;border-radius:9px;font-size:13px;color:var(--muted)}.tabs span.on{background:rgba(255,255,255,.1);color:var(--text)}
+.topbar .sp{flex:1}
+.grid{display:grid;grid-template-columns:330px 1fr 290px;gap:14px;align-items:start}
+.glass{background:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.015) 60%),var(--glass);border:1px solid rgba(255,255,255,.12);border-radius:20px;backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4)}
+aside{padding:16px;display:flex;flex-direction:column;gap:12px}
+.now h2{margin:8px 0 2px;font-size:19px;letter-spacing:-.01em}.now p{margin:0;color:var(--muted);font-size:13px}
+.card{padding:14px;border:1px solid var(--line);border-radius:15px;background:linear-gradient(160deg,rgba(255,255,255,.055),rgba(255,255,255,.015))}
+.card.attn{border-color:#ffc46b88;box-shadow:0 0 0 1px #ffc46b33,0 0 26px -8px #ffc46b66}
+.card.stopped{border-color:#ff6b7a66}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.badge{font:600 12px var(--num);letter-spacing:.06em;padding:3px 10px;border-radius:99px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
+.badge.ok{color:var(--ok);border-color:#5ef2b066}.badge.warn{color:var(--warn);border-color:#ffc46b66}.badge.bad{color:var(--bad);border-color:#ff6b7a66}
+.goal{margin:8px 0 8px;font-size:14px}
+.steps{display:flex;gap:5px;margin-bottom:6px}.steps i{flex:1;height:6px;border-radius:9px;background:rgba(255,255,255,.12)}.steps i.ok{background:var(--ok)}.steps i.bad{background:var(--bad)}.steps i.warn{background:var(--warn)}
+.meta{color:var(--muted);font-size:12px}
+.block{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.block h3{margin:0;font-size:13px;font-weight:700}
+.block p{margin:0;font-size:13px;color:#d6dff2}
+.why{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.why li{font-size:12.5px;padding:7px 9px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.why code{font:12px ui-monospace,Menlo,monospace;color:#cfe0ff}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.actions button{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--text);font-size:12.5px}
+.actions button.pri{background:var(--ok);border-color:var(--ok);color:#06101c;font-weight:700}
+.actions button.warnb{background:var(--warn);border-color:var(--warn);color:#1a1204;font-weight:700}
+.actions button.ghost{color:var(--muted)}
+.actions button:hover{filter:brightness(1.1)}
+details.more{font-size:12.5px;color:var(--muted)}details.more summary{cursor:pointer}details.more ol{margin:6px 0 0;padding-left:18px}details.more li{margin-bottom:4px}
+.feed ol{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}.feed li{font-size:12.5px;color:var(--muted);display:flex;gap:8px}.feed li b{color:var(--text);font-weight:600}.feed time{color:var(--faint);font:12px var(--num)}
+.center{min-height:560px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;position:relative}
+.orb{width:230px;height:230px;border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(255,255,255,.5),rgba(106,165,255,.28) 35%,rgba(106,165,255,.05) 70%,transparent 72%);box-shadow:0 0 80px 10px rgba(106,165,255,.25);animation:breathe 5s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.04);box-shadow:0 0 110px 20px rgba(106,165,255,.32)}}
+@media(prefers-reduced-motion:reduce){.orb{animation:none}}
+.phase{text-align:center}.phase strong{display:block;font:700 26px var(--num);letter-spacing:.04em;margin-top:6px}.phase small{color:var(--muted)}
+.right .row{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}.right .row span{color:var(--muted)}
+.composer{margin-top:14px;display:flex;gap:8px;padding:10px;border-radius:16px}.composer div{flex:1;color:var(--faint);padding:6px 8px;font-size:13px}.composer button{height:34px;padding:0 16px;border-radius:10px;border:0;background:var(--text);color:#06101c;font-weight:700}
+
+/* attention pill (replaces "작업실에서 확인") */
+.attention{position:absolute;left:50%;top:62px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:7px 8px 7px 14px;border-radius:99px;background:rgba(40,28,6,.85);border:1px solid #ffc46b88;color:var(--warn);font-size:13px;z-index:5}
+.attention button{height:28px;padding:0 12px;border-radius:99px;border:0;background:var(--warn);color:#1a1204;font-weight:700;font-size:12.5px}
+
+/* change panel */
+.panel{position:absolute;top:58px;right:16px;bottom:16px;width:min(620px,calc(100% - 32px));z-index:10;display:flex;flex-direction:column;padding:16px;gap:12px;background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02) 60%),rgba(7,10,20,.86)}
+.panel header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.panel h2{margin:6px 0 0;font-size:17px}
+.panel .x{width:32px;height:32px;border-radius:9px;border:1px solid var(--line2);background:transparent;color:var(--muted)}
+.sumrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sum{padding:9px 11px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04)}
+.sum b{display:block;font:700 17px var(--num)}.sum span{font-size:12px;color:var(--muted)}
+.sum.ok b{color:var(--ok)}
+.files{display:flex;gap:6px;flex-wrap:wrap}
+.files button{height:30px;padding:0 10px;border-radius:9px;border:1px solid var(--line2);background:transparent;color:var(--muted);font:12px ui-monospace,Menlo,monospace}
+.files button[aria-pressed=true]{background:rgba(255,255,255,.12);color:var(--text)}
+.files em{font-style:normal;color:var(--ok)}.files s{text-decoration:none;color:var(--bad)}
+.diff{flex:1;min-height:120px;overflow:auto;margin:0;padding:10px 0;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.35);font:12px/1.65 ui-monospace,Menlo,Consolas,monospace}
+.diff div{padding:0 12px;white-space:pre}.diff .a{background:rgba(94,242,176,.12);color:#bdf7dc}.diff .d{background:rgba(255,107,122,.12);color:#ffc2c8}.diff .h{color:var(--agy)}
+.panel footer{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.panel footer small{color:var(--faint);font-size:12px;margin-left:auto}
+
+.note{max-width:1100px;margin:0 auto;padding:18px 16px 40px;color:var(--muted);font-size:13.5px}
+.note h2{color:var(--text);font-size:15px;margin:18px 0 6px}
+.note table{border-collapse:collapse;width:100%}.note td,.note th{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}.note th{color:var(--text);font-weight:600}
+[hidden]{display:none!important}
+@media(max-width:980px){.grid{grid-template-columns:1fr}.center{min-height:260px}.orb{width:150px;height:150px}.panel{position:fixed;inset:100px 8px 8px 8px;width:auto}.attention{position:static;transform:none;margin:0 0 10px;justify-content:space-between}}
+</style>
+</head>
+<body>
+<div class="mockbar" role="group" aria-label="시안 상태 고르기">
+  <b>시안 상태</b>
+  <button type="button" data-s="approve" aria-pressed="true">① 승인 대기</button>
+  <button type="button" data-s="stopped" aria-pressed="false">② 멈춘 이유</button>
+  <button type="button" data-s="deliver" aria-pressed="false">③ 변경 내용 보고 적용</button>
+  <small>시안 · 버튼은 실제로 동작하지 않습니다</small>
+</div>
+
+<div class="stage">
+  <div class="topbar">
+    <span class="brand">TRIBUNAL AI</span><span class="chip">sample-app</span>
+    <div class="tabs"><span class="on">스테이지</span><span>작업실</span></div>
+    <span class="sp"></span><span class="chip">AI 설정</span><span class="chip">한국어</span>
+  </div>
+
+  <div class="attention" id="pill" hidden><span id="pill-text"></span><button type="button" id="pill-go"></button></div>
+
+  <div class="grid">
+    <aside class="glass">
+      <div class="now"><span class="kicker">지금</span><h2 id="now-title"></h2><p id="now-sub"></p></div>
+
+      <!-- ① approval -->
+      <section class="card attn" data-for="approve">
+        <div class="card-head"><span class="kicker">작업</span><span class="badge warn">승인 필요</span></div>
+        <p class="goal">결제 모듈에 환불 API 연동 추가</p>
+        <div class="steps"><i class="ok"></i><i class="warn"></i><i></i><i></i><i></i><i></i></div>
+        <small class="meta">2단계에서 멈춤 · 최대 6단계</small>
+        <div class="block">
+          <h3>시작 전에 확인이 필요합니다</h3>
+          <p>이 단계는 의존성 설정 파일을 바꾸고, 외부 결제 서비스의 키를 사용합니다.</p>
+          <ul class="why">
+            <li>의존성 파일 수정 · <code>requirements.txt</code></li>
+            <li>실제 계정 정보 사용 · <code>PAYMENT_API_KEY</code></li>
+          </ul>
+          <div class="actions">
+            <button type="button" class="warnb">승인하고 계속</button>
+            <button type="button">거절</button>
+            <button type="button" class="ghost">지시서 보기</button>
+          </div>
+          <details class="more"><summary>ARCHITECT가 세운 이 단계의 지시서</summary>
+            <ol><li>목표: 환불 요청 함수와 테스트 추가</li><li>바꿀 수 있는 파일: <code>src/pay/**</code>, <code>tests/**</code>, <code>requirements.txt</code></li><li>건드리면 안 되는 파일: <code>.env</code></li></ol>
+          </details>
+        </div>
+      </section>
+
+      <!-- ② stopped -->
+      <section class="card stopped" data-for="stopped" hidden>
+        <div class="card-head"><span class="kicker">작업</span><span class="badge bad">보류</span></div>
+        <p class="goal">CSV 내보내기에 날짜 필터 추가</p>
+        <div class="steps"><i class="ok"></i><i class="bad"></i><i class="bad"></i><i></i><i></i><i></i></div>
+        <small class="meta">3단계 중 1단계 통과 · 최대 6단계 · 테스트 41개 중 2개 실패</small>
+        <div class="block">
+          <h3>멈춘 이유</h3>
+          <p>2단계 연속으로 통과하지 못해 멈췄습니다. 날짜 경계(자정) 테스트 2개가 계속 실패합니다.</p>
+          <details class="more" open><summary>단계별 결과</summary>
+            <ol>
+              <li><b>1단계 · 통과</b> — 필터 인자 추가, 테스트 39개 통과</li>
+              <li><b>2단계 · 실패</b> — 자동 수정 3회, <code>test_filter_midnight</code> 실패, 감리 수정 요청</li>
+              <li><b>3단계 · 실패</b> — 같은 테스트 실패, 시간대 변환 위치를 두고 감리 지적 1건</li>
+            </ol>
+          </details>
+          <div class="actions">
+            <button type="button" class="pri">이어서 시도</button>
+            <button type="button">변경 내용 보기</button>
+            <button type="button" class="ghost">폐기</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ③ deliverable -->
+      <section class="card" data-for="deliver" hidden>
+        <div class="card-head"><span class="kicker">작업</span><span class="badge ok">완료</span></div>
+        <p class="goal">calc에 round_half_up 함수 추가</p>
+        <div class="steps"><i class="ok"></i><i></i></div>
+        <small class="meta">1단계 만에 완료 · 최대 2단계 · 테스트 13개 모두 통과</small>
+        <div class="block">
+          <div class="card-head"><h3>결과물이 적용을 기다립니다</h3><span class="badge">파일 2개</span></div>
+          <p>원본 프로젝트는 아직 그대로입니다. 변경 내용을 보고 정하세요.</p>
+          <div class="actions">
+            <button type="button" class="pri" id="open-panel">변경 내용 보기</button>
+            <button type="button">이어서 작업</button>
+            <button type="button" class="ghost">폐기</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="feed"><span class="kicker">진행 기록</span>
+        <ol id="feed"></ol>
+      </section>
+    </aside>
+
+    <section class="center">
+      <div class="orb" aria-hidden="true"></div>
+      <div class="phase"><span class="kicker">TRINITY CORE</span><strong id="phase"></strong><small id="phase-sub"></small></div>
+    </section>
+
+    <aside class="glass right">
+      <span class="kicker">이번 작업 사용량</span>
+      <div class="row"><span>ARCHITECT · 설계</span><b>Claude · 3회</b></div>
+      <div class="row"><span>MAKER · 제작</span><b>Codex · 2회</b></div>
+      <div class="row"><span>INSPECTOR · 감리</span><b>Antigravity · 2회</b></div>
+      <div class="row"><span>걸린 시간</span><b>1분 21초</b></div>
+    </aside>
+  </div>
+
+  <div class="composer glass"><div>ARCHITECT에게 지시하기 — 예: 캡션 글자 수 검사기를 만들어줘</div><button type="button">보내기</button></div>
+
+  <!-- change panel (state ③) -->
+  <section class="panel glass" id="panel" role="dialog" aria-labelledby="pn-title" hidden>
+    <header>
+      <div><span class="kicker">변경 내용</span><h2 id="pn-title">calc에 round_half_up 함수 추가</h2></div>
+      <button type="button" class="x" id="close-panel" aria-label="닫기">✕</button>
+    </header>
+    <div class="sumrow">
+      <div class="sum"><b>파일 2개</b><span>+48줄 · −1줄</span></div>
+      <div class="sum ok"><b>13개 통과</b><span>테스트 · 실패 없음</span></div>
+      <div class="sum ok"><b>감리 통과</b><span>지적 없음 · 자동 수정 1회</span></div>
+    </div>
+    <div class="files" role="group" aria-label="바뀐 파일">
+      <button type="button" aria-pressed="true">src/calc.py <em>+21</em></button>
+      <button type="button" aria-pressed="false">tests/test_calc.py <em>+27</em> <s>−1</s></button>
+    </div>
+    <pre class="diff" tabindex="0" aria-label="src/calc.py 변경 내용"><div class="h">@@ -1,2 +1,23 @@</div><div> def add(a, b):</div><div>     return a + b</div><div class="a">+</div><div class="a">+</div><div class="a">+def round_half_up(value, digits=0):</div><div class="a">+    """사사오입: 0.5는 항상 0에서 먼 쪽으로."""</div><div class="a">+    if isinstance(value, bool) or not isinstance(value, (int, float)):</div><div class="a">+        raise TypeError("value must be a number")</div><div class="a">+    if isinstance(digits, bool) or not isinstance(digits, int) or digits &lt; 0:</div><div class="a">+        raise ValueError("digits must be a non-negative int")</div><div class="a">+    quantum = Decimal(1).scaleb(-digits)</div><div class="a">+    return float(Decimal(repr(value)).quantize(quantum, rounding=ROUND_HALF_UP))</div></pre>
+    <footer>
+      <button type="button" class="actions-pri" style="height:36px;padding:0 16px;border-radius:10px;border:0;background:var(--ok);color:#06101c;font-weight:700">원본에 적용</button>
+      <button type="button" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line2);background:transparent">이어서 작업</button>
+      <button type="button" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line2);background:transparent;color:var(--muted)">폐기</button>
+      <small>작업 사본 폴더 열기 · 전체 기록은 작업실</small>
+    </footer>
+  </section>
+</div>
+
+<div class="note">
+  <h2>무엇이 달라지나</h2>
+  <table>
+    <tr><th>상황</th><th>지금</th><th>시안</th></tr>
+    <tr><td>승인이 필요할 때</td><td>스테이지에는 "승인 대기 1건"과 [작업실에서 확인] 버튼만 있음</td><td>작업 카드에 이유·항목·[승인하고 계속]/[거절]이 바로 나옴</td></tr>
+    <tr><td>작업이 멈췄을 때</td><td>이유와 단계별 결과는 작업실에서만 보임</td><td>작업 카드에 멈춘 이유와 단계별 결과가 펼쳐짐</td></tr>
+    <tr><td>결과물을 적용할 때</td><td>확인 창만 뜨고 변경 내용은 작업실에서 봐야 함</td><td>[변경 내용 보기]로 옆 패널에서 파일·테스트·감리 결과를 본 뒤 적용</td></tr>
+  </table>
+  <h2>작업실에 남는 것</h2>
+  <p>프로젝트 폴더 직접 입력, 새 대화 시작, 복구·오래된 실행 정리, 전체 대화 기록. 작업실 위쪽의 작업 요약·AI 활동 블록과 네 군데에 있던 승인 버튼은 한 곳만 남기고 정리합니다.</p>
+</div>
+
+<script>
+const S={
+  approve:{title:'승인을 기다리는 중',sub:'2단계를 시작하기 전에 멈췄습니다.',phase:'확인 필요',psub:'사용자의 승인을 기다립니다',pill:'승인이 필요한 단계가 있습니다',go:'확인하기',
+    feed:[['21:04','ARCHITECT','2단계 계획: 환불 API 연동'],['21:04','TRIBUNAL','승인이 필요해 멈춤'],['21:02','INSPECTOR','1단계 감리 통과']]},
+  stopped:{title:'작업이 멈췄습니다',sub:'연속 실패로 보류했습니다.',phase:'보류',psub:'다음 지시를 기다립니다',pill:null,
+    feed:[['20:41','TRIBUNAL','작업 보류 · 2단계 연속 실패'],['20:40','INSPECTOR','3단계 감리 수정 요청'],['20:36','MAKER','3단계 제작 완료']]},
+  deliver:{title:'결과물 확인 대기',sub:'적용할지 정해 주세요.',phase:'완료',psub:'결과물이 적용을 기다립니다',pill:'결과물 1건이 적용을 기다립니다',go:'변경 내용 보기',
+    feed:[['22:03','TRIBUNAL','작업 완료 · 테스트 13개 모두 통과'],['22:03','ARCHITECT','판단: 통과'],['22:03','INSPECTOR','감리 통과']]}
+};
+const $=id=>document.getElementById(id);
+function show(key){
+  const s=S[key];
+  document.querySelectorAll('.mockbar button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.s===key)));
+  document.querySelectorAll('[data-for]').forEach(c=>c.hidden=c.dataset.for!==key);
+  $('now-title').textContent=s.title;$('now-sub').textContent=s.sub;$('phase').textContent=s.phase;$('phase-sub').textContent=s.psub;
+  $('pill').hidden=!s.pill;if(s.pill){$('pill-text').textContent=s.pill;$('pill-go').textContent=s.go;}
+  $('feed').replaceChildren(...s.feed.map(([t,who,msg])=>{const li=document.createElement('li'),tm=document.createElement('time'),b=document.createElement('b'),sp=document.createElement('span');tm.textContent=t;b.textContent=who;sp.textContent=msg;li.append(tm,b,sp);return li;}));
+  $('panel').hidden=true;
+}
+document.querySelectorAll('.mockbar button').forEach(b=>b.onclick=()=>show(b.dataset.s));
+$('open-panel').onclick=()=>{$('panel').hidden=false;$('close-panel').focus();};
+$('close-panel').onclick=()=>{$('panel').hidden=true;$('open-panel').focus();};
+$('pill-go').onclick=()=>{if(!$('open-panel').closest('[hidden]'))$('open-panel').click();else document.querySelector('.card.attn .actions button').focus();};
+document.querySelectorAll('.files button').forEach(b=>b.onclick=()=>document.querySelectorAll('.files button').forEach(o=>o.setAttribute('aria-pressed',String(o===b))));
+show('approve');
+</script>
+</body>
+</html>

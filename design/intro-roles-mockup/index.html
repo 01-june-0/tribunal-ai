@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tribunal AI · 시작 화면과 역할 이름 시안</title>
+<style>
+/* 시작 연출(문구 + 이펙트)과 세 역할 이름을 조합해 보는 시안. 실제 화면의 3D 입자 대신 CSS로 그린 근사치다. */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{--claude:#ff8a5c;--agy:#6aa5ff;--codex:#3df2c0;--text:#eef3ff;--muted:#9aabc7;--faint:#7586a4;--line:rgba(255,255,255,.12);
+  --body:'Pretendard','Apple SD Gothic Neo','Segoe UI','Malgun Gothic',sans-serif;--num:'SF Pro Display','Bahnschrift','Segoe UI',sans-serif;
+  font:14px/1.6 var(--body);color:var(--text);background:#04060c;overflow:hidden;word-break:keep-all;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+#bar{position:fixed;z-index:30;left:0;right:0;top:0;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 14px;background:#0b0d12;border-bottom:1px solid #262b36;font-size:12.5px;color:#cfd6e4}
+#bar label{display:flex;align-items:center;gap:6px;color:#8d99ae}
+#bar select,#bar button{height:28px;padding:0 10px;border-radius:8px;border:1px solid #2c3340;background:#11151d;color:#e7ecf6;font-size:12.5px}
+#bar button.go{background:#eef3ff;color:#0b0d12;border-color:#eef3ff;font-weight:600}
+#bar p{margin:0 0 0 auto;color:#8d99ae}
+#stage{position:fixed;inset:44px 0 0 0;overflow:hidden;background:
+  radial-gradient(1px 1px at 12% 22%,#fff9,transparent),radial-gradient(1px 1px at 31% 71%,#fff7,transparent),radial-gradient(1.5px 1.5px at 44% 12%,#fffa,transparent),radial-gradient(1px 1px at 67% 28%,#fff8,transparent),radial-gradient(1.5px 1.5px at 83% 62%,#fff8,transparent),radial-gradient(1px 1px at 91% 18%,#fff6,transparent),
+  radial-gradient(40% 36% at 14% 12%,rgba(255,138,92,.16),transparent),radial-gradient(42% 38% at 88% 90%,rgba(61,242,192,.13),transparent),radial-gradient(36% 30% at 70% 60%,rgba(120,90,240,.12),transparent),
+  radial-gradient(55% 46% at 50% 46%,#121c3f,#04060c 74%)}
+/* ---- 무대 (시작 연출이 끝난 뒤 보이는 화면) */
+.scene{position:absolute;inset:0;opacity:0;transition:opacity .9s}
+.scene.on{opacity:1}
+.core{position:absolute;left:50%;top:44%;width:150px;height:150px;margin:-75px;border-radius:50%;background:conic-gradient(from 210deg,var(--claude),var(--agy),var(--codex),var(--claude));filter:blur(16px) saturate(1.3);animation:spin 14s linear infinite}
+.core::after{content:"";position:absolute;inset:26%;border-radius:50%;background:radial-gradient(circle,#fff,#cfe0ff 55%,transparent);filter:blur(2px)}
+@keyframes spin{to{rotate:360deg}}
+.ring{position:absolute;left:50%;top:44%;width:330px;height:330px;margin:-165px;border-radius:50%;border:1px solid rgba(255,255,255,.1)}
+.node{--c:#fff;position:absolute;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;translate:-50% -20px;white-space:nowrap}
+.node i{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,var(--c) 40%,color-mix(in srgb,var(--c) 30%,#000));box-shadow:0 0 30px color-mix(in srgb,var(--c) 70%,transparent);margin-bottom:8px}
+.node small{font:700 12px var(--num);letter-spacing:.2em;color:var(--muted)}
+.node b{font:650 20px/1.2 var(--body);color:var(--c)}
+.node span{font-size:12.5px;color:#c6d2e8}
+.n0{left:50%;top:14%;--c:var(--claude)}.n1{left:28%;top:66%;--c:var(--agy)}.n2{left:72%;top:66%;--c:var(--codex)}
+.pipe{position:absolute;left:50%;bottom:92px;translate:-50% 0;display:flex;gap:26px;padding:10px 20px;border-radius:17px;border:1px solid var(--line);background:rgba(9,13,24,.5);backdrop-filter:blur(18px)}
+.pipe div{display:flex;flex-direction:column;font-size:13.5px;font-weight:600;color:var(--muted)}
+.pipe small{font:600 12px var(--num);letter-spacing:.14em;color:var(--faint)}
+.lines{position:absolute;left:24px;top:24px;width:300px;padding:16px 18px;border-radius:18px;border:1px solid var(--line);background:rgba(9,13,24,.5);backdrop-filter:blur(18px);display:flex;flex-direction:column;gap:8px}
+.lines span{font:600 12px var(--num);letter-spacing:.18em;color:var(--muted)}
+.lines p{margin:0;font-size:13.5px;color:#d6dff0}
+.lines p em{font-style:normal;color:var(--c)}
+.compose{position:absolute;left:24px;right:24px;bottom:22px;height:54px;display:flex;align-items:center;padding:0 20px;border-radius:18px;border:1px solid var(--line);background:rgba(9,13,24,.5);color:var(--faint);backdrop-filter:blur(18px)}
+/* ---- 시작 연출 공통 */
+#intro{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none}
+#intro .veil{position:absolute;inset:0;background:radial-gradient(circle,#04060c00 26%,#04060c 76%);opacity:0}
+#intro .title{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+#intro .t1{font:600 15px var(--num);letter-spacing:.9em;margin-right:-.9em;color:#c6d2e8;opacity:0}
+#intro .t2{font:800 clamp(40px,6vw,96px)/1.05 var(--num);letter-spacing:.16em;margin-right:-.16em;background:linear-gradient(90deg,var(--claude),#fff 50%,var(--codex) 75%,var(--agy));-webkit-background-clip:text;background-clip:text;color:transparent;opacity:0}
+#intro .t3{font-size:13px;letter-spacing:.3em;color:var(--muted);opacity:0}
+#intro.ko .t2{letter-spacing:.04em;margin-right:0;font-family:var(--body)}#intro.ko .t1{letter-spacing:.5em;margin-right:-.5em}
+/* 1 번짐 (지금 화면) */
+.fx-blur.play .veil{animation:veil 3.4s ease both}
+.fx-blur.play .t1{animation:blurin 3.4s ease both}.fx-blur.play .t2{animation:blurin 3.4s .12s ease both}.fx-blur.play .t3{animation:blurin 3.4s .3s ease both}
+@keyframes veil{0%,70%{opacity:1}100%{opacity:0}}
+@keyframes blurin{0%{opacity:0;filter:blur(12px);scale:1.25}28%{opacity:1;filter:blur(0);scale:1}72%{opacity:1}100%{opacity:0;filter:blur(8px)}}
+/* 2 수렴: 세 빛이 세 자리에서 날아와 가운데서 합쳐지고, 그 섬광에서 문구가 나온다 */
+.orb{position:absolute;width:26px;height:26px;margin:-13px;border-radius:50%;opacity:0;background:var(--c);box-shadow:0 0 40px 10px var(--c)}
+.o0{--c:var(--claude);--x:50%;--y:14%}.o1{--c:var(--agy);--x:28%;--y:66%}.o2{--c:var(--codex);--x:72%;--y:66%}
+.fx-converge.play .veil{animation:veil 4.4s ease both}
+.fx-converge.play .orb{animation:fly 1.5s cubic-bezier(.6,0,.3,1) both}
+.fx-converge.play .o1{animation-delay:.18s}.fx-converge.play .o2{animation-delay:.36s}
+@keyframes fly{0%{left:var(--x);top:var(--y);opacity:0;scale:.3}18%{opacity:1;scale:1}86%{opacity:1}100%{left:50%;top:44%;opacity:0;scale:.5}}
+.flash{position:absolute;left:50%;top:44%;width:20px;height:20px;margin:-10px;border-radius:50%;background:#fff;opacity:0}
+.fx-converge.play .flash{animation:flash 1.3s 1.75s ease-out both}
+@keyframes flash{0%{opacity:0;scale:1}12%{opacity:1;box-shadow:0 0 120px 60px #fff}100%{opacity:0;scale:40;box-shadow:0 0 0 0 #fff0}}
+.fx-converge.play .t1{animation:rise 2.4s 1.95s ease both}.fx-converge.play .t2{animation:rise 2.4s 2.05s ease both}.fx-converge.play .t3{animation:rise 2.4s 2.25s ease both}
+@keyframes rise{0%{opacity:0;translate:0 18px;filter:blur(10px)}22%{opacity:1;translate:0 0;filter:blur(0)}78%{opacity:1}100%{opacity:0;filter:blur(8px)}}
+/* 3 인장: 고리가 그려지고 세 표식이 차례로 켜진 뒤 문구가 찍힌다 */
+.seal{position:absolute;left:50%;top:44%;width:360px;height:360px;margin:-180px;opacity:0}
+.seal circle{fill:none;stroke:#e9d9b0;stroke-width:1.2;stroke-dasharray:1100;stroke-dashoffset:1100}
+.seal .tick{fill:var(--c);stroke:none;opacity:0;stroke-dasharray:none}
+.fx-seal.play .veil{animation:veil 4.6s ease both}
+.fx-seal.play .seal{animation:sealbox 4.6s ease both}
+@keyframes sealbox{0%{opacity:1}74%{opacity:1}100%{opacity:0;scale:1.08}}
+.fx-seal.play .seal circle.r{animation:draw 1.5s cubic-bezier(.6,0,.2,1) forwards}.fx-seal.play .seal circle.r2{animation:draw 1.5s .25s cubic-bezier(.6,0,.2,1) forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.fx-seal.play .tick{animation:tick .5s ease forwards}.fx-seal.play .k0{animation-delay:1.3s}.fx-seal.play .k1{animation-delay:1.55s}.fx-seal.play .k2{animation-delay:1.8s}
+@keyframes tick{from{opacity:0;r:14}to{opacity:1;r:7}}
+.fx-seal .t2{font-family:Georgia,'Noto Serif KR','AppleMyungjo',serif;letter-spacing:.1em;margin-right:-.1em;background:none;color:#f1e4bf;text-shadow:0 0 40px rgba(233,217,176,.5)}
+.fx-seal.play .t1{animation:stamp 2.6s 1.9s ease both}.fx-seal.play .t2{animation:stamp 2.6s 2.0s ease both}.fx-seal.play .t3{animation:stamp 2.6s 2.15s ease both}
+@keyframes stamp{0%{opacity:0;scale:1.5}14%{opacity:1;scale:1}80%{opacity:1}100%{opacity:0}}
+/* 4 별자리: 세 별이 뜨고 선이 이어져 삼각형이 된 뒤 문구가 떠오른다 */
+.sky{position:absolute;inset:0;width:100%;height:100%;opacity:0}
+.sky line{stroke:#bcd0ff;stroke-width:.25;stroke-dasharray:70;stroke-dashoffset:70;vector-effect:non-scaling-stroke}
+.sky circle{opacity:0}
+.fx-stars.play .veil{animation:veil 4.6s ease both}
+.fx-stars.play .sky{animation:sealbox 4.6s ease both}
+.fx-stars.play .sky circle{animation:star .7s ease forwards}.fx-stars.play .s1{animation-delay:.3s}.fx-stars.play .s2{animation-delay:.6s}
+@keyframes star{from{opacity:0;r:3}to{opacity:1;r:.9}}
+.fx-stars.play .sky line{animation:draw 1s ease forwards}.fx-stars.play .l0{animation-delay:.9s}.fx-stars.play .l1{animation-delay:1.25s}.fx-stars.play .l2{animation-delay:1.6s}
+.fx-stars.play .t1{animation:rise 2.4s 2.1s ease both}.fx-stars.play .t2{animation:rise 2.4s 2.2s ease both}.fx-stars.play .t3{animation:rise 2.4s 2.4s ease both}
+/* 5 점호: 세 역할이 한 줄씩 응답하고, 마지막 줄이 커진다 */
+.roll{position:relative;display:none;flex-direction:column;gap:8px;font:500 15px ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:#c6d2e8;min-width:340px}
+.fx-roll .title{display:none}.fx-roll .roll{display:flex}
+.roll div{opacity:0;display:flex;gap:12px}.roll div b{color:var(--c);min-width:120px}.roll div i{font-style:normal;color:var(--codex);margin-left:auto}
+.roll .last{margin-top:14px;font:700 clamp(26px,3.4vw,48px)/1.1 var(--num);letter-spacing:.12em;color:#fff;justify-content:center}
+.fx-roll.play .veil{animation:veil 4.4s ease both}
+.fx-roll.play .roll div{animation:line 3.6s ease both}.fx-roll.play .roll div:nth-child(2){animation-delay:.45s}.fx-roll.play .roll div:nth-child(3){animation-delay:.9s}.fx-roll.play .roll .last{animation:rise 2.4s 1.6s ease both}
+@keyframes line{0%{opacity:0;translate:-10px 0}10%{opacity:1;translate:0 0}82%{opacity:1}100%{opacity:0}}
+/* 6 점호 후 수렴: 세 자리에서 한 명씩 불이 켜지며 응답하고, 셋이 모두 답하면 가운데로 모여 섬광이 된다 */
+.call{position:absolute;left:var(--x);top:var(--y);translate:-50% 26px;display:flex;flex-direction:column;align-items:center;gap:2px;opacity:0;white-space:nowrap;font:600 12px var(--num);letter-spacing:.2em;color:var(--muted)}
+.call b{font:650 19px/1.2 var(--body);letter-spacing:0;color:var(--c)}
+.call i{font-style:normal;font:600 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:.08em;color:var(--codex)}
+.c0{--c:var(--claude);--x:50%;--y:14%;--d:.15s}.c1{--c:var(--agy);--x:28%;--y:66%;--d:.65s}.c2{--c:var(--codex);--x:72%;--y:66%;--d:1.15s}
+.fx-rc .o0{--d:.15s}.fx-rc .o1{--d:.65s}.fx-rc .o2{--d:1.15s}
+.fx-rc.play .veil{animation:veil 5.8s ease both}
+.fx-rc.play .orb{left:var(--x);top:var(--y);animation:light .55s var(--d) cubic-bezier(.2,1.5,.4,1) both,gather 1.25s 2.15s cubic-bezier(.6,0,.3,1) forwards}
+@keyframes light{from{opacity:0;scale:.2}to{opacity:1;scale:1}}
+@keyframes gather{0%{left:var(--x);top:var(--y);opacity:1;scale:1}85%{opacity:1}100%{left:50%;top:44%;opacity:0;scale:.5}}
+.fx-rc.play .call{animation:callin .45s var(--d) ease both,callout .3s 1.95s ease forwards}   /* the three answers leave together, just before the lights gather */
+@keyframes callin{from{opacity:0;translate:-50% 36px}to{opacity:1;translate:-50% 26px}}
+@keyframes callout{to{opacity:0}}
+.fx-rc.play .call i{animation:blinkin .4s calc(var(--d) + .3s) steps(2) both}
+@keyframes blinkin{from{opacity:0}to{opacity:1}}
+.fx-rc.play .flash{animation:flash 1.3s 3.3s ease-out both}
+.fx-rc.play .t1{animation:rise 2.4s 3.5s ease both}.fx-rc.play .t2{animation:rise 2.4s 3.6s ease both}.fx-rc.play .t3{animation:rise 2.4s 3.8s ease both}
+/* 7 점호 후 수렴 + 번짐: 번쩍임 없이, 모인 빛이 부드럽게 퍼지는 자리에서 문구가 번지듯 나타난다 */
+.fx-rb .o0{--d:.15s}.fx-rb .o1{--d:.65s}.fx-rb .o2{--d:1.15s}
+.fx-rb.play .veil{animation:veil 6.2s ease both}
+.fx-rb.play .orb{left:var(--x);top:var(--y);animation:light .55s var(--d) cubic-bezier(.2,1.5,.4,1) both,gather 1.35s 2.15s cubic-bezier(.6,0,.3,1) forwards}
+.fx-rb.play .call{animation:callin .45s var(--d) ease both,callout .3s 1.95s ease forwards}
+.fx-rb.play .call i{animation:blinkin .4s calc(var(--d) + .3s) steps(2) both}
+.fx-rb.play .flash{width:220px;height:220px;margin:-110px;background:conic-gradient(from 210deg,var(--claude),var(--agy),var(--codex),var(--claude));filter:blur(46px);animation:bloom 3.2s 3.0s ease both}
+@keyframes bloom{0%{opacity:0;scale:.3}30%{opacity:.55;scale:1}70%{opacity:.4;scale:1.5}100%{opacity:0;scale:2.2}}
+.fx-rb.play .t1{animation:blurin 3s 3.25s ease both}.fx-rb.play .t2{animation:blurin 3s 3.37s ease both}.fx-rb.play .t3{animation:blurin 3s 3.55s ease both}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01s!important}}
+</style>
+</head>
+<body>
+<div id="bar">
+  <label>역할 이름 <select id="names"></select></label>
+  <label>시작 문구 <select id="phrase"></select></label>
+  <label>이펙트 <select id="fx"></select></label>
+  <button type="button" class="go" id="replay">▶ 다시 재생 (스페이스)</button>
+  <p id="hint">←/→ 역할 이름 · ↑/↓ 이펙트</p>
+</div>
+<div id="stage">
+  <div class="scene" id="scene">
+    <div class="ring"></div><div class="core"></div>
+    <div class="node n0"><i></i><small id="r0"></small><b>Claude</b><span>대기</span></div>
+    <div class="node n1"><i></i><small id="r1"></small><b>Antigravity</b><span>대기</span></div>
+    <div class="node n2"><i></i><small id="r2"></small><b>Codex</b><span>대기</span></div>
+    <div class="lines"><span>이름이 문장 속에서 읽히는 모습</span>
+      <p style="--c:var(--claude)"><em id="s0"></em></p><p style="--c:var(--agy)"><em id="s1"></em></p><p style="--c:var(--codex)"><em id="s2"></em></p><p id="s3" style="color:var(--muted)"></p></div>
+    <div class="pipe"><div><span id="g0">계획</span><small id="p0"></small></div><div><span id="g1">구현</span><small id="p1"></small></div><div>테스트<small>DIRECTOR</small></div><div><span id="g2">검수</span><small id="p2"></small></div><div>판단<small id="p3"></small></div></div>
+    <div class="compose" id="compose"></div>
+  </div>
+  <div id="intro">
+    <div class="veil"></div>
+    <div class="call c0"><span id="k0"></span><b>Claude</b><i>✓ 응답</i></div><div class="call c1"><span id="k1"></span><b>Antigravity</b><i>✓ 응답</i></div><div class="call c2"><span id="k2"></span><b>Codex</b><i>✓ 응답</i></div>
+    <b class="orb o0"></b><b class="orb o1"></b><b class="orb o2"></b><b class="flash"></b>
+    <svg class="seal" viewBox="0 0 360 360"><circle class="r" cx="180" cy="180" r="172"/><circle class="r2" cx="180" cy="180" r="160"/>
+      <circle class="tick k0" style="--c:var(--claude)" cx="180" cy="14" r="7"/><circle class="tick k1" style="--c:var(--agy)" cx="36" cy="263" r="7"/><circle class="tick k2" style="--c:var(--codex)" cx="324" cy="263" r="7"/></svg>
+    <svg class="sky" viewBox="0 0 100 100" preserveAspectRatio="none"><line class="l0" x1="50" y1="14" x2="28" y2="66"/><line class="l1" x1="28" y1="66" x2="72" y2="66"/><line class="l2" x1="72" y1="66" x2="50" y2="14"/>
+      <circle class="s0" cx="50" cy="14" r=".9" fill="#ff8a5c"/><circle class="s1" cx="28" cy="66" r=".9" fill="#6aa5ff"/><circle class="s2" cx="72" cy="66" r=".9" fill="#3df2c0"/></svg>
+    <div class="title"><span class="t1" id="t1"></span><strong class="t2" id="t2"></strong><span class="t3" id="t3"></span></div>
+    <div class="roll"><div style="--c:var(--claude)"><b id="q0"></b>Claude<i>응답</i></div><div style="--c:var(--agy)"><b id="q1"></b>Antigravity<i>응답</i></div><div style="--c:var(--codex)"><b id="q2"></b>Codex<i>응답</i></div><div class="last" id="q3"></div></div>
+  </div>
+</div>
+<script>
+// 역할 이름 후보: [표시 이름(영문 표기), 한글 뜻] × 3. 내부 코드(HEAD/BUILDER/REVIEWER)는 그대로 두고 화면 이름만 바꾸는 것을 전제로 한다.
+const NAMES=[
+  {id:'now',label:'지금 · HEAD / BUILDER / REVIEWER',r:[['HEAD','지휘'],['BUILDER','구현'],['REVIEWER','검수']]},
+  {id:'court',label:'법정 · CHIEF / DRAFTER / EXAMINER',r:[['CHIEF','주심'],['DRAFTER','기안'],['EXAMINER','심사']]},
+  {id:'trinity',label:'삼위 · MIND / HAND / EYE',r:[['MIND','뜻'],['HAND','손'],['EYE','눈']]},
+  {id:'craft',label:'공방 · ARCHITECT / MAKER / INSPECTOR (선택됨)',r:[['ARCHITECT','설계'],['MAKER','제작'],['INSPECTOR','감리']],stages:['설계','제작','감리']},
+  {id:'myth',label:'신화 · ORACLE / FORGE / SENTINEL',r:[['ORACLE','신탁'],['FORGE','단조'],['SENTINEL','파수']]},
+  {id:'ko',label:'한글 · 지휘 / 구현 / 검수 (영문 없이)',r:[['지휘','이끄는 AI'],['구현','만드는 AI'],['검수','살피는 AI']]}];
+const PHRASES=[
+  {label:'THREE MINDS · ONE CORE (지금)',t:['THREE MINDS','ONE CORE','']},
+  {label:'THE TRIBUNAL CONVENES',t:['THE TRIBUNAL','CONVENES','세 지성이 한자리에 모였습니다']},
+  {label:'TRINITY ONLINE',t:['TRIBUNAL AI','TRINITY ONLINE','']},
+  {label:'셋의 판단, 하나의 결론',t:['TRIBUNAL AI','셋의 판단, 하나의 결론',''],ko:true},
+  {label:'세 지성, 하나의 핵',t:['세 지성','하나의 핵',''],ko:true},
+  {label:'THREE VOICES · ONE VERDICT',t:['THREE VOICES','ONE VERDICT','']}];
+const FX=[['blur','번짐 (지금)'],['converge','수렴 · 세 빛이 모여 섬광'],['seal','인장 · 고리와 세 표식'],['stars','별자리 · 세 별이 이어짐'],['roll','점호 · 한 줄씩 응답'],['rc','점호 후 수렴 · 한 명씩 응답하고 모여서 섬광'],['rb','점호 후 수렴 + 번짐 · 번쩍임 없이 번지듯 나타남']];
+const $=id=>document.getElementById(id),intro=$('intro');
+function fill(sel,items,text){sel.replaceChildren(...items.map((it,i)=>new Option(text(it),String(i))));}
+fill($('names'),NAMES,n=>n.label);fill($('phrase'),PHRASES,p=>p.label);fill($('fx'),FX,f=>f[1]);
+function paintNames(){const n=NAMES[$('names').value].r,same=n[0][0]===n[0][1],tag=x=>same?x[0]:x[0]+' · '+x[1],josa=w=>/[가-힣]$/.test(w)?((w.charCodeAt(w.length-1)-0xAC00)%28?'이':'가'):'가';
+  for(let i=0;i<3;i++){$('r'+i).textContent=tag(n[i]);$('q'+i).textContent=n[i][0];$('k'+i).textContent=tag(n[i]);}
+  const st=NAMES[$('names').value].stages||['계획','구현','검수'];$('g0').textContent=st[0];$('g1').textContent=st[1];$('g2').textContent=st[2];
+  $('s0').textContent=n[0][0]+josa(n[0][0])+' 할 일을 정합니다';$('s1').textContent=n[1][0]+josa(n[1][0])+' 코드를 씁니다';$('s2').textContent=n[2][0]+josa(n[2][0])+' 독립적으로 살핍니다';
+  $('s3').textContent='역할을 바꿨습니다 · '+tag(n[2])+' = Codex';
+  $('p0').textContent=n[0][0];$('p1').textContent=n[1][0];$('p2').textContent=n[2][0];$('p3').textContent=n[0][0];
+  $('compose').textContent=n[0][0]+'에게 지시하기 — 예: 캡션 글자 수 검사기를 만들어줘';}
+function play(){const p=PHRASES[$('phrase').value],f=FX[$('fx').value][0];
+  $('t1').textContent=p.t[0];$('t2').textContent=p.t[1];$('t3').textContent=p.t[2];$('q3').textContent=p.t[1];
+  intro.className='fx-'+f+(p.ko?' ko':'');$('scene').classList.remove('on');void intro.offsetWidth;intro.classList.add('play');
+  clearTimeout(play.t);play.t=setTimeout(()=>$('scene').classList.add('on'),f==='blur'?2300:f==='rc'?4300:f==='rb'?4700:2900);}
+$('names').onchange=paintNames;$('phrase').onchange=play;$('fx').onchange=play;$('replay').onclick=play;
+addEventListener('keydown',e=>{const step=(sel,d)=>{sel.value=String((Number(sel.value)+d+sel.options.length)%sel.options.length);sel.onchange();};
+  if(e.target.tagName==='SELECT')return;
+  if(e.key===' '){e.preventDefault();play();}else if(e.key==='ArrowRight')step($('names'),1);else if(e.key==='ArrowLeft')step($('names'),-1);
+  else if(e.key==='ArrowDown'){e.preventDefault();step($('fx'),1);}else if(e.key==='ArrowUp'){e.preventDefault();step($('fx'),-1);}});
+$('names').value='3';$('fx').value='6';$('phrase').value='2';paintNames();play();
+</script>
+</body>
+</html>

@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>구름 속 화면 시안</title>
+<style>
+:root{--fs-xs:12px;--fs-sm:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:26px;
+  --claude:#ff8a5c;--codex:#3df2c0;--agy:#6aa5ff;--ok:#5ef2b0;--bad:#ff6b7a;--warn:#ffc46b;
+  --text:#eef3ff;--muted:#9aabc7;--faint:#7586a4;--line:rgba(255,255,255,.1);--line2:rgba(255,255,255,.17);
+  --num:'Bahnschrift','Segoe UI Variable Display','Segoe UI',sans-serif;--body:'Pretendard','Apple SD Gothic Neo','Segoe UI','Malgun Gothic',sans-serif}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#04060c;color:var(--text);font:var(--fs-sm)/1.6 var(--body);word-break:keep-all;overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+.kicker{font:600 var(--fs-xs)/1 var(--num);letter-spacing:.2em;color:var(--muted)}
+.glass{background:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.015) 60%),rgba(9,13,24,.55);border:1px solid rgba(255,255,255,.12);border-radius:16px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+
+#mock-bar{position:fixed;z-index:9;top:0;left:0;right:0;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 16px;background:rgba(11,18,34,.92);border-bottom:1px solid var(--line);font-size:var(--fs-xs);color:var(--muted)}
+#mock-bar b{color:var(--text);font-size:var(--fs-sm)}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:99px;overflow:hidden}
+.seg button{background:none;border:0;padding:4px 12px;font-size:var(--fs-xs);color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed=true]{background:rgba(255,255,255,.16);color:var(--text)}
+.new-tag{font:600 10px var(--num);padding:1px 6px;border-radius:99px;background:#ffc46b22;border:1px solid #ffc46b66;color:var(--warn);margin-left:6px;white-space:nowrap}
+
+/* ---- outside: the three clouds ---- */
+.slot{position:fixed;z-index:2;left:0;top:0;width:150px;margin-left:-75px;text-align:center;pointer-events:none;transition:opacity .5s;will-change:transform}
+.slot small{display:block;font:600 var(--fs-xs) var(--num);letter-spacing:.14em;color:var(--muted)}
+.slot strong{font-size:var(--fs-md);color:var(--c)}
+.slot span{display:block;font-size:var(--fs-xs);color:var(--muted)}
+.slot.on span{color:#fff}
+.hit{position:fixed;z-index:3;left:0;top:0;width:190px;height:190px;margin:-95px 0 0 -95px;border-radius:50%;border:1px solid transparent;background:none;transition:border-color .3s,box-shadow .3s;will-change:transform}
+.hit:hover,.hit:focus-visible{border-color:color-mix(in srgb,var(--c) 60%,transparent);box-shadow:0 0 40px color-mix(in srgb,var(--c) 30%,transparent);outline:none}
+.hit::after{content:"안으로 들어가기";position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);font-size:var(--fs-xs);color:#fff;background:rgba(9,13,24,.8);border:1px solid var(--line2);border-radius:99px;padding:2px 10px;opacity:0;transition:opacity .2s;white-space:nowrap}
+.hit:hover::after,.hit:focus-visible::after{opacity:1}
+body.inside .slot,body.inside .hit,body.inside #caption{opacity:0!important;pointer-events:none}
+canvas{transition:filter .9s}
+body.inside canvas{filter:brightness(.5) saturate(1.15)}
+#caption{position:fixed;z-index:2;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 16px;font-size:var(--fs-sm);transition:opacity .5s;white-space:nowrap}
+#caption b{color:var(--c,#fff)}
+
+/* ---- inside one cloud ---- */
+#inside{position:fixed;z-index:5;inset:76px 0 0 0;display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr) minmax(220px,280px);grid-template-rows:auto minmax(0,1fr) auto;gap:16px;padding:20px;opacity:0;pointer-events:none;transition:opacity .6s .35s}
+body.inside #inside{opacity:1;pointer-events:auto}
+#in-head{grid-column:1/-1;display:flex;align-items:center;gap:16px}
+#in-head h2{margin:0;font-size:var(--fs-xl);line-height:1.2}
+#in-head h2 em{font-style:normal;color:var(--c)}
+#in-head p{margin:0;color:var(--muted)}
+#back{margin-left:auto;background:rgba(255,255,255,.07);border:1px solid var(--line2);border-radius:99px;padding:6px 16px}
+.live{display:inline-flex;align-items:center;gap:8px;font:600 var(--fs-xs) var(--num);letter-spacing:.1em;color:#fff}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 0 var(--c);animation:ping 1.3s infinite}
+.live.off{color:var(--muted)}.live.off i{animation:none;background:var(--faint)}
+@keyframes ping{70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.pane{padding:16px;display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto;scrollbar-width:thin}
+.pane dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.pane dt{color:var(--muted);white-space:nowrap}.pane dd{margin:0;overflow-wrap:anywhere}
+.pane code{font:var(--fs-xs) ui-monospace,Menlo,monospace;color:#cfe0ff}
+.pane ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:4px}
+.big{font:600 var(--fs-xl)/1.1 var(--num)}
+.cells{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cells div{padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.cells b{display:block;font:600 var(--fs-lg)/1.2 var(--num)}
+.cells span{font-size:var(--fs-xs);color:var(--muted)}
+.cells .bad b{color:var(--bad)}
+
+/* the stream: the newest command sits at the focus line, older ones recede upward into the cloud */
+#stream{position:relative;min-height:0;overflow:hidden;mask-image:linear-gradient(transparent,#000 22%,#000 88%,transparent)}
+#stream ol{list-style:none;margin:0;padding:0;position:absolute;left:0;right:0;bottom:18%;display:flex;flex-direction:column;gap:10px;align-items:center}
+#stream li{width:min(620px,100%);display:grid;grid-template-columns:70px 96px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-radius:14px;background:rgba(9,13,24,.6);border:1px solid var(--line);transform-origin:50% 100%;transition:transform .5s cubic-bezier(.2,.8,.2,1),opacity .5s,border-color .5s,background .5s;backdrop-filter:blur(10px)}
+#stream li time{font:500 var(--fs-xs) var(--num);color:var(--faint)}
+#stream li b{font-weight:600;color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#stream li span{color:#d6dff2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stream li em{font-style:normal;font-size:var(--fs-xs);color:var(--muted);white-space:nowrap}
+#stream li.say b,#stream li.think b{color:var(--muted);font-weight:500}
+#stream li.think{border-style:dashed}
+#stream li.bad{border-color:#ff6b7a88;background:rgba(255,107,122,.12)}#stream li.bad em{color:var(--bad)}
+#stream li.now{border-color:color-mix(in srgb,var(--c) 70%,transparent);background:color-mix(in srgb,var(--c) 12%,rgba(9,13,24,.7));box-shadow:0 0 40px color-mix(in srgb,var(--c) 22%,transparent)}
+#stream li.now span{white-space:normal}
+#stream li.enter{opacity:0;transform:translateY(40px) scale(1.06)}
+#focus-line{position:absolute;left:8%;right:8%;bottom:calc(18% - 12px);height:1px;background:linear-gradient(90deg,transparent,var(--c),transparent);opacity:.6}
+#quiet{position:absolute;left:50%;bottom:6%;transform:translateX(-50%);font-size:var(--fs-xs);color:var(--muted);white-space:nowrap}
+
+#track{grid-column:1/-1;padding:12px 16px;display:flex;align-items:center;gap:16px}
+#ticks{flex:1;height:28px;position:relative;border-radius:8px;background:rgba(255,255,255,.04);overflow:hidden}
+#ticks i{position:absolute;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--c);opacity:.9}
+#ticks i.say{background:#c6d2e8;opacity:.5}#ticks i.think{background:var(--faint);opacity:.5}#ticks i.bad{background:var(--bad)}
+#ticks u{position:absolute;top:0;bottom:0;width:1px;background:#fff}
+#track small{color:var(--muted);white-space:nowrap}
+@media (max-width:980px){#inside{grid-template-columns:1fr;grid-template-rows:auto auto minmax(260px,1fr) auto auto;overflow:auto}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="mock-bar">
+  <b>시안 · 구름 줌인과 구름 속 화면</b>
+  <span>단계</span>
+  <span class="seg" id="phase"><button data-v="IDLE" aria-pressed="true">대기</button><button data-v="PLANNING">설계</button><button data-v="BUILDING">제작</button><button data-v="VERIFYING">테스트</button><button data-v="REVIEWING">감리</button><button data-v="DECIDING">판단</button></span>
+  <span class="seg" id="auto"><button data-v="1" aria-pressed="false">자동 재생</button></span>
+  <span>줌인 세기</span>
+  <span class="seg" id="zoom"><button data-v="0">없음</button><button data-v="1">약하게</button><button data-v="2" aria-pressed="true">보통</button><button data-v="3">강하게</button></span>
+  <span style="margin-left:auto">구름을 누르면 안으로 들어갑니다 · Esc로 나옵니다 · 예시 값입니다</span>
+</div>
+
+<div class="slot" data-slot="0" style="--c:var(--claude)"><small>ARCHITECT · 설계</small><strong>Claude</strong><span>대기</span></div>
+<div class="slot" data-slot="1" style="--c:var(--codex)"><small>MAKER · 제작</small><strong>Codex</strong><span>대기</span></div>
+<div class="slot" data-slot="2" style="--c:var(--agy)"><small>INSPECTOR · 감리</small><strong>Antigravity</strong><span>대기</span></div>
+<button class="hit" data-slot="0" style="--c:var(--claude)" aria-label="ARCHITECT 구름 안으로 들어가기"></button>
+<button class="hit" data-slot="1" style="--c:var(--codex)" aria-label="MAKER 구름 안으로 들어가기"></button>
+<button class="hit" data-slot="2" style="--c:var(--agy)" aria-label="INSPECTOR 구름 안으로 들어가기"></button>
+<div id="caption" class="glass">세 AI가 지시를 기다립니다</div>
+
+<section id="inside" aria-label="구름 속">
+  <header id="in-head">
+    <div><span class="kicker" id="in-kicker">구름 속 · MAKER · 제작</span><h2><em id="in-name">Codex</em> <span id="in-what">코드를 만드는 중</span></h2><p id="in-sub"></p></div>
+    <span class="live" id="in-live"><i></i><span>실시간</span></span>
+    <button id="back">← 밖으로 (Esc)</button>
+  </header>
+
+  <aside class="glass pane" id="in-left">
+    <span class="kicker">받은 지시</span>
+    <dl id="in-order"></dl>
+    <span class="kicker" style="margin-top:8px">바꿀 수 있는 파일</span>
+    <ul id="in-files"></ul>
+    <span class="kicker" style="margin-top:8px">완료 기준</span>
+    <ul id="in-crit"></ul>
+  </aside>
+
+  <div id="stream"><ol id="events"></ol><div id="focus-line"></div><div id="quiet"></div></div>
+
+  <aside class="glass pane" id="in-right">
+    <span class="kicker">이 호출</span>
+    <div><div class="big" id="in-clock">0초</div><span style="color:var(--muted);font-size:var(--fs-xs)" id="in-model"></span></div>
+    <div class="cells">
+      <div><b id="n-tool">0</b><span>도구 호출</span></div>
+      <div id="c-err"><b id="n-err">0</b><span>오류</span></div>
+      <div><b id="n-say">0</b><span>말</span></div>
+      <div><b id="n-quiet">0초</b><span>마지막 활동 뒤</span></div>
+    </div>
+    <span class="kicker" style="margin-top:8px">많이 쓴 도구</span>
+    <ul id="in-top" style="list-style:none;padding:0"></ul>
+    <span class="kicker" style="margin-top:8px">토큰</span>
+    <div style="color:var(--muted)">호출이 끝나면 기록됩니다</div>
+  </aside>
+
+  <footer class="glass" id="track"><span class="kicker">이 호출의 흐름</span><div id="ticks"></div><small id="track-note"></small></footer>
+</section>
+
+<script>
+'use strict';
+/* TRINITY stage: three glass orbs (the AIs) feeding one larger orb (the fused core). Pure WebGL2, no libraries, no external assets (CSP: self).
+   Nothing here is decorative-random: every speed, brightness and colour is driven through Trinity.set() by the
+   live work ledger (/ops/activity). Slots are roles: 0 ARCHITECT (top), 1 MAKER (left), 2 INSPECTOR (right). */
+window.Trinity=(function(){
+const SLOTS=[[0,.98,0],[-1.02,-.60,0],[1.02,-.60,0]];
+const COUNTS={ribbon:7000,stream:4500,node:3200,dust:5200,edge:1700,nucleus:9000,verify:2400,shock:1800};
+
+const VS_POINTS=`#version 300 es
+precision highp float;
+layout(location=0) in vec4 aSeed;
+layout(location=1) in vec2 aMeta;
+uniform mat4 uVP;
+uniform float uTime,uPx,uCore,uVerify,uPulse,uBoot,uPhC;
+uniform vec3 uSlot[3];
+uniform vec3 uColor[3];
+uniform vec3 uAct,uEdge,uPhS,uPhE,uPhN,uPulseColor;
+out vec3 vColor;
+out float vAlpha;
+const float TAU=6.28318530718;
+vec3 rotX(vec3 p,float a){float c=cos(a),s=sin(a);return vec3(p.x,c*p.y-s*p.z,s*p.y+c*p.z);}
+vec3 rotY(vec3 p,float a){float c=cos(a),s=sin(a);return vec3(c*p.x+s*p.z,p.y,-s*p.x+c*p.z);}
+vec3 rotZ(vec3 p,float a){float c=cos(a),s=sin(a);return vec3(c*p.x-s*p.y,s*p.x+c*p.y,p.z);}
+vec3 sph(float u,float v){float z=2.*u-1.;float r=sqrt(max(0.,1.-z*z));float a=TAU*v;return vec3(r*cos(a),z,r*sin(a));}
+float pick(vec3 v,int i){return i==0?v.x:(i==1?v.y:v.z);}
+void main(){
+  float kind=aMeta.x;int o=int(aMeta.y+.5);
+  vec3 col=uColor[o];float act=pick(uAct,o);float t=uTime;
+  vec3 p=vec3(0.);float size=.014;float alpha=1.;
+  float energy=clamp(uCore+uPulse*.6,0.,1.4);
+  if(kind<.5){                                   // 0 fused core: one comet per AI circling the core, with a long tail
+    float w=aSeed.y-.5;
+    float head=fract(uPhC*.09+float(o)/3.),back=fract(head-aSeed.x);
+    float th=TAU*aSeed.x;float R=.47+.012*(aSeed.z-.5)*(1.+6.*back);
+    vec3 l=vec3(cos(th)*R,w*.02*back,sin(th)*R);
+    p=rotY(rotX(l,1.18),float(o)*TAU/3.+t*.07);
+    alpha=exp(-back*6.5)*(.45+.55*min(energy,1.))+.025;size=.007+.016*exp(-back*14.);
+    col=mix(col,vec3(1.),.6*exp(-back*22.));
+  }else if(kind<1.5){                            // 1 stream: an AI pours its work into the core
+    float u=fract(aSeed.x+pick(uPhS,o)*(.6+.8*aSeed.y));
+    vec3 a=uSlot[o];float e=u*u*(3.-2.*u);
+    vec3 base=a*(1.-e);
+    vec3 dir=normalize(-a);vec3 n1=normalize(cross(dir,vec3(0.,0.,1.)));vec3 n2=cross(dir,n1);
+    float ang=aSeed.z*TAU+u*7.+t*.5;
+    float rad=(.005+.050*aSeed.w*aSeed.w)*sin(3.14159*u)*(.65+.7*act);   // a slim thread: the orb it leaves stays visible
+    p=base+(n1*cos(ang)+n2*sin(ang))*rad;
+    float vis=step(aSeed.w,.2+.8*act);          // idle: only a thin thread stays lit
+    alpha=vis*(.16+.84*act)*smoothstep(0.,.07,u)*(1.-.6*smoothstep(.82,1.,u));
+    size=(.007+.012*aSeed.w)*(.8+.5*act);
+    col=mix(col,vec3(1.),e*e*.35*uCore);
+  }else if(kind<2.5){                            // 2 AI node: a glass orb — bright rim, a highlight, slow waves on its surface
+    vec3 c=uSlot[o];
+    vec3 d=sph(aSeed.x,aSeed.y);d=rotY(rotX(d,float(o)*1.7+t*.15),t*.22);
+    float wave=.05*sin(d.x*5.+t*1.8+float(o))*sin(d.y*6.-t*1.3)+.03*sin(d.z*9.+t*2.4);
+    float inner=step(aSeed.z,.16);                // a sixth of the points glow inside the shell
+    float rr=.214*(1.+.14*act)*(1.+wave*(.6+act))*mix(1.,.5*aSeed.w,inner);
+    p=c+d*rr;
+    float rim=1.-abs(d.z);rim*=rim;float spec=pow(max(0.,dot(d,normalize(vec3(-.4,.55,.75)))),26.);
+    alpha=mix((.06+.55*rim)*(.5+.6*act)+spec*.9,.16+.42*act,inner);size=.009+.004*aSeed.w+spec*.012;
+    col=mix(col,vec3(1.),.12+.55*spec+.22*rim*aSeed.w);
+  }else if(kind<3.5){                            // 3 depth dust
+    p=(aSeed.xyz*2.-1.)*vec3(3.8,2.3,2.8);p=rotY(p,t*.012);p.y+=sin(t*.07+aSeed.w*TAU)*.08;
+    alpha=.09+.22*pow(.5+.5*sin(t*(.3+aSeed.w)+aSeed.x*40.),3.);
+    size=.008+.016*aSeed.w*aSeed.w;col=mix(vec3(.5,.66,1.),vec3(1.),aSeed.z);
+  }else if(kind<4.5){                            // 4 hand-off arc: slot o -> next slot (order, code, verdict)
+    int n=(o+1)%3;vec3 a=uSlot[o],b=uSlot[n];vec3 m=(a+b)*.5;vec3 ctrl=m+normalize(m)*.50;
+    float edge=pick(uEdge,o);
+    float u=fract(aSeed.x+pick(uPhE,o)*(.75+.5*aSeed.y));
+    p=mix(mix(a,ctrl,u),mix(ctrl,b,u),u)+(aSeed.yzw-.5)*.03*(.4+edge);
+    float band=pow(.5+.5*sin(aSeed.x*TAU*4.),4.);
+    alpha=(.045+.95*edge)*(.25+.75*band)*smoothstep(0.,.06,u)*smoothstep(1.,.94,u);
+    col=mix(uColor[o],uColor[n],u);size=.009+.016*aSeed.w*(.3+edge);
+  }else if(kind<5.5){                            // 5 nucleus: where the three become one — a large breathing glass orb with a glowing heart
+    vec3 d=sph(aSeed.x,aSeed.y);
+    vec3 q=rotY(rotX(d,t*.11),uPhC*.2);
+    float wave=.07*sin(q.x*4.+t*1.4)*sin(q.y*5.-t*1.1)+.04*sin(q.z*8.+t*2.);
+    float inner=step(aSeed.z,.30);
+    float rr=.215*(1.+.10*uCore+.22*uPulse)*(1.+wave*(.5+uCore))*mix(1.,.45*aSeed.w,inner);p=q*rr;
+    float rim=1.-abs(q.z);rim*=rim;float spec=pow(max(0.,dot(q,normalize(vec3(-.4,.55,.75)))),30.);
+    alpha=mix((.05+.5*rim)*(.5+.7*uCore)+spec,.20+.55*uCore,inner);size=.009+.005*aSeed.w+spec*.014;
+    col=mix(col,vec3(1.,.97,.92),inner>.5?.45+.4*uCore:.10+.6*spec+.2*rim);
+  }else if(kind<6.5){                            // 6 verification scanner (Director running tests)
+    float sgn=aSeed.y<.5?1.:-1.;
+    float th=TAU*aSeed.x+t*1.3*sgn;float rr=.70+.016*(aSeed.w-.5);
+    vec3 l=vec3(cos(th)*rr,0.,sin(th)*rr);
+    p=rotX(l,1.57+.55*(sgn>0.?sin(t*.9):cos(t*.7)));
+    alpha=uVerify*(.10+.90*pow(aSeed.x,5.));col=mix(vec3(.55,1.,.82),vec3(1.),pow(aSeed.x,8.));size=.012;
+  }else{                                         // 7 shockwave on a result
+    float th=TAU*aSeed.x;float k=1.-uPulse;float rr=.25+k*2.4+(aSeed.w-.5)*.06;
+    p=vec3(cos(th)*rr,sin(th)*rr,(aSeed.y-.5)*.06);
+    alpha=uPulse*uPulse*(.6+.4*aSeed.z);col=uPulseColor;size=.011+.012*aSeed.z;
+  }
+  vec3 scatter=(aSeed.zxy*2.-1.)*3.2;            // boot: everything assembles out of scattered dust
+  float bt=clamp(uBoot*1.3-aSeed.w*.3,0.,1.);bt=bt*bt*(3.-2.*bt);
+  p=mix(scatter,p,bt);alpha*=bt;
+  vec4 clip=uVP*vec4(p,1.);
+  gl_Position=clip;gl_PointSize=max(1.5,size*uPx/clip.w);
+  vColor=col;vAlpha=alpha;
+}`;
+const FS_POINTS=`#version 300 es
+precision highp float;
+in vec3 vColor;in float vAlpha;out vec4 o;
+void main(){vec2 c=gl_PointCoord*2.-1.;float d=dot(c,c);if(d>1.)discard;float a=exp(-d*4.2)*vAlpha;o=vec4(vColor*a,a);}`;
+const VS_FULL=`#version 300 es
+out vec2 vUv;
+void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));vUv=p;gl_Position=vec4(p*2.-1.,0.,1.);}`;
+const FS_BLUR=`#version 300 es
+precision highp float;
+in vec2 vUv;out vec4 o;uniform sampler2D uTex;uniform vec2 uDir;
+void main(){
+  vec4 c=texture(uTex,vUv)*.227027;
+  c+=(texture(uTex,vUv+uDir*1.3846153)+texture(uTex,vUv-uDir*1.3846153))*.3162162;
+  c+=(texture(uTex,vUv+uDir*3.2307692)+texture(uTex,vUv-uDir*3.2307692))*.0702703;
+  o=c;
+}`;
+const FS_COMP=`#version 300 es
+precision highp float;
+in vec2 vUv;out vec4 o;
+uniform sampler2D uScene,uB1,uB2;
+uniform vec2 uRes,uCenter;uniform float uTime,uCore,uPulse;uniform vec3 uTint,uPulseColor;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.03+vec2(11.3,7.7);a*=.5;}return v;}
+void main(){
+  vec2 q=(vUv-uCenter)*vec2(uRes.x/uRes.y,1.);float r=length(q);
+  vec3 bg=mix(vec3(.026,.040,.100),vec3(.004,.006,.014),smoothstep(0.,1.25,r));
+  // nebula: two layers of drifting cloud (the second warped by the first), lit by the aurora colours and by whoever works
+  float neb=fbm(q*1.25+vec2(uTime*.011,-uTime*.007));float neb2=fbm(q*2.7-vec2(uTime*.009,uTime*.004)+neb*1.7);
+  float cloud=smoothstep(.46,.74,neb*.62+neb2*.55),wisp=smoothstep(.50,.80,neb2),veil=smoothstep(.44,.66,fbm(q*.7+vec2(-uTime*.006,uTime*.004)+neb2*.6));
+  vec2 a1=q-vec2(-1.02+.07*sin(uTime*.045),.56+.05*cos(uTime*.038)),a2=q-vec2(1.04+.06*cos(uTime*.04),-.62+.06*sin(uTime*.05));
+  bg+=vec3(1.,.54,.36)*.15*exp(-dot(a1,a1)*.95)*(.30+1.5*cloud)+vec3(.24,.95,.75)*.125*exp(-dot(a2,a2)*.9)*(.30+1.5*veil);
+  bg+=vec3(.22,.30,.85)*.30*cloud*(1.-smoothstep(.15,1.5,r))+vec3(.55,.36,.95)*.22*veil*(.35+.65*wisp)*(1.-smoothstep(.3,1.6,r));
+  bg+=vec3(.55,.75,1.)*.13*wisp*cloud*(1.-smoothstep(.1,1.4,r));
+  bg+=uTint*(.05+.13*uCore)*neb*neb2*(1.-smoothstep(.05,1.3,r))*2.1;
+  vec2 sg=floor(vUv*uRes/3.);float sh=hash(sg);
+  bg+=vec3(.75,.85,1.)*step(.9987,sh)*(.10+.16*(.5+.5*sin(uTime*(.6+2.*hash(sg+7.))+sh*90.)))*smoothstep(.25,.6,r)*(1.-.7*cloud);
+  float ring=smoothstep(.0035,0.,abs(r-.36))+smoothstep(.0035,0.,abs(r-.72))*.6+smoothstep(.003,0.,abs(r-1.08))*.3;
+  bg+=vec3(.35,.5,.8)*ring*.045;
+  bg+=uPulseColor*uPulse*.10*(1.-smoothstep(0.,1.2,r));
+  vec2 ca=(vUv-.5)*.0016;
+  vec3 scene=vec3(texture(uScene,vUv+ca).r,texture(uScene,vUv).g,texture(uScene,vUv-ca).b);
+  vec3 col=bg+scene+texture(uB1,vUv).rgb*.42+texture(uB2,vUv).rgb*.70;
+  float peak=max(col.r,max(col.g,col.b))+1e-4;                 // tone-map on the peak channel: bright stays coloured
+  vec3 hue=col*((1.-exp(-peak*1.15))/peak);
+  col=mix(hue,1.-exp(-col*1.15),.38);
+  vec2 v=vUv-.5;col*=1.-.42*dot(v,v)*1.6;
+  col+=(hash(vUv*uRes+fract(uTime)*91.7)-.5)*.022;
+  o=vec4(max(col,0.),1.);
+}`;
+
+let canvas,gl,progP,progB,progC,uP={},uB={},uC={},vao,total=0,fb={},hdr=false,size=[0,0],running=false,raf=0;
+let onFrame=null,failed=false,flat=null,listening=false;
+const cur={act:[.1,.1,.1],edge:[0,0,0],core:.18,verify:0,colors:[[1,.54,.36],[.42,.65,1],[.24,.95,.75]]};
+const tgt={act:[.1,.1,.1],edge:[0,0,0],core:.18,verify:0,colors:cur.colors.map(c=>c.slice())};
+const ph={c:0,s:[0,0,0],e:[0,0,0],n:[0,0,0]};
+let pulse=0,pulseColor=[1,1,1],boot=0,time=0,last=0,timeScale=1,bootDelay=0,bootTime=3.2,age=0;
+let rect={x:0,y:0,w:1,h:1};const cam={x:0,y:0,d:1},camT={x:0,y:0,d:1,k:2.4};const mouse=[0,0],mouseS=[0,0];
+const vp=new Float32Array(16);
+
+function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||'shader');return s;}
+function program(vs,fs){const p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
+  gl.bindAttribLocation(p,0,'aSeed');gl.bindAttribLocation(p,1,'aMeta');gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p)||'link');return p;}
+function uniforms(p,names){const o={};for(const n of names)o[n]=gl.getUniformLocation(p,n);return o;}
+function rng(seed){let s=seed>>>0;return()=>{s=(s+0x6D2B79F5)|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+function buildGeometry(){
+  const groups=[];const add=(kind,owner,n)=>groups.push([kind,owner,n]);
+  for(let o=0;o<3;o++){add(0,o,COUNTS.ribbon);add(1,o,COUNTS.stream);add(2,o,COUNTS.node);add(4,o,COUNTS.edge);add(5,o,COUNTS.nucleus/3);}
+  add(3,0,COUNTS.dust);add(6,0,COUNTS.verify);add(7,0,COUNTS.shock);
+  total=groups.reduce((a,g)=>a+g[2],0);
+  const data=new Float32Array(total*6),rand=rng(20260930);let i=0;
+  for(const [kind,owner,n] of groups)for(let k=0;k<n;k++){data[i++]=rand();data[i++]=rand();data[i++]=rand();data[i++]=rand();data[i++]=kind;data[i++]=owner;}
+  vao=gl.createVertexArray();gl.bindVertexArray(vao);
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,4,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,2,gl.FLOAT,false,24,16);
+  gl.bindVertexArray(null);
+}
+function target(w,h){
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+  if(hdr)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,w,h,0,gl.RGBA,gl.HALF_FLOAT,null);
+  else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  for(const [k,v] of [[gl.TEXTURE_MIN_FILTER,gl.LINEAR],[gl.TEXTURE_MAG_FILTER,gl.LINEAR],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]])gl.texParameteri(gl.TEXTURE_2D,k,v);
+  const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  const ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {f,tex,w,h,ok};
+}
+function freeTargets(){for(const k of Object.keys(fb)){gl.deleteFramebuffer(fb[k].f);gl.deleteTexture(fb[k].tex);}fb={};}
+function resize(){
+  const cw=canvas.clientWidth||1,ch=canvas.clientHeight||1;
+  const dpr=Math.min(window.devicePixelRatio||1,1.5,Math.sqrt(3.4e6/(cw*ch)));     // cap the HDR buffers at ~3.4 MP
+  const w=Math.max(2,Math.round(cw*dpr)),h=Math.max(2,Math.round(ch*dpr));
+  if(w===size[0]&&h===size[1])return;
+  size=[w,h];canvas.width=w;canvas.height=h;
+  if(!gl)return;
+  freeTargets();
+  fb.scene=target(w,h);
+  if(!fb.scene.ok&&hdr){hdr=false;freeTargets();fb.scene=target(w,h);}
+  const w2=Math.max(2,w>>1),h2=Math.max(2,h>>1),w4=Math.max(2,w>>2),h4=Math.max(2,h>>2);
+  fb.a1=target(w2,h2);fb.b1=target(w2,h2);fb.a2=target(w4,h4);fb.b2=target(w4,h4);
+}
+// ---- camera (column-major mat4)
+function mul(o,a,b){for(let c=0;c<4;c++)for(let r=0;r<4;r++)o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o;}
+const P=new Float32Array(16),V=new Float32Array(16);
+function camera(){
+  const W=size[0],H=size[1],aspect=W/H,fov=36*Math.PI/180,f=1/Math.tan(fov/2);
+  const need=Math.max(1.36/(Math.max(rect.h,.2)),1.50/(aspect*Math.max(rect.w,.2)));
+  const dist=need*f*cam.d,near=.02,far=40;
+  P.fill(0);P[0]=f/aspect;P[5]=f;P[10]=(far+near)/(near-far);P[11]=-1;P[14]=2*far*near/(near-far);
+  const sway=Math.min(1,cam.d*1.2);const yaw=(.24*Math.sin(time*.11)+mouseS[0]*.22)*sway,pitch=(.07*Math.sin(time*.17)+mouseS[1]*.12)*sway;
+  const tx=cam.x,ty=.06*cam.d+cam.y,tz=0;
+  const ex=tx+dist*Math.sin(yaw)*Math.cos(pitch),ey=ty+dist*Math.sin(pitch),ez=tz+dist*Math.cos(yaw)*Math.cos(pitch);
+  let zx=ex-tx,zy=ey-ty,zz=ez-tz;const zl=Math.hypot(zx,zy,zz);zx/=zl;zy/=zl;zz/=zl;
+  let xx=zz,xy=0,xz=-zx;const xl=Math.hypot(xx,xy,xz);xx/=xl;xz/=xl;                  // up(0,1,0) x z
+  const yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  V[0]=xx;V[1]=yx;V[2]=zx;V[3]=0;V[4]=xy;V[5]=yy;V[6]=zy;V[7]=0;V[8]=xz;V[9]=yz;V[10]=zz;V[11]=0;
+  V[12]=-(xx*ex+xy*ey+xz*ez);V[13]=-(yx*ex+yy*ey+yz*ez);V[14]=-(zx*ex+zy*ey+zz*ez);V[15]=1;
+  mul(vp,P,V);
+  const ox=2*(rect.x+rect.w/2)-1,oy=1-2*(rect.y+rect.h/2);                            // lens shift: scene centre -> stage rect centre
+  for(let c=0;c<4;c++){vp[c*4]+=ox*vp[c*4+3];vp[c*4+1]+=oy*vp[c*4+3];}
+  return f;
+}
+function project(p){
+  const x=vp[0]*p[0]+vp[4]*p[1]+vp[8]*p[2]+vp[12],y=vp[1]*p[0]+vp[5]*p[1]+vp[9]*p[2]+vp[13],w=vp[3]*p[0]+vp[7]*p[1]+vp[11]*p[2]+vp[15];
+  return [(x/w*.5+.5),(1-(y/w*.5+.5)),w];
+}
+function approach(dt){
+  const k=1-Math.exp(-dt*3.2),kc=1-Math.exp(-dt*2.2);
+  for(let i=0;i<3;i++){cur.act[i]+=(tgt.act[i]-cur.act[i])*k;cur.edge[i]+=(tgt.edge[i]-cur.edge[i])*k;
+    for(let j=0;j<3;j++)cur.colors[i][j]+=(tgt.colors[i][j]-cur.colors[i][j])*kc;}
+  {const kz=1-Math.exp(-dt*camT.k);cam.x+=(camT.x-cam.x)*kz;cam.y+=(camT.y-cam.y)*kz;cam.d+=(camT.d-cam.d)*kz;}
+  cur.core+=(tgt.core-cur.core)*k;cur.verify+=(tgt.verify-cur.verify)*k;
+  mouseS[0]+=(mouse[0]-mouseS[0])*k*.6;mouseS[1]+=(mouse[1]-mouseS[1])*k*.6;
+  pulse=Math.max(0,pulse-dt/1.7);
+  ph.c+=dt*(.16+.8*cur.core+.7*pulse);
+  for(let i=0;i<3;i++){ph.s[i]+=dt*(.03+.34*cur.act[i]);ph.e[i]+=dt*(.045+.32*cur.edge[i]);ph.n[i]+=dt*(.22+1.7*cur.act[i]);}
+  age+=dt;if(age>=bootDelay)boot=Math.min(1,boot+dt/bootTime);   // the intro holds the dust back until the roll call is over
+}
+function blur(src,dst,dx,dy){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,dst.f);gl.viewport(0,0,dst.w,dst.h);
+  gl.bindTexture(gl.TEXTURE_2D,src.tex);gl.uniform2f(uB.uDir,dx/dst.w,dy/dst.h);gl.drawArrays(gl.TRIANGLES,0,3);
+}
+function frame(now){
+  raf=requestAnimationFrame(frame);
+  const dt=Math.min(.05,Math.max(0,(now-last)/1000))*timeScale;last=now;
+  render(dt);
+}
+function render(dt){
+  time+=dt;resize();approach(dt);
+  const f=camera(),tint=[0,0,0];let wsum=0;
+  for(let i=0;i<3;i++){const w=.25+cur.act[i];wsum+=w;for(let j=0;j<3;j++)tint[j]+=cur.colors[i][j]*w;}
+  if(flat){drawFlat();emit();return;}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb.scene.f);gl.viewport(0,0,size[0],size[1]);
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE);
+  gl.useProgram(progP);gl.bindVertexArray(vao);
+  gl.uniformMatrix4fv(uP.uVP,false,vp);gl.uniform1f(uP.uTime,time);gl.uniform1f(uP.uPx,size[1]*f*.5);
+  gl.uniform1f(uP.uCore,cur.core);gl.uniform1f(uP.uVerify,cur.verify);gl.uniform1f(uP.uPulse,pulse);gl.uniform1f(uP.uBoot,boot);gl.uniform1f(uP.uPhC,ph.c);
+  gl.uniform3fv(uP['uSlot[0]'],SLOTS.flat());gl.uniform3fv(uP['uColor[0]'],cur.colors.flat());
+  gl.uniform3fv(uP.uAct,cur.act);gl.uniform3fv(uP.uEdge,cur.edge);gl.uniform3fv(uP.uPhS,ph.s);gl.uniform3fv(uP.uPhE,ph.e);gl.uniform3fv(uP.uPhN,ph.n);
+  gl.uniform3fv(uP.uPulseColor,pulseColor);
+  gl.drawArrays(gl.POINTS,0,total);
+  gl.disable(gl.BLEND);gl.bindVertexArray(null);
+  gl.useProgram(progB);gl.activeTexture(gl.TEXTURE0);gl.uniform1i(uB.uTex,0);
+  blur(fb.scene,fb.a1,1,0);blur(fb.a1,fb.b1,0,1);blur(fb.b1,fb.a2,1.6,0);blur(fb.a2,fb.b2,0,1.6);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,size[0],size[1]);
+  gl.useProgram(progC);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fb.scene.tex);gl.uniform1i(uC.uScene,0);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,fb.b1.tex);gl.uniform1i(uC.uB1,1);
+  gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fb.b2.tex);gl.uniform1i(uC.uB2,2);
+  const c=project([0,0,0]);
+  gl.uniform2f(uC.uRes,size[0],size[1]);gl.uniform2f(uC.uCenter,c[0],1-c[1]);gl.uniform1f(uC.uTime,time);
+  gl.uniform1f(uC.uCore,cur.core);gl.uniform1f(uC.uPulse,pulse);
+  gl.uniform3f(uC.uTint,tint[0]/wsum,tint[1]/wsum,tint[2]/wsum);gl.uniform3fv(uC.uPulseColor,pulseColor);
+  gl.drawArrays(gl.TRIANGLES,0,3);gl.activeTexture(gl.TEXTURE0);
+  emit();
+}
+function emit(){
+  if(!onFrame)return;
+  const cw=canvas.clientWidth,ch=canvas.clientHeight,unit=project([.5,0,0]),zero=project([0,0,0]);
+  onFrame({slots:SLOTS.map(s=>{const p=project(s);return [p[0]*cw,p[1]*ch];}),core:[zero[0]*cw,zero[1]*ch],
+           unit:Math.abs(unit[0]-zero[0])*cw*2,act:cur.act,pulse});
+}
+// ---- 2D fallback (no WebGL2): same data, simpler picture
+function drawFlat(){
+  const c=flat,cw=canvas.clientWidth,ch=canvas.clientHeight,W=size[0],H=size[1],k=W/cw;
+  c.setTransform(1,0,0,1,0,0);c.fillStyle='#05070d';c.fillRect(0,0,W,H);
+  // the same backdrop the shader paints: navy around the middle, a warm glow upper left, a mint one lower right
+  for(const [x,y,rad,col] of [[W/2,H/2,Math.max(W,H)*.6,'rgba(22,34,80,.55)'],[W*.12,H*.14,Math.max(W,H)*.45,'rgba(255,138,92,.16)'],[W*.9,H*.9,Math.max(W,H)*.45,'rgba(61,242,192,.13)']]){
+    const g=c.createRadialGradient(x,y,0,x,y,rad);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=g;c.fillRect(0,0,W,H);}
+  c.globalCompositeOperation='lighter';
+  const pt=p=>{const q=project(p);return [q[0]*W,q[1]*H];},o=pt([0,0,0]),u=Math.abs(pt([.5,0,0])[0]-o[0])*2;
+  const rgb=(col,a)=>'rgba('+col.map(v=>Math.round(Math.min(1,v)*255)).join(',')+','+a+')';
+  const glow=(x,y,r,col,a)=>{const g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,rgb(col,a));g.addColorStop(1,rgb(col,0));c.fillStyle=g;c.beginPath();c.arc(x,y,r,0,7);c.fill();};
+  glow(o[0],o[1],u*(.5+.12*cur.core+.2*pulse),[1,.95,.9],.35+.4*cur.core);
+  for(let i=0;i<3;i++){const s=pt(SLOTS[i]),col=cur.colors[i];glow(s[0],s[1],u*(.22+.1*cur.act[i]),col,.3+.6*cur.act[i]);
+    for(let j=0;j<26;j++){const t=(j/26+ph.s[i])%1,e=t*t*(3-2*t);c.fillStyle=rgb(col,(.12+.8*cur.act[i])*Math.sin(Math.PI*t));c.beginPath();c.arc(s[0]+(o[0]-s[0])*e,s[1]+(o[1]-s[1])*e,2.2*k,0,7);c.fill();}
+    c.strokeStyle=rgb(col,.5);c.lineWidth=1.5*k;c.beginPath();c.ellipse(o[0],o[1],u*.47,u*.16,i*Math.PI/3+ph.c*.2,0,7);c.stroke();}
+  c.globalCompositeOperation='source-over';
+}
+let paused=false,lost=false;
+function start(){if(!running&&!paused&&!lost&&canvas){running=true;last=performance.now();raf=requestAnimationFrame(frame);}}
+function init(el,opts){
+  canvas=el;onFrame=(opts&&opts.onFrame)||null;bootDelay=(opts&&opts.bootDelay)||0;bootTime=(opts&&opts.bootTime)||3.2;
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){timeScale=.2;boot=1;}
+  try{
+    gl=canvas.getContext('webgl2',{antialias:false,alpha:false,powerPreference:'high-performance'});
+    if(!gl)throw Error('WebGL2 unavailable');
+    hdr=!!(gl.getExtension('EXT_color_buffer_float')||gl.getExtension('EXT_color_buffer_half_float'));
+    progP=program(VS_POINTS,FS_POINTS);progB=program(VS_FULL,FS_BLUR);progC=program(VS_FULL,FS_COMP);
+    uP=uniforms(progP,['uVP','uTime','uPx','uCore','uVerify','uPulse','uBoot','uPhC','uSlot[0]','uColor[0]','uAct','uEdge','uPhS','uPhE','uPhN','uPulseColor']);
+    uB=uniforms(progB,['uTex','uDir']);uC=uniforms(progC,['uScene','uB1','uB2','uRes','uCenter','uTime','uCore','uPulse','uTint','uPulseColor']);
+    buildGeometry();
+    if(!listening){
+      canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(raf);running=false;lost=true;});
+      canvas.addEventListener('webglcontextrestored',()=>{lost=false;size=[0,0];fb={};init(canvas,{onFrame});});
+    }
+  }catch(err){
+    failed=true;gl=null;flat=canvas.getContext('2d');
+    if(window.console)console.warn('Trinity: WebGL2 fallback to 2D -',err.message);
+  }
+  if(!listening){listening=true;window.addEventListener('pointermove',e=>{mouse[0]=(e.clientX/window.innerWidth-.5)*2;mouse[1]=(e.clientY/window.innerHeight-.5)*2;},{passive:true});}
+  size=[0,0];resize();
+  start();
+  return {webgl:!failed,hdr};
+}
+function set(s){
+  if(s.act)for(let i=0;i<3;i++)tgt.act[i]=s.act[i];
+  if(s.edge)for(let i=0;i<3;i++)tgt.edge[i]=s.edge[i];
+  if(s.core!=null)tgt.core=s.core;if(s.verify!=null)tgt.verify=s.verify;
+  if(s.colors)for(let i=0;i<3;i++)tgt.colors[i]=s.colors[i].slice();
+}
+return {init,set,
+  pulse(color){pulse=1;pulseColor=(color||[1,1,1]).slice();},
+  pause(){paused=true;if(running){cancelAnimationFrame(raf);running=false;}},   // nothing is drawn while the scene is covered
+  resume(){paused=false;start();},
+  focus(r){rect=r;},
+  look(slot,pull,d,k){if(slot<0){camT.x=0;camT.y=0;camT.d=1;}else{camT.x=SLOTS[slot][0]*pull;camT.y=(SLOTS[slot][1]-.06)*pull;camT.d=d;}camT.k=k||2.4;},
+  cam(){return cam;},                                  // stage rect inside the canvas, normalised {x,y,w,h}
+  step(sec){for(let s=0;s<sec;s+=1/30){time+=1/30;approach(1/30);}render(0);},   // deterministic advance (captures, hidden tabs)
+  state(){return {cur,tgt,pulse,boot,time,size:size.slice(),hdr,webgl:!failed,points:total};}};
+})();
+
+</script>
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const RGB=[[1,.54,.36],[.24,.95,.75],[.42,.65,1]],CSS=['var(--claude)','var(--codex)','var(--agy)'];
+const ROLE=['ARCHITECT · 설계','MAKER · 제작','INSPECTOR · 감리'],AI=['Claude','Codex','Antigravity'],MODEL=['sonnet · low','gpt-6-luna · low','gemini-4-hydrogen · low'];
+// which cloud works in which phase, and the sentence under the scene
+const PHASES={IDLE:{slot:-1,cap:'세 AI가 지시를 기다립니다',core:.15},PLANNING:{slot:0,cap:'<b>Claude</b>가 지시서를 쓰고 있습니다',core:.4},BUILDING:{slot:1,cap:'<b>Codex</b>가 코드를 만들고 있습니다',core:.6},
+  VERIFYING:{slot:-1,cap:'TRIBUNAL이 테스트를 직접 실행하고 있습니다',core:1,verify:1},REVIEWING:{slot:2,cap:'<b>Antigravity</b>가 결과물을 감리하고 있습니다',core:.6},DECIDING:{slot:0,cap:'<b>Claude</b>가 결과를 판단하고 있습니다',core:.7}};
+const ZOOM=[[0,1],[.22,.9],[.42,.78],[.62,.64]];          // [how far the camera leans to the cloud, how close it comes]
+let phase='IDLE',zoom=2,inside=-1,frameInfo=null;
+
+function onFrame(f){frameInfo=f;
+  $$('.slot').forEach((n,i)=>{const p=f.slots[i];n.style.transform='translate('+p[0]+'px,'+(p[1]+(i===0?-150:92))+'px)';});
+  $$('.hit').forEach((n,i)=>{const p=f.slots[i];n.style.transform='translate('+p[0]+'px,'+p[1]+'px)';});}
+Trinity.init($('#c'),{onFrame});
+Trinity.focus({x:0,y:.06,w:1,h:.88});
+function applyScene(){
+  const p=PHASES[phase],act=[.1,.1,.1],edge=[0,0,0];
+  if(p.slot>=0){act[p.slot]=1;edge[p.slot]=1;}
+  Trinity.set({act,edge,colors:RGB,core:p.core,verify:p.verify?1:0});
+  if(inside>=0)Trinity.look(inside,1,.085,1.9);                       // dive: the camera ends inside the cloud
+  else if(p.slot>=0&&zoom)Trinity.look(p.slot,ZOOM[zoom][0],ZOOM[zoom][1],1.6);
+  else Trinity.look(-1);
+  $$('.slot').forEach((n,i)=>{n.classList.toggle('on',i===p.slot);n.querySelector('span').textContent=i===p.slot?{PLANNING:'설계 중',BUILDING:'제작 중',REVIEWING:'감리 중',DECIDING:'판단 중'}[phase]:'대기';
+    n.style.opacity=p.slot>=0&&i!==p.slot&&zoom>1?.45:1;});
+  const cap=$('#caption');cap.innerHTML=p.cap;cap.style.setProperty('--c',p.slot>=0?CSS[p.slot]:'#fff');
+}
+function seg(id,fn){const box=$('#'+id);box.onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  if(id==='auto'){const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);fn(on);return;}
+  for(const x of box.children)x.setAttribute('aria-pressed',x===b);fn(b.dataset.v);};}
+function setPhase(v){phase=v;for(const x of $('#phase').children)x.setAttribute('aria-pressed',x.dataset.v===v);applyScene();if(inside>=0)paintInside(true);}
+seg('phase',setPhase);seg('zoom',v=>{zoom=+v;applyScene();});
+let autoTimer=null;const ORDER=['PLANNING','BUILDING','VERIFYING','REVIEWING','DECIDING','IDLE'];
+seg('auto',on=>{clearInterval(autoTimer);if(on){let i=Math.max(0,ORDER.indexOf(phase));autoTimer=setInterval(()=>{i=(i+1)%ORDER.length;setPhase(ORDER[i]);},5200);}});
+
+// ---- inside: a scripted call per role, in the shape /ops/call really returns ({at,kind,name,detail,error})
+const SCRIPT=[
+ {what:'지시서를 쓰는 중',order:[['목표','src/queue_util.py에 order_send(queue, item) 함수 추가'],['단계','설계 (PLANNING)'],['보낸 지시','2,609자']],files:[],crit:[],
+  ev:[['think','',''],['tool','Read','src/calc.py'],['tool','Read','tests/test_calc.py'],['tool','Grep','def  in  src'],['think','',''],['say','','{"action":"order","order":{"goal":"src/queue_util.py에 order_send(queue, item)…']]},
+ {what:'코드를 만드는 중',order:[['목표','src/queue_util.py에 order_send(queue, item) 함수 추가'],['단계','제작 (BUILDING) · 1회차'],['보낸 지시','2,441자']],
+  files:['src/queue_util.py','tests/test_queue_util.py'],crit:['queue 끝에 item을 넣고 길이를 돌려준다','list가 아니면 TypeError','테스트 3개 추가'],
+  ev:[['tool','shell','ls src tests'],['tool','shell','cat src/calc.py'],['think','',''],['tool','apply_patch','src/queue_util.py'],['tool','apply_patch','tests/test_queue_util.py'],['tool','shell','python -m pytest -q tests/test_queue_util.py',1],['tool','apply_patch','tests/test_queue_util.py'],['tool','shell','python -m pytest -q'],['say','','order_send()를 추가하고 테스트 3개를 작성했습니다. 전체 테스트 4개가 통과합니다.']]},
+ {what:'결과물을 감리하는 중',order:[['목표','제작 결과가 지시서의 기준을 지켰는지 확인'],['단계','감리 (REVIEWING)'],['보낸 지시','4,261자']],
+  files:[],crit:['queue 끝에 item을 넣고 길이를 돌려준다','list가 아니면 TypeError','테스트 3개 추가'],
+  ev:[['tool','read_file','src/queue_util.py'],['tool','read_file','tests/test_queue_util.py'],['think','',''],['tool','run_command','git diff --stat'],['say','','verdict: pass · 기준 3개를 모두 확인했습니다. 지적 없음.']]}];
+const KIND={tool:n=>n,say:()=>'말',think:()=>'생각'};
+let shown=[],cursor=0,started=0,lastAt=0,streamTimer=null,clockTimer=null;
+function workingSlot(){return PHASES[phase].slot;}
+function fmt(t){const d=new Date(t);return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');}
+function paintStream(){
+  const ol=$('#events'),keep=shown.slice(-7);
+  ol.replaceChildren(...keep.map((e,i)=>{const li=document.createElement('li'),age=keep.length-1-i;li.className=e.kind+(e.error?' bad':'')+(age===0?' now':'');
+    li.style.transform='scale('+(1-age*.055)+')';li.style.opacity=String(Math.max(.12,1-age*.17));
+    li.innerHTML='<time></time><b></b><span></span><em></em>';li.children[0].textContent=fmt(e.at);li.children[1].textContent=KIND[e.kind](e.name);li.children[2].textContent=e.detail||(e.kind==='think'?'생각하는 중…':'');li.children[3].textContent=e.error?'오류':'';
+    if(age===0&&e.fresh){li.classList.add('enter');requestAnimationFrame(()=>requestAnimationFrame(()=>li.classList.remove('enter')));e.fresh=false;}
+    return li;}));
+  const tools=shown.filter(e=>e.kind==='tool');$('#n-tool').textContent=tools.length;const errs=shown.filter(e=>e.error).length;$('#n-err').textContent=errs;$('#c-err').className=errs?'bad':'';
+  $('#n-say').textContent=shown.filter(e=>e.kind==='say').length;
+  const count={};for(const t of tools)count[t.name]=(count[t.name]||0)+1;
+  $('#in-top').replaceChildren(...Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>{const li=document.createElement('li');li.innerHTML='<code></code> <span style="color:var(--muted)"></span>';li.children[0].textContent=k;li.children[1].textContent=v+'회';return li;}));
+  const span=Math.max(1,(shown.length?shown[shown.length-1].at:started)-started+1500),tk=$('#ticks');
+  tk.replaceChildren(...shown.map(e=>{const i=document.createElement('i');i.className=e.kind+(e.error?' bad':'');i.style.left=((e.at-started)/span*96+1)+'%';return i;}));
+  $('#track-note').textContent=shown.length+'건 · '+(live()?'지금도 이어지는 중':'마지막 호출 · 다시 보기');
+}
+function live(){return inside>=0&&workingSlot()===inside;}
+function tick(){const sc=SCRIPT[inside];if(!sc)return;
+  if(cursor<sc.ev.length){const [kind,name,detail,error]=sc.ev[cursor++];shown.push({at:Date.now(),kind,name,detail,error:!!error,fresh:true});lastAt=Date.now();paintStream();}
+  else if(live()){cursor=0;shown=[];started=Date.now();}                                // the mock loops; the real call simply ends
+}
+function paintInside(reset){
+  const i=inside,sc=SCRIPT[i],on=live();
+  $('#inside').style.setProperty('--c',CSS[i]);$('#in-kicker').textContent='구름 속 · '+ROLE[i];$('#in-name').textContent=AI[i];
+  $('#in-what').textContent=on?sc.what:'지금은 쉬는 중';$('#in-sub').textContent=on?'이 호출 안에서 일어나는 일을 CLI 기록 그대로 보여 줍니다.':'마지막으로 한 호출을 다시 보여 줍니다 · 3분 전에 끝남';
+  $('#in-live').className='live'+(on?'':' off');$('#in-live').lastChild.textContent=on?'실시간':'다시 보기';
+  $('#in-model').textContent=MODEL[i];
+  $('#in-order').innerHTML='';for(const [k,v] of sc.order){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=v;$('#in-order').append(dt,dd);}
+  const list=(id,items,code)=>{$(id).replaceChildren(...(items.length?items:['이 단계에는 없습니다']).map(t=>{const li=document.createElement('li');if(code&&items.length){const c=document.createElement('code');c.textContent=t;li.append(c);}else li.textContent=t;return li;}));};
+  list('#in-files',sc.files,true);list('#in-crit',sc.crit,false);
+  if(reset){clearInterval(streamTimer);shown=[];cursor=0;started=Date.now();lastAt=Date.now();
+    if(on)streamTimer=setInterval(tick,1700);else{const t0=Date.now()-180000;shown=sc.ev.map(([kind,name,detail,error],n)=>({at:t0+n*2100,kind,name,detail,error:!!error}));started=t0;lastAt=shown[shown.length-1].at;}
+    paintStream();}
+}
+function enter(i){inside=i;document.body.classList.add('inside');applyScene();paintInside(true);
+  clearInterval(clockTimer);clockTimer=setInterval(()=>{const on=live();$('#in-clock').textContent=on?Math.round((Date.now()-started)/1000)+'초':'11초';
+    const q=Math.round((Date.now()-lastAt)/1000);$('#n-quiet').textContent=on?q+'초':'—';$('#quiet').textContent=on&&q>=3?q+'초째 새 활동 없음 · 생각 중일 수 있습니다':'';},500);
+  $('#back').focus();}
+function leave(){const was=inside;inside=-1;document.body.classList.remove('inside');clearInterval(streamTimer);clearInterval(clockTimer);applyScene();const h=$$('.hit')[was];if(h)h.focus();}
+$$('.hit').forEach(b=>b.onclick=()=>enter(+b.dataset.slot));
+$('#back').onclick=leave;document.addEventListener('keydown',e=>{if(e.key==='Escape'&&inside>=0)leave();});
+applyScene();setTimeout(()=>setPhase('BUILDING'),1800);
+</script>
+</body>
+</html>

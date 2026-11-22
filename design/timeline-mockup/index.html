@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>통합 기록 시안</title>
+<style>
+:root{
+  --fs-xs:12px;--fs-sm:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:26px;
+  --claude:#ff8a5c;--codex:#3df2c0;--agy:#6aa5ff;--sys:#b9ffe2;--me:#d9c2ff;
+  --ok:#5ef2b0;--bad:#ff6b7a;--warn:#ffc46b;
+  --text:#eef3ff;--muted:#9aabc7;--faint:#7586a4;
+  --glass:rgba(9,13,24,.62);--line:rgba(255,255,255,.1);--line2:rgba(255,255,255,.17);
+  --num:'Bahnschrift','Segoe UI Variable Display','Segoe UI',sans-serif;
+  --body:'Pretendard','Apple SD Gothic Neo','Segoe UI','Malgun Gothic',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(900px 600px at 50% 45%,#122040 0,#04060c 70%);color:var(--text);font:var(--fs-sm)/1.6 var(--body);word-break:keep-all;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+.kicker{font:600 var(--fs-xs)/1 var(--num);letter-spacing:.2em;color:var(--muted)}
+.glass{background:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.015) 60%),var(--glass);border:1px solid rgba(255,255,255,.12);border-radius:20px;box-shadow:0 30px 70px rgba(0,0,0,.38)}
+.card{padding:16px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(160deg,rgba(255,255,255,.055),rgba(255,255,255,.015))}
+.badge{font:600 var(--fs-xs) var(--num);padding:4px 12px;border-radius:99px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
+.badge.ok{color:var(--ok);border-color:#5ef2b066}.badge.warn{color:var(--warn);border-color:#ffc46b66}.badge.bad{color:var(--bad);border-color:#ff6b7a66}
+
+/* the bar that belongs to the mockup, not to the product */
+#mock-bar{flex:none;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 16px;background:#0b1222;border-bottom:1px solid var(--line);font-size:var(--fs-xs);color:var(--muted)}
+#mock-bar b{color:var(--text);font-size:var(--fs-sm)}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:99px;overflow:hidden}
+.seg button{background:none;border:0;padding:4px 12px;font-size:var(--fs-xs);color:var(--muted)}
+.seg button[aria-pressed=true]{background:rgba(255,255,255,.14);color:var(--text)}
+.legend{margin-left:auto;display:flex;gap:12px;align-items:center}
+.new-tag{font:600 10px var(--num);padding:1px 6px;border-radius:99px;background:#ffc46b22;border:1px solid #ffc46b66;color:var(--warn);margin-left:6px;white-space:nowrap;vertical-align:1px}
+
+#stage{flex:1;min-height:0;display:grid;grid-template-columns:300px 1fr 360px;gap:16px;padding:16px}
+#stage.left{grid-template-columns:360px 1fr 300px}
+.col{display:flex;flex-direction:column;gap:12px;min-height:0;padding:16px}
+.col>*{flex:none}
+#scene{position:relative;min-width:0;display:grid;place-items:center;color:var(--faint);font-size:var(--fs-xs)}
+#scene .orb{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#dbe9ff66,#6aa5ff22 45%,transparent 70%);box-shadow:0 0 80px #6aa5ff33}
+h2{margin:0;font-size:var(--fs-lg);line-height:1.35}
+.sub{color:var(--muted);font-size:var(--fs-xs)}
+.steps{display:flex;gap:6px;margin-top:8px}
+.steps span{flex:1;max-width:44px;height:26px;border-radius:8px;border:1px solid var(--line2);font:600 var(--fs-xs)/24px var(--num);text-align:center;color:var(--faint)}
+.steps .ok{background:#5ef2b01f;border-color:#5ef2b077;color:var(--ok)}
+.steps .todo{border-style:dashed}
+.total{font:600 var(--fs-xl)/1.1 var(--num)}
+
+/* ---- the unified record ---- */
+#log{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:8px}
+#log header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#log header .seg{margin-left:auto}
+#log-list{list-style:none;margin:0;padding:0 4px 0 0;flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:4px}
+#log-list .group{margin:8px 0 2px;display:flex;gap:8px;align-items:baseline;font-size:var(--fs-xs);color:var(--muted)}
+#log-list .group:first-child{margin-top:0}
+#log-list .group b{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#log-list .group i{font-style:normal;color:var(--faint);white-space:nowrap;margin-left:auto}
+.row{display:grid;grid-template-columns:54px 1fr;gap:8px;align-items:start;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid transparent;border-left:2px solid var(--c,var(--faint));cursor:pointer;text-align:left;width:100%}
+.row:hover,.row:focus-visible{background:rgba(255,255,255,.09);outline:none}
+.row[aria-current=true]{background:rgba(255,255,255,.12);border-color:var(--line2);border-left-color:var(--c)}
+.row time{font:500 var(--fs-xs)/1.7 var(--num);color:var(--faint)}
+.row .l1{display:flex;gap:6px;align-items:baseline;min-width:0}
+.row .who{font-weight:600;color:var(--c);white-space:nowrap}
+.row .what{color:#d6dff2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .l2{display:flex;gap:8px;font:500 var(--fs-xs) var(--num);color:var(--muted);flex-wrap:wrap}
+.row .l2 .res.ok{color:var(--ok)}.row .l2 .res.bad{color:var(--bad)}.row .l2 .res.warn{color:var(--warn)}.row .l2 .res.off{color:var(--muted)}
+.row.sys{padding-top:6px;padding-bottom:6px}
+
+/* ---- the detail ---- */
+#detail{position:absolute;inset:0;margin:auto;width:min(620px,100%);max-height:100%;display:flex;flex-direction:column;padding:20px;gap:12px;z-index:2}
+#detail[hidden]{display:none}
+#detail header{display:flex;gap:12px;align-items:flex-start}
+#detail header div{min-width:0;flex:1}
+#detail h3{margin:0;font-size:var(--fs-lg);line-height:1.35}
+#detail h3 em{font-style:normal;color:var(--c)}
+#d-body{overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:12px;padding-right:4px;min-height:0}
+.close{background:none;border:1px solid var(--line2);border-radius:99px;padding:4px 12px;font-size:var(--fs-xs)}
+.sec{border:1px solid var(--line);border-radius:12px;padding:12px;background:rgba(255,255,255,.035)}
+.sec>.kicker{display:block;margin-bottom:8px}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:var(--fs-sm)}
+dt{color:var(--muted);white-space:nowrap}
+dd{margin:0;overflow-wrap:anywhere}
+dd.none{color:var(--faint)}
+code,.mono{font:var(--fs-xs) ui-monospace,Menlo,Consolas,monospace;color:#cfe0ff}
+.bar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.08);margin:8px 0 4px}
+.bar i{display:block}
+.bar .in{background:#6aa5ffaa}.bar .out{background:#5ef2b0aa}
+.files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.files li{display:flex;gap:8px;align-items:baseline}
+.files .add{color:var(--ok)}.files .del{color:var(--bad)}
+.files li code{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:var(--fs-xs)}
+.ev li{display:grid;grid-template-columns:62px 70px 1fr auto;gap:8px;padding:4px 8px;border-radius:8px}
+.ev li:nth-child(odd){background:rgba(255,255,255,.035)}
+.ev time{color:var(--faint);font-family:var(--num)}
+.ev b{font-weight:600;color:#d6dff2}
+.ev span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev .bad b,.ev em{color:var(--bad);font-style:normal}
+pre{margin:0;padding:8px 12px;border-radius:8px;background:#050810;border:1px solid var(--line);font:var(--fs-xs)/1.6 ui-monospace,Menlo,monospace;color:#c6d2e8;overflow:auto;max-height:140px;white-space:pre-wrap}
+.quote{margin:0;padding:8px 12px;border-left:2px solid var(--c,var(--line2));background:rgba(255,255,255,.04);border-radius:0 8px 8px 0;color:#d6dff2}
+.src{font-size:var(--fs-xs);color:var(--faint)}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts button{background:rgba(255,255,255,.07);border:1px solid var(--line2);border-radius:99px;padding:4px 12px;font-size:var(--fs-xs)}
+@media (max-width:1000px){#stage,#stage.left{grid-template-columns:1fr;overflow-y:auto}#scene{min-height:420px}.col{min-height:360px}body{overflow:auto}}
+</style>
+</head>
+<body>
+<div id="mock-bar">
+  <b>시안 · 통합 기록</b><span>보기용 예시 화면입니다. 숫자와 문구는 지난 시험 작업을 바탕으로 꾸민 값입니다.</span>
+  <span class="seg" id="place"><button aria-pressed="true" data-v="right">A · 오른쪽에 배치</button><button aria-pressed="false" data-v="left">B · 왼쪽에 배치</button></span>
+  <span class="legend"><span>표시 없음 = 지금도 기록되는 값</span><span><span class="new-tag" style="margin:0">신규</span> = 새로 기록해야 보여 줄 수 있는 값</span></span>
+</div>
+
+<div id="stage">
+  <aside class="glass col" id="col-a">
+    <div><span class="kicker">지금</span><h2 style="margin-top:8px">세 AI가 지시를<br>기다리고 있습니다</h2><div class="sub">마지막 작업 완료 · 9시간 전</div></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="kicker">작업</span><span class="badge ok">완료</span></div>
+      <p style="margin:12px 0 0;color:#c6d2e8">src/config.py에 load_api_key() 함수 추가. 유료 외부 서비스의 API 키는 환경변수 PAID_API_KEY에서 읽어…</p>
+      <div class="steps"><span class="ok">✓1</span><span class="todo">2</span><span class="todo">3</span></div>
+      <div class="sub" style="margin-top:8px">1단계 만에 완료 · 테스트 3개 모두 통과</div>
+    </div>
+    <div class="sub" id="note-a">예전의 "진행 기록" 자리는 비워서 작업 카드가 더 넓게 씁니다.</div>
+  </aside>
+
+  <main id="scene">
+    <div style="text-align:center"><div class="orb"></div><p>(가운데 장면은 그대로)</p></div>
+    <section id="detail" class="glass" role="dialog" aria-label="기록 상세" hidden>
+      <header><div><span class="kicker" id="d-kicker"></span><h3 id="d-title"></h3><div class="sub" id="d-sub"></div></div><button class="close" id="d-close">닫기</button></header>
+      <div id="d-body"></div>
+    </section>
+  </main>
+
+  <aside class="glass col" id="col-b">
+    <div id="usage"><span class="kicker">AI별 작업량 · 오늘</span><div class="total" style="margin-top:8px">2.0만 <span class="sub">토큰 · 호출 2회</span></div></div>
+    <section id="log">
+      <header><span class="kicker">기록</span>
+        <span class="seg" id="filter"><button aria-pressed="true" data-v="all">전체</button><button aria-pressed="false" data-v="ai">AI 호출</button><button aria-pressed="false" data-v="warn">확인·오류</button></span>
+      </header>
+      <ol id="log-list"></ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+const C={claude:'var(--claude)',codex:'var(--codex)',agy:'var(--agy)',sys:'var(--sys)',me:'var(--me)'};
+const NEW='<span class="new-tag">신규</span>';
+const run='RUN-000000000001-AAAA…0001';
+// Each entry is one line of the record. kind: ai (an AI call) | sys (Tribunal itself) | me (the user)
+const groups=[
+ {title:'결제 연동 추가 (승인 요청)',meta:'sample-app · 작업 기록 없음',rows:[
+  {id:'r1',t:'00:01:12',kind:'me',c:'me',who:'나',what:'거절했습니다',res:['거절함','off'],
+   title:'<em>나</em> · 거절',sub:'이 작업은 실행되지 않았습니다 · 원본 프로젝트는 그대로입니다',
+   secs:[['요약',dl([['결정','거절'],['결정한 때','11월 22일 00:01:12'],['대상','결제 연동 추가 · 시작 전 승인 요청'],['실행 번호','<code>RUN-000000000002-AAAA…0002</code>'],['그 뒤','MAKER가 실행되지 않았고 바뀐 파일이 없습니다']])],
+         ['거절한 요청',quote('지시서에 "결제 서비스 선택과 실제 결제 여부는 사용자가 정한다"고 적혀 있어, 시작 전에 승인이 필요했습니다.')+files([['src/payments.py','승인 대상','']])]],
+   src:'Tribunal 감사 기록 (HUMAN_REJECTED)'},
+  {id:'r2',t:'00:00:35',kind:'sys',c:'sys',who:'TRIBUNAL',what:'시작 전에 승인을 요청했습니다',res:['확인 필요','warn'],warn:1,
+   title:'<em>TRIBUNAL</em> · 승인 요청',sub:'설계 단계에서 멈춤 · 제작 전',
+   secs:[['요약',dl([['멈춘 단계','시작 전 (ENTRY)'],['이유','사용자 결정 필요'],['승인 가능 여부','가능 · 승인하면 안전 검사를 거쳐 계속'],['실행 번호','<code>RUN-000000000002-AAAA…0002</code>']])],
+         ['이유 원문',quote('The order says the user must decide the payment provider and whether real charges happen and requires explicit human approval before work starts.')]],
+   src:'Tribunal 상태 전환 기록'},
+  {id:'r3',t:'00:00:28',kind:'ai',c:'claude',who:'Claude',what:'지시를 읽고 지시서를 썼습니다',res:['완료','ok'],dur:'15초',tok:'9.9천',role:'ARCHITECT · 설계',stage:'대화',
+   call:{start:'00:00:13.994',end:'00:00:28.828',sec:'14.8초',model:'sonnet · low',exit:'0',tin:9310,tout:640,exact:true,pc:'31,204자',oc:'1,870자'},
+   secs:[['결과',dl([['한 일','지시서(ORDER) 작성'],['목표','결제 연동 함수 추가'],['사람 승인 필요','예 — 결제 서비스 선택'],['이어진 일','TRIBUNAL이 승인을 요청']])]],
+   ev:[['00:00:17','생각',''],['00:00:26','말','{"action":"order","order":{"goal":"Add a payment integration…']],
+   src:'Tribunal 호출 기록 · Claude 세션 기록'}]},
+ {title:'load_api_key() 함수 추가',meta:'sample-app · 1단계',rows:[
+  {id:'a7',t:'23:58:02',kind:'sys',c:'sys',who:'TRIBUNAL',what:'통과로 마쳤습니다',res:['통과','ok'],
+   title:'<em>TRIBUNAL</em> · 단계 마침',sub:'1단계 · 통과 · 걸린 시간 2분 29초',
+   secs:[['단계 요약',dl([['결과','통과'],['시작 → 끝','23:55:33 → 23:58:02 (2분 29초)'],['AI 호출','4회 · 3.4만 토큰'],['자동 수정','0회'],['결과물','적용 대기 · 파일 2개'],['실행 번호','<code>'+run+'</code>']])],
+         ['마지막 판단',quote('All acceptance criteria are met. src/config.py adds load_api_key(), which reads PAID_API_KEY from os.environ. It raises RuntimeError for a missing or empty value…')]],
+   acts:['변경 내용 보기','이 단계의 지시서'],src:'Tribunal 상태 전환 기록 · final_evidence.json'},
+  {id:'a6',t:'23:57:52',kind:'ai',c:'claude',who:'Claude',what:'결과를 판단했습니다',res:['통과','ok'],dur:'10초',tok:'9.9천',role:'ARCHITECT · 설계',stage:'판단',
+   call:{start:'23:57:52.159',end:'23:58:02.513',sec:'10.4초',model:'sonnet · low',exit:'0',tin:9480,tout:470,exact:true,pc:'33,870자',oc:'1,402자'},
+   secs:[['결과',dl([['판단','통과 (PASS)'],['근거로 본 것','테스트 3개 통과 · 감리 통과 · 바뀐 파일 2개']])+quote('All acceptance criteria are met. src/config.py adds load_api_key(), which reads PAID_API_KEY from os.environ. It raises RuntimeError for a missing or empty value, and the message names the variable.')]],
+   ev:[['23:57:56','생각',''],['23:57:59','말','{"decision":"PASS","rationale":"All acceptance criteria are met…']],
+   src:'Tribunal 호출 기록 · decision.json · Claude 세션 기록'},
+  {id:'a5',t:'23:57:20',kind:'ai',c:'agy',who:'Antigravity',what:'결과물을 감리했습니다',res:['통과 · 지적 없음','ok'],dur:'31초',tok:'~4.1천',role:'INSPECTOR · 감리',stage:'감리',
+   call:{start:'23:57:20.410',end:'23:57:51.902',sec:'31.5초',model:'gemini-3-pro · low',exit:'0',tin:null,tout:null,total:4100,exact:false,pc:'12,330자',oc:'2,015자'},
+   secs:[['결과',dl([['판정','통과'],['지적','없음'],['감리 테스트','1개 파일 제안 · TRIBUNAL이 실행 · 통과'],['독립성','제작(Codex)과 다른 AI']])+files([['tests/test_inspector_config.py','감리 테스트','']])],],
+   ev:[['23:57:24','read_file','src/config.py'],['23:57:29','read_file','tests/test_config.py'],['23:57:41','말','verdict: pass · 기준 3개 모두 확인']],
+   src:'Tribunal 호출 기록 · review.json · Antigravity 실시간 출력'},
+  {id:'a4',t:'23:57:05',kind:'sys',c:'sys',who:'TRIBUNAL',what:'테스트를 직접 실행했습니다',res:['3개 모두 통과','ok'],dur:'4초',
+   title:'<em>TRIBUNAL</em> · 검증',sub:'AI가 아니라 Tribunal 프로그램이 직접 실행 · 4.2초',
+   secs:[['테스트',dl([['명령','<code>python -m pytest -q</code>'],['결과','3개 통과 · 0개 실패'],['시작 전 기준','2개 통과 (제작 전에 실행)'],['제한 시간','120초 중 4.2초 사용'],['종료 코드','0']])],
+         ['출력 끝부분','<pre>...                                                                      [100%]\n3 passed in 0.41s</pre>'],
+         ['범위 검사',dl([['바뀐 파일','2개 · 모두 허용 범위 안'],['금지 경로','건드리지 않음'],['의존성 파일','변경 없음']])]],
+   src:'verification.json · baseline_verification.json'},
+  {id:'a3',t:'23:56:10',kind:'ai',c:'codex',who:'Codex',what:'코드를 만들었습니다',res:['파일 2개 변경','ok'],dur:'52초',tok:'1.8만',role:'MAKER · 제작',stage:'제작',
+   call:{start:'23:56:10.220',end:'23:57:02.871',sec:'52.7초',model:'gpt-5.2-codex · medium',exit:'0',tin:16900,tout:1210,exact:true,pc:'6,412자',oc:'880자'},
+   secs:[['바뀐 파일',files([['src/config.py','새 파일','+14'],['tests/test_config.py','새 파일','+22']])+'<div class="src" style="margin-top:8px">작업 사본에서만 바뀌었습니다. 원본 프로젝트는 그대로입니다.</div>']],
+   ev:[['23:56:14','shell','ls src tests'],['23:56:19','shell','cat src/__init__.py'],['23:56:31','apply_patch','src/config.py (+14)'],['23:56:44','apply_patch','tests/test_config.py (+22)'],['23:56:52','shell','python -m pytest -q  → 3 passed'],['23:57:01','말','load_api_key()를 추가하고 테스트 3개를 작성했습니다.']],
+   acts:['변경 내용 보기'],src:'Tribunal 호출 기록 · maker.json · Codex 세션 기록'},
+  {id:'a1',t:'23:55:33',kind:'ai',c:'claude',who:'Claude',what:'지시서를 썼습니다',res:['완료','ok'],dur:'21초',tok:'9.7천',role:'ARCHITECT · 설계',stage:'설계',
+   call:{start:'23:55:12.004',end:'23:55:33.310',sec:'21.3초',model:'sonnet · low',exit:'0',tin:9020,tout:680,exact:true,pc:'30,115자',oc:'2,240자'},
+   secs:[['지시서',dl([['목표','src/config.py에 load_api_key() 함수 추가'],['바꿀 수 있는 파일','<code>src/config.py</code> · <code>tests/test_config.py</code>'],['완료 기준','3개 — 환경변수에서 읽기 · 없으면 RuntimeError · 테스트 추가'],['사람 승인 필요','아니오']])]],
+   ev:[['23:55:18','생각',''],['23:55:31','말','{"action":"order","order":{"goal":"src/config.py에 load_api_key()…']],
+   acts:['지시서 전문 보기'],src:'Tribunal 호출 기록 · order.json · Claude 세션 기록'}]}
+];
+function dl(rows){return '<dl>'+rows.map(([k,v])=>'<dt>'+k+'</dt><dd'+(v==null?' class="none">기록 없음':'>'+v)+'</dd>').join('')+'</dl>';}
+function quote(t){return '<p class="quote">'+t+'</p>';}
+function files(list){return '<ul class="files">'+list.map(([f,k,n])=>'<li><code>'+f+'</code><span class="sub">'+k+'</span><span class="add">'+n+'</span></li>').join('')+'</ul>';}
+const fmt=n=>n==null?null:n.toLocaleString('ko-KR');
+
+const list=document.getElementById('log-list'),byId={};let filter='all',open=null;
+function paintList(){
+  list.replaceChildren();
+  for(const g of groups){
+    const rows=g.rows.filter(r=>filter==='all'||(filter==='ai'?r.kind==='ai':r.warn||r.kind==='me'));
+    if(!rows.length)continue;
+    const h=document.createElement('li');h.className='group';h.innerHTML='<b>'+g.title+'</b><i>'+g.meta+'</i>';list.append(h);
+    for(const r of rows){byId[r.id]=r;
+      const li=document.createElement('li'),b=document.createElement('button');b.className='row'+(r.kind==='ai'?'':' sys');b.style.setProperty('--c',C[r.c]);b.dataset.id=r.id;
+      b.setAttribute('aria-current',open===r.id);
+      b.innerHTML='<time>'+r.t.slice(0,5)+'</time><div><div class="l1"><span class="who">'+r.who+'</span><span class="what">'+r.what+'</span></div>'+
+        '<div class="l2"><span class="res '+r.res[1]+'">'+r.res[0]+'</span>'+(r.dur?'<span>'+r.dur+'</span>':'')+(r.tok?'<span>'+r.tok+' 토큰</span>':'')+'</div></div>';
+      b.onclick=()=>show(r.id);li.append(b);list.append(li);}
+  }
+}
+function show(id){
+  const r=byId[id],d=document.getElementById('detail');open=id;d.hidden=false;d.style.setProperty('--c',C[r.c]);
+  document.getElementById('d-kicker').textContent=r.kind==='ai'?'AI 호출 · '+r.stage:r.kind==='me'?'내 결정':'TRIBUNAL이 한 일';
+  document.getElementById('d-title').innerHTML=r.title||('<em>'+r.who+'</em> · '+r.role);
+  document.getElementById('d-sub').textContent=r.sub||(r.what+' · '+r.res[0]);
+  let html='';
+  if(r.call){const c=r.call,total=c.total||c.tin+c.tout;
+    html+=sec('호출',dl([['상태','완료 · 종료 코드 '+c.exit],['시작 → 끝',c.start+' → '+c.end],['걸린 시간',c.sec],['모델 · 추론 강도',c.model+NEW],['실행 번호','<code>'+(r.id[0]==='a'?run:'RUN-000000000002-AAAA…0002')+'</code>']]));
+    html+=sec('토큰',(c.tin!=null?'<div class="bar"><i class="in" style="width:'+(c.tin/total*100)+'%"></i><i class="out" style="width:'+(c.tout/total*100)+'%"></i></div>':'')+
+      dl([['입력',c.tin!=null?fmt(c.tin):null],['출력',c.tout!=null?fmt(c.tout):null],['합계',(c.exact?'':'약 ')+fmt(total)+(c.exact?' · CLI가 보고한 값':' · 글자 수로 추정한 값')],['보낸 지시 · 받은 답',c.pc+' · '+c.oc]]));}
+  for(const [k,body] of r.secs||[])html+=sec(k,body);
+  if(r.ev)html+=sec('안에서 한 일 · '+r.ev.length+'건','<ol class="ev">'+r.ev.map(e=>'<li><time>'+e[0]+'</time><b>'+e[1]+'</b><span>'+e[2]+'</span></li>').join('')+'</ol>');
+  if(r.acts)html+='<div class="acts">'+r.acts.map(a=>'<button>'+a+'</button>').join('')+'</div>';
+  html+='<div class="src">출처: '+r.src+' · 기록에 없는 값은 "기록 없음"으로 표시하고 추정해서 채우지 않습니다.</div>';
+  document.getElementById('d-body').innerHTML=html;document.getElementById('d-body').scrollTop=0;paintList();
+}
+function sec(k,body){return '<div class="sec"><span class="kicker">'+k+'</span>'+body+'</div>';}
+document.getElementById('d-close').onclick=()=>{document.getElementById('detail').hidden=true;open=null;paintList();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.getElementById('d-close').click();});
+function seg(id,fn){const box=document.getElementById(id);box.onclick=e=>{const b=e.target.closest('button');if(!b)return;for(const x of box.children)x.setAttribute('aria-pressed',x===b);fn(b.dataset.v);};}
+seg('filter',v=>{filter=v;paintList();});
+seg('place',v=>{const st=document.getElementById('stage'),log=document.getElementById('log');st.classList.toggle('left',v==='left');
+  document.getElementById(v==='left'?'col-a':'col-b').append(log);
+  document.getElementById('note-a').hidden=v==='left';});
+paintList();show('a3');
+</script>
+</body>
+</html>
