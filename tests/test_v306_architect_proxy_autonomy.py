@@ -879,8 +879,8 @@ def test_only_minor_review_findings_pass_with_recorded_follow_ups(tmp_path, monk
 def test_empty_proposal_is_only_accepted_in_a_correction_round(tmp_path, monkeypatch):
     import sys
     from agents.proposal_maker import ProposalMaker
-    from core.research_runner import TriadResearchRunner
-    monkeypatch.setattr(TriadResearchRunner, "invoke", lambda *a: dict(output=json.dumps({"files": [], "summary": "already fixed"}),
+    from core.cli_runner import ReadOnlyCliRunner
+    monkeypatch.setattr(ReadOnlyCliRunner, "invoke", lambda *a: dict(output=json.dumps({"files": [], "summary": "already fixed"}),
                                                                        invocation="t", exit_code=0, duration_sec=0))
     maker = ProposalMaker(executable=sys.executable)
     repair = OrderSchema(goal="g", allowed_paths=["src/**"], context='x\nARCHITECT REPAIR ORDER: {"round": 1}')
@@ -918,7 +918,7 @@ def test_provider_that_failed_twice_this_run_is_not_rotated_back(tmp_path, monke
 def test_files_the_maker_must_edit_are_always_in_its_context(tmp_path, monkeypatch):
     import sys
     from agents.proposal_maker import ProposalMaker
-    from core.research_runner import TriadResearchRunner
+    from core.cli_runner import ReadOnlyCliRunner
     for i in range(4):                                                         # 4 x 60 KB of unrelated sources
         write(tmp_path, f"backend/big_{i}.py", "x = 1  # " + "a" * 60_000 + "\n")
     write(tmp_path, "docs/SPEC.md", "UNIQUE-SPEC-MARKER\n")
@@ -929,7 +929,7 @@ def test_files_the_maker_must_edit_are_always_in_its_context(tmp_path, monkeypat
         seen["prompt"] = prompt
         return dict(output=json.dumps({"files": [{"path": "docs/SPEC.md", "content": "new\n"}]}),
                     invocation="t", exit_code=0, duration_sec=0)
-    monkeypatch.setattr(TriadResearchRunner, "invoke", invoke)
+    monkeypatch.setattr(ReadOnlyCliRunner, "invoke", invoke)
     maker = ProposalMaker(executable=sys.executable)
     maker.run(OrderSchema(goal="g", allowed_paths=["docs/SPEC.md", "ea/**"], required_outputs=["docs/SPEC.md (fix)"]), str(tmp_path))
     assert "UNIQUE-SPEC-MARKER" in seen["prompt"] and "UNIQUE-EA-MARKER" in seen["prompt"]

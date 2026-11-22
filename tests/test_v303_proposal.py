@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import pytest
 from agents.proposal_maker import ProposalMaker
-from core.research_runner import TriadResearchRunner
+from core.cli_runner import ReadOnlyCliRunner
 from schemas.order import OrderSchema
 
 def result(files):
@@ -31,7 +31,7 @@ def test_invalid_regex_escape_after_escaped_slash_is_recovered():
     assert len(repairs)==1
 
 def test_glob_protection_does_not_block_normal_implementation(tmp_path, monkeypatch):
-    monkeypatch.setattr(TriadResearchRunner, 'invoke', lambda *a: result([{'path':'src/tool.py','content':'x = 1\n'}]))
+    monkeypatch.setattr(ReadOnlyCliRunner, 'invoke', lambda *a: result([{'path':'src/tool.py','content':'x = 1\n'}]))
     order=OrderSchema(goal='test',allowed_paths=['src/**'],protected_paths=['**/credentials*','**/secrets*'])
     outcome=ProposalMaker(executable=sys.executable).run(order,str(tmp_path))
     assert outcome.status=='COMPLETED'
@@ -39,7 +39,7 @@ def test_glob_protection_does_not_block_normal_implementation(tmp_path, monkeypa
 
 @pytest.mark.parametrize('path',['src/credentials.json','src/nested/secrets.txt','../escape.py'])
 def test_whole_batch_checked_before_any_write(tmp_path, monkeypatch, path):
-    monkeypatch.setattr(TriadResearchRunner, 'invoke', lambda *a: result([
+    monkeypatch.setattr(ReadOnlyCliRunner, 'invoke', lambda *a: result([
         {'path':'src/tool.py','content':'x=1'}, {'path':path,'content':'bad'}]))
     order=OrderSchema(goal='test',allowed_paths=['src/**'],protected_paths=['**/credentials*','**/secrets*'])
     with pytest.raises(ValueError): ProposalMaker(executable=sys.executable).run(order,str(tmp_path))

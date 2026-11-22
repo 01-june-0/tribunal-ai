@@ -66,7 +66,7 @@ def snapshot(root):
     return commit
 
 def bootstrap_tests(worktree):
-    from core.greenfield import _inventory
+    from core.project_inventory import _inventory
     root = Path(worktree).resolve(); inventory = _inventory(root)
     if inventory['test_files'] or inventory['unsafe_entries']: return None
     if any(Path(p).suffix.lower() not in {'.py', '.pyi'} and Path(p).name != 'requirements.txt'

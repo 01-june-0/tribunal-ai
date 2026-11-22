@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from agents.antigravity_maker import AntigravityMaker
 from core.bootstrap import prepare_project
-from core.research_runner import TriadResearchRunner, ResearchProviderCallError
+from core.cli_runner import ReadOnlyCliRunner, ProviderCallError
 from core.safety import SafetyPolicy
 from core.autopilot import required_output_path as autopilot_output
 from schemas.maker_result import MakerResultSchema
@@ -156,13 +156,13 @@ class ProposalMaker(AntigravityMaker):
                   + ('\nWRITABLE FILES NOT SHOWN (too large for this prompt; they exist - do NOT rewrite or edit them): '
                      + json.dumps(omitted) if omitted else ''))
         domain = self.provider.upper()
-        runner = TriadResearchRunner(executables={domain: self.executable}, timeout=self.timeout,
+        runner = ReadOnlyCliRunner(executables={domain: self.executable}, timeout=self.timeout,
                                      no_output_timeout=self.no_progress_timeout)
         with tempfile.TemporaryDirectory(prefix='director-maker-') as tmp:
             prepare_project(tmp)
             try:
                 result = runner.invoke(domain, prompt, tmp, 'BUILDING')
-            except ResearchProviderCallError as exc:
+            except ProviderCallError as exc:
                 self.last_execution_info = dict(exc.meta)
                 self.last_execution_info.update(error=str(exc), output='', context_files=self.last_context_files,
                     attempts=getattr(exc, 'attempts', []), exit_code=exc.meta.get('exit_code'),

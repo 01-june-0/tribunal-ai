@@ -4,7 +4,7 @@ import zipfile
 import pytest
 from agents.proposal_maker import ProposalMaker
 from core.maker_context import referenced_documents
-from core.research_runner import ResearchProviderCallError, TriadResearchRunner
+from core.cli_runner import ProviderCallError, ReadOnlyCliRunner
 from schemas.order import OrderSchema
 
 
@@ -16,7 +16,7 @@ def test_protected_baseline_is_readable_but_not_writable(tmp_path, monkeypatch):
         assert 'BASELINE = 42' in prompt
         return dict(output=json.dumps({'files': [{'path': 'src/v2.py', 'content': 'NEW = 1'}]}),
                     invocation='mock', exit_code=0, duration_sec=0)
-    monkeypatch.setattr(TriadResearchRunner, 'invoke', invoke)
+    monkeypatch.setattr(ReadOnlyCliRunner, 'invoke', invoke)
     order = OrderSchema(goal='fork', allowed_paths=['src/v2.py'], protected_paths=['src/base.py'])
     ProposalMaker(executable=sys.executable).run(order, str(tmp_path))
     assert baseline.read_text() == 'BASELINE = 42'
@@ -24,13 +24,13 @@ def test_protected_baseline_is_readable_but_not_writable(tmp_path, monkeypatch):
 
 def test_failure_replaces_stale_success_evidence(tmp_path, monkeypatch):
     def invoke(*args):
-        err = ResearchProviderCallError('GOOGLE_STREAM_EMPTY_RESPONSE', meta={'exit_code': 0})
+        err = ProviderCallError('GOOGLE_STREAM_EMPTY_RESPONSE', meta={'exit_code': 0})
         err.attempts = [{'error': 'GOOGLE_STREAM_EMPTY_RESPONSE', 'duration_sec': 2}] * 2
         raise err
-    monkeypatch.setattr(TriadResearchRunner, 'invoke', invoke)
+    monkeypatch.setattr(ReadOnlyCliRunner, 'invoke', invoke)
     maker = ProposalMaker(executable=sys.executable)
     maker.last_execution_info = {'output': 'old success'}
-    with pytest.raises(ResearchProviderCallError):
+    with pytest.raises(ProviderCallError):
         maker.run(OrderSchema(goal='test'), str(tmp_path))
     assert maker.last_execution_info['output'] == ''
     assert len(maker.last_execution_info['attempts']) == 2
@@ -51,10 +51,10 @@ def test_output_limit_retries_compact_complete_proposal(tmp_path, monkeypatch):
     def once(self, domain, prompt, cwd, stage):
         prompts.append(prompt)
         if len(prompts) == 1:
-            raise ResearchProviderCallError('GOOGLE_STREAM_FAILED: exceeded the output token limit')
+            raise ProviderCallError('GOOGLE_STREAM_FAILED: exceeded the output token limit')
         return {'output': '{}'}
-    monkeypatch.setattr(TriadResearchRunner, '_invoke_once', once)
-    result = TriadResearchRunner().invoke('GOOGLE', 'original', str(tmp_path), 'BUILDING')
+    monkeypatch.setattr(ReadOnlyCliRunner, '_invoke_once', once)
+    result = ReadOnlyCliRunner().invoke('GOOGLE', 'original', str(tmp_path), 'BUILDING')
     assert len(prompts) == 2 and 'complete, compact JSON' in prompts[1]
     assert len(result['attempts']) == 1
 

@@ -6,7 +6,6 @@ __pycache__/
 data/*
 !data/.gitkeep
 runs/
-research/
 .director_worktrees/
 
 # local overrides

@@ -4,7 +4,7 @@ import tempfile
 from agents.claude_architect import ClaudeArchitect
 from core.bootstrap import prepare_project
 from core.env_utils import resolve_cli
-from core.research_runner import TriadResearchRunner
+from core.cli_runner import ReadOnlyCliRunner
 from schemas.review_result import ReviewResultSchema
 
 class GoogleArchitect(ClaudeArchitect):
@@ -17,7 +17,7 @@ class GoogleArchitect(ClaudeArchitect):
     def _invoke_cli(self, prompt, cwd=None):
         from core import usage
         usage.set_context(role=getattr(self, "usage_role", "ARCHITECT"))
-        runner = TriadResearchRunner(executables={'GOOGLE': self.executable}, timeout=self.timeout,
+        runner = ReadOnlyCliRunner(executables={'GOOGLE': self.executable}, timeout=self.timeout,
                                     no_output_timeout=self.no_progress_timeout)
         with tempfile.TemporaryDirectory(prefix='director-google-role-') as tmp:
             prepare_project(tmp)

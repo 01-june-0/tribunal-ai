@@ -608,7 +608,7 @@ except Exception as e:
         def _execute_agy() -> MakerResultSchema:
             # Antigravity's official stream protocol keeps long prompts off the Windows
             # command line and provides an explicit terminal result event.  The same
-            # protocol is used by the read-only TRIAD runner; Maker remains writable
+            # protocol is used by the read-only CLI runner; Maker remains writable
             # only through the scoped settings installed above.
             cmd = [
                 self.executable,

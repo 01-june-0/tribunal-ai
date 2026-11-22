@@ -24,23 +24,22 @@ function setup(){
  // reading and tab order = what is seen: summary, alerts, working area, AI cards, role note
  {const main=doc.getElementById('main'),alertBar=doc.getElementById('alert-bar');if(alertBar)main.before(alertBar);main.after(doc.getElementById('corestrip'),doc.getElementById('role-notice'));}
  doc.getElementById('chat-box').setAttribute('aria-label',T('ARCHITECT 대화 기록'));refresh();
- for(const id of ['normal-mode-btn','triad-mode-btn'])doc.getElementById(id)?.addEventListener('click',()=>refresh());
 }
 async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))return;busy=true;try{
- const response=await fetch('/status',{cache:'no-store'});if(!response.ok)throw Error(T('상태 조회 실패'));const s=await response.json(),run=s.run||{},state=run.state||'NONE',research=doc.getElementById('triad-mode-btn')?.classList.contains('on'),r=s.research||{};
- doc.getElementById('mission-state').textContent=research?(r.current_stage_ko||T('연구 대기')):(labels[state]||state);
- doc.getElementById('mission-control').dataset.state=research?(r.status||'NONE'):state;
+ const response=await fetch('/status',{cache:'no-store'});if(!response.ok)throw Error(T('상태 조회 실패'));const s=await response.json(),run=s.run||{},state=run.state||'NONE';
+ doc.getElementById('mission-state').textContent=labels[state]||state;
+ doc.getElementById('mission-control').dataset.state=state;
  let next=s.next_step||s.stage_sentence||T('새 작업을 입력해 주세요.');
  if(!s.next_step&&(s.pending_result_count||0)>0&&state!=='HUMAN_REQUIRED')next=T('결과물 {0}건이 적용을 기다립니다. 확인하고 적용할지 결정하세요.',s.pending_result_count);
  if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('감리에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 감리를 다시 진행해야 합니다.'):next;}
- const nextText=research?(r.next_step||T('연구 기록을 기다리고 있습니다.')):next,nextEl=doc.getElementById('mission-next');
+ const nextText=next,nextEl=doc.getElementById('mission-next');
  if(nextEl.textContent!==nextText)nextEl.textContent=nextText;   // announced (aria-live) only when it really changes
  doc.getElementById('mission-project').textContent=T('프로젝트 · ')+(s.project_name||T('미선택'));
  const timestamp=run.updated_at?new Date(run.updated_at+(/Z|[+]\d\d:\d\d$/.test(run.updated_at)?'':'Z')):null;
  const elapsed=timestamp?Math.max(0,Math.floor((Date.now()-timestamp.getTime())/1000)):null;
  doc.getElementById('mission-updated').textContent=elapsed===null?T('아직 실행 기록이 없습니다.'):T('최근 단계 기록 · ')+ago(run.updated_at);
  doc.getElementById('mission-tests').textContent=T('적용 대기 ')+(s.pending_result_count||0)+T('건 · 승인 대기 ')+(s.human_required_count||0)+T('건');
- doc.getElementById('mission-details').textContent=research?((r.session_id||T('연구 세션 없음'))+T('\n사이클 ')+(r.cycle_number||0)+' / '+(r.cycle_budget||0)+'\n'+(r.moonshot||'')):((run.run_id||T('작업 없음'))+'\n'+(run.details||s.stage_sentence||'')+T('\n최근 실행 기록: ')+(run.updated_at||T('없음')));
+ doc.getElementById('mission-details').textContent=(run.run_id||T('작업 없음'))+'\n'+(run.details||s.stage_sentence||'')+T('\n최근 실행 기록: ')+(run.updated_at||T('없음'));
  document.getElementById('shell-error').hidden=true;offlineVeil(0);
  }catch(e){const error=document.getElementById('shell-error');error.hidden=false;error.textContent=T('상태 연결을 확인하고 있습니다 · ')+e.message;offlineVeil((window.__pollMisses||0)+1);}finally{busy=false;}}
 // The workshop is only kept fresh while it is the view in front and the window is visible.

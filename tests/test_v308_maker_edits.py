@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from agents.proposal_maker import ProposalMaker
-from core.research_runner import TriadResearchRunner
+from core.cli_runner import ReadOnlyCliRunner
 from schemas.order import OrderSchema
 
 
@@ -26,7 +26,7 @@ def reply(monkeypatch, proposal, seen=None):
         if seen is not None:
             seen["prompt"] = prompt
         return dict(output=json.dumps(proposal), invocation="t", exit_code=0, duration_sec=0)
-    monkeypatch.setattr(TriadResearchRunner, "invoke", invoke)
+    monkeypatch.setattr(ReadOnlyCliRunner, "invoke", invoke)
 
 
 def test_exact_edits_change_only_the_anchored_text(tmp_path, monkeypatch):

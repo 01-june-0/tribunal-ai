@@ -86,9 +86,6 @@ autonomy:
 
 # The bridge: where `director do` and other local programs hand in a goal (POST /bridge/missions, token required).
 # Only git projects under allowed_roots may be targeted; the Director's own folder is never a target.
-# TRIAD research is not startable from the console yet; its view switch in the workshop is hidden.
-# triad:
-#   console_switch: true
 
 bridge:
   # "~" is expanded; a root that does not exist on this machine simply never matches.

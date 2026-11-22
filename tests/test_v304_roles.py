@@ -4,7 +4,7 @@ import sys
 import pytest
 from core import role_settings as settings
 from core.orchestrator import Orchestrator
-from core.research_runner import TriadResearchRunner
+from core.cli_runner import ReadOnlyCliRunner
 from agents.proposal_maker import ProposalMaker
 from schemas.order import OrderSchema
 
@@ -41,7 +41,7 @@ def test_maker_routes_to_selected_cli(tmp_path,monkeypatch,provider):
         calls.append(domain)
         return {'output':json.dumps({'files':[{'path':'src/a.py','content':'x=1\n'}]}),
                 'invocation':'test','exit_code':0,'duration_sec':0}
-    monkeypatch.setattr(TriadResearchRunner,'invoke',invoke)
+    monkeypatch.setattr(ReadOnlyCliRunner,'invoke',invoke)
     maker=ProposalMaker(provider=provider,executable=sys.executable)
     maker.run(OrderSchema(goal='test',allowed_paths=['src/**']),str(tmp_path))
     assert calls==[settings.DOMAINS[provider]]
@@ -59,7 +59,7 @@ def test_existing_orchestrator_keeps_role_snapshot(tmp_path,monkeypatch):
 
 def test_claude_maker_result_envelope(tmp_path,monkeypatch):
     inner=json.dumps({'files':[{'path':'src/a.py','content':'x=1\n'}]})
-    monkeypatch.setattr(TriadResearchRunner,'invoke',lambda *a:{
+    monkeypatch.setattr(ReadOnlyCliRunner,'invoke',lambda *a:{
         'output':json.dumps({'type':'result','is_error':False,'result':'```json\n'+inner+'\n```'}),
         'invocation':'test','exit_code':0,'duration_sec':0})
     maker=ProposalMaker(provider='claude',executable=sys.executable)

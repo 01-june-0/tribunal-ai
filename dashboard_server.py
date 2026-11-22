@@ -1382,7 +1382,6 @@ def build_status_payload() -> dict:
         "results": [dict(r, in_mission=_run_in_mission(r.get("run_id"))) for r in _result_manager().pending_results()],
         # refused once (a conflict, mostly) and still undecided; only those no mission card can show
         "blocked_results": [dict(r, in_mission=False) for r in _result_manager().blocked_results() if not _run_in_mission(r.get("run_id"))],
-        "research": build_research_status_payload(),
     }
     payload = payload if isinstance(payload, dict) else {}
     payload["human_required_count"] = len(payload["pending"])
@@ -1400,188 +1399,6 @@ def build_status_payload() -> dict:
     else:
         payload["todo"] = I18N.t("nothing_todo")
     return payload
-
-
-_RESEARCH_STAGE_KO = {
-    "RESEARCH_INTAKE": "연구 준비",
-    "INDEPENDENT_RESEARCH": "3개 독립 제안",
-    "CROSS_CRITIQUE": "교차 비평",
-    "SYNTHESIS": "가설 합성",
-    "EXPERIMENT_PLANNING": "실험 계획",
-    "EXPERIMENT_BUILDING": "실험 구현",
-    "EXPERIMENT_VERIFYING": "실험 검증",
-    "EXPERIMENT_REVIEW": "독립 검토",
-    "RESULT_INTERPRETATION": "결과 해석",
-    "NEXT_CYCLE": "다음 사이클 준비",
-    "MILESTONE_COMPLETE": "마일스톤 완료",
-    "HUMAN_REQUIRED": "사용자 확인 필요",
-    "RESEARCH_STOPPED": "연구 중지",
-}
-
-
-def _research_json(value, fallback):
-    """Decode persisted research JSON without allowing malformed evidence to break the dashboard."""
-    if value is None or value == "":
-        return fallback
-    try:
-        decoded = json.loads(value)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return fallback
-    return decoded if isinstance(decoded, type(fallback)) else fallback
-
-
-def build_research_status_payload(session_id: Optional[str] = None) -> dict:
-    """Pure read-only TRIAD snapshot.
-
-    Importantly, this does not construct ``ResearchStateMachine``: an old/frozen production DB with no
-    V3 tables is observed as unavailable instead of being migrated by a GET request.
-    """
-    empty = {
-        "mode": "TRIAD_RESEARCH", "available": False, "active": False, "session_id": None,
-        "moonshot": "", "project_path": "", "status": "NONE", "cycle_number": 0,
-        "cycle_budget": 0, "current_stage": "NONE", "current_stage_ko": "연구 없음",
-        "proposals": [], "cross_critiques": [], "synthesis": None, "experiment": None,
-        "evidence": {}, "interpretations": [], "rejected_ideas": [], "what_we_learned": "",
-        "next_step": "TRIAD 연구 세션을 시작하면 여기에 진행 상황이 표시됩니다.",
-        "provenance": [],
-    }
-    required = {
-        "research_sessions", "research_cycles", "research_stage_outputs", "research_call_provenance",
-        "research_experiments", "research_baseline_evidence", "research_memory",
-    }
-    try:
-        with get_db_conn() as conn:
-            present = {r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'research_%'"
-            ).fetchall()}
-            if not required.issubset(present):
-                return empty
-            if session_id:
-                session = conn.execute(
-                    "SELECT * FROM research_sessions WHERE session_id=?", (session_id,)
-                ).fetchone()
-            else:
-                session = conn.execute(
-                    "SELECT * FROM research_sessions ORDER BY updated_at DESC, created_at DESC LIMIT 1"
-                ).fetchone()
-            if not session:
-                result = dict(empty); result["available"] = True
-                return result
-            s = dict(session)
-            cycle = conn.execute(
-                "SELECT * FROM research_cycles WHERE session_id=? ORDER BY cycle_number DESC LIMIT 1",
-                (s["session_id"],),
-            ).fetchone()
-            outputs = []
-            provenance = []
-            experiment = baseline = None
-            memory_rows = []
-            if cycle:
-                outputs = [dict(r) for r in conn.execute(
-                    "SELECT * FROM research_stage_outputs WHERE cycle_id=? ORDER BY created_at, domain",
-                    (cycle["cycle_id"],),
-                ).fetchall()]
-                provenance = [dict(r) for r in conn.execute(
-                    "SELECT * FROM research_call_provenance WHERE cycle_id=? ORDER BY id",
-                    (cycle["cycle_id"],),
-                ).fetchall()]
-                experiment = conn.execute(
-                    "SELECT * FROM research_experiments WHERE cycle_id=?", (cycle["cycle_id"],)
-                ).fetchone()
-                baseline = conn.execute(
-                    "SELECT * FROM research_baseline_evidence WHERE cycle_id=?", (cycle["cycle_id"],)
-                ).fetchone()
-            memory_rows = [dict(r) for r in conn.execute(
-                "SELECT * FROM research_memory WHERE session_id=? ORDER BY id DESC", (s["session_id"],)
-            ).fetchall()]
-    except (sqlite3.Error, OSError):
-        return empty
-
-    decoded_outputs = []
-    for row in outputs:
-        payload = _research_json(row.pop("payload_json", None), {})
-        row["payload"] = payload
-        decoded_outputs.append(row)
-
-    def stage_outputs(stage):
-        return [r for r in decoded_outputs if r.get("stage") == stage]
-
-    proposals = []
-    for row in stage_outputs("INDEPENDENT_RESEARCH"):
-        p = row["payload"]
-        proposals.append({
-            "domain": row.get("domain"), "hypothesis": p.get("hypothesis", ""),
-            "rationale": p.get("rationale", ""), "proposed_experiment": p.get("proposed_experiment", ""),
-            "confidence": p.get("confidence"), "freeform_insight": p.get("freeform_insight", ""),
-        })
-    critiques = [{"domain": r.get("domain"), **r["payload"]} for r in stage_outputs("CROSS_CRITIQUE")]
-    synthesis_rows = stage_outputs("SYNTHESIS")
-    synthesis = synthesis_rows[-1]["payload"] if synthesis_rows else None
-    interpretation_rows = stage_outputs("RESULT_INTERPRETATION_INDEPENDENT") + stage_outputs("RESULT_INTERPRETATION_CROSS")
-    interpretations = [{"domain": r.get("domain"), "stage": r.get("stage"), **r["payload"]} for r in interpretation_rows]
-
-    experiment_out = None
-    evidence = {}
-    if experiment:
-        e = dict(experiment)
-        order = _research_json(e.pop("order_json", None), {})
-        result = _research_json(e.pop("result_json", None), {})
-        experiment_out = {
-            "status": e.get("status"), "normal_run_id": e.get("normal_run_id"),
-            "normal_final_state": e.get("normal_final_state"), "worktree_path": e.get("worktree_path"),
-            "goal": order.get("goal", ""), "allowed_paths": order.get("allowed_paths", []), "result": result,
-        }
-        evidence["experiment"] = result
-    if baseline:
-        b = dict(baseline)
-        evidence["baseline"] = _research_json(b.pop("evidence_json", None), {})
-        evidence["baseline_state"] = b.get("baseline_state")
-
-    memories = []
-    for row in memory_rows:
-        payload = _research_json(row.get("payload_json"), {})
-        memories.append(payload)
-    latest_memory = memories[0] if memories else {}
-    rejected = []
-    for mem in memories:
-        rejected.extend(str(x) for x in (mem.get("rejected_ideas") or []) if str(x).strip())
-
-    clean_provenance = []
-    for p in provenance:
-        clean_provenance.append({
-            "stage": p.get("stage"), "domain": p.get("domain"), "role": p.get("research_role"),
-            "executable": p.get("executable"), "version": p.get("version"), "exit_code": p.get("exit_code"),
-            "duration_sec": p.get("duration_sec"), "outcome": p.get("outcome"),
-            "observed_fields": _research_json(p.get("observed_fields"), []),
-            "declared_fields": _research_json(p.get("declared_fields"), []),
-        })
-
-    stage = (dict(cycle).get("stage") if cycle else s.get("current_stage")) or "NONE"
-    active = s.get("status") == "ACTIVE"
-    next_step = latest_memory.get("next_direction") or {
-        "RESEARCH_INTAKE": "세 제공자의 준비 상태를 확인합니다.",
-        "INDEPENDENT_RESEARCH": "서로 격리된 세 제안을 수집합니다.",
-        "CROSS_CRITIQUE": "제안의 약점과 결합 가능성을 교차 검토합니다.",
-        "SYNTHESIS": "실험 가능한 단일 가설을 합성합니다.",
-        "EXPERIMENT_PLANNING": "안전한 실험 ORDER를 작성합니다.",
-        "EXPERIMENT_BUILDING": "NORMAL 안전 파이프라인으로 실험을 구현합니다.",
-        "EXPERIMENT_VERIFYING": "실험 결과와 회귀를 검증합니다.",
-        "EXPERIMENT_REVIEW": "독립 Inspector가 변경을 검토합니다.",
-        "RESULT_INTERPRETATION": "세 연구자가 결과를 독립 해석합니다.",
-        "NEXT_CYCLE": "학습 내용을 반영해 다음 사이클을 준비합니다.",
-    }.get(stage, s.get("stopped_reason") or "")
-    return {
-        "mode": "TRIAD_RESEARCH", "available": True, "active": active,
-        "session_id": s.get("session_id"), "moonshot": s.get("moonshot", ""),
-        "project_path": s.get("project_path", ""), "status": s.get("status", "UNKNOWN"),
-        "cycle_number": int(dict(cycle).get("cycle_number") or 0) if cycle else int(s.get("current_cycle") or 0),
-        "cycle_budget": int(s.get("cycle_budget") or 0), "current_stage": stage,
-        "current_stage_ko": _RESEARCH_STAGE_KO.get(stage, stage), "proposals": proposals,
-        "cross_critiques": critiques, "synthesis": synthesis, "experiment": experiment_out,
-        "evidence": evidence, "interpretations": interpretations, "rejected_ideas": rejected,
-        "what_we_learned": latest_memory.get("lesson", ""), "next_step": next_step,
-        "provenance": clean_provenance,
-    }
 
 
 def chat_messages_after(after_id: int, session_id: Optional[str] = None) -> list:
@@ -2122,54 +1939,6 @@ DASHBOARD_JS = r"""
       scheduleMessages((j.architect_busy || lastStatusMode === 'active') ? 3000 : 10000);
     }).catch(function () { scheduleMessages(10000); });
   }
-  function replaceList(id, items, formatter) {
-    var el = document.getElementById(id); if (!el) return;
-    while (el.firstChild) el.removeChild(el.firstChild);
-    (items || []).forEach(function (item) {
-      var li = document.createElement('li'); li.textContent = formatter(item); el.appendChild(li);
-    });
-    if (!(items || []).length) { var li = document.createElement('li'); li.className = 'research-empty'; li.textContent = '아직 기록된 내용이 없습니다.'; el.appendChild(li); }
-  }
-  function renderResearch(r) {
-    r = r || {};
-    setText('research-session-id', r.session_id || '없음');
-    setText('research-moonshot', r.moonshot || 'TRIAD 연구 세션이 없습니다.');
-    setText('research-cycle', (r.cycle_number || 0) + ' / ' + (r.cycle_budget || 0));
-    setText('research-stage', r.current_stage_ko || r.current_stage || '연구 없음');
-    setText('research-status', r.status || 'NONE');
-    replaceList('research-proposals', r.proposals, function (p) {
-      return (p.domain || 'AI') + ' · ' + (p.hypothesis || '가설 없음') + (p.confidence === null || p.confidence === undefined ? '' : ' · 신뢰도 ' + p.confidence);
-    });
-    replaceList('research-critiques', r.cross_critiques, function (c) {
-      return (c.domain || 'AI') + ' · ' + (c.weakest_assumption || c.logical_flaw || c.self_critique || '비평 기록');
-    });
-    var syn = r.synthesis || {};
-    setText('research-synthesis', syn.synthesized_hypothesis || syn.title || '아직 합성된 가설이 없습니다.');
-    var exp = r.experiment || {};
-    setText('research-experiment', exp.goal || exp.status || '아직 계획된 실험이 없습니다.');
-    var ev = r.evidence || {};
-    var evParts = [];
-    if (ev.baseline_state) evParts.push('기준선: ' + ev.baseline_state);
-    if (exp.normal_final_state) evParts.push('실험 검증: ' + exp.normal_final_state);
-    if (exp.normal_run_id) evParts.push('Run: ' + exp.normal_run_id);
-    setText('research-evidence', evParts.join(' · ') || '아직 검증 증거가 없습니다.');
-    replaceList('research-rejected', r.rejected_ideas, function (x) { return String(x); });
-    setText('research-learned', r.what_we_learned || '아직 정리된 학습 내용이 없습니다.');
-    setText('research-next', r.next_step || '다음 단계가 정해지지 않았습니다.');
-    var raw = document.getElementById('research-raw'); if (raw) raw.textContent = JSON.stringify(r, null, 2);
-    var badge = document.getElementById('triad-mode-badge');
-    if (badge) { badge.textContent = r.active ? '진행 중' : (r.status === 'MILESTONE_COMPLETE' ? '완료' : '읽기 전용'); badge.className = 'badge ' + (r.active ? 'b-blue' : (r.status === 'MILESTONE_COMPLETE' ? 'b-green' : 'b-muted')); }
-  }
-  function setDashboardView(mode) {
-    var triad = mode === 'TRIAD';
-    var core = document.getElementById('corestrip'), main = document.getElementById('main'), research = document.getElementById('triad-research-center');
-    if (core) core.style.display = triad ? 'none' : 'grid';
-    if (main) main.style.display = triad ? 'none' : 'grid';
-    if (research) research.style.display = triad ? 'grid' : 'none';
-    var nb = document.getElementById('normal-mode-btn'), tb = document.getElementById('triad-mode-btn');
-    if (nb) nb.classList.toggle('on', !triad); if (tb) tb.classList.toggle('on', triad);
-    try { window.localStorage.setItem('director-dashboard-mode', mode); } catch (e) {}
-  }
   function pollStatus() {
     return fetch('/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       setStatusCell('system-mode', j.system_mode);
@@ -2224,7 +1993,6 @@ DASHBOARD_JS = r"""
       lastApproval = j.approval; if (!selectedRunId) renderApproval(j.approval); renderPending(j.pending);
       lastResult = j.result; if (!selectedResultId) renderResult(j.result); renderResults(j.results);
       renderTodo(j.run, j.approval, j.result);
-      renderResearch(j.research);
       if (selectedResultId) refreshSelectedResult();
       var cvr = document.getElementById('chat-view-result-btn'); if (cvr) cvr.style.display = (j.result && j.result.is_pass && ((j.result.result || {}).state || 'READY') === 'READY') ? '' : 'none';
       if (selectedRunId) refreshSelectedApproval();
@@ -2307,15 +2075,6 @@ DASHBOARD_JS = r"""
   function closeNodeDetails(except) { Array.prototype.forEach.call(document.querySelectorAll('.node details[open]'), function (d) { if (d !== except) d.removeAttribute('open'); }); }
   document.addEventListener('click', function (e) { var inside = e.target && e.target.closest ? e.target.closest('.node details') : null; closeNodeDetails(inside); });
   document.addEventListener('keydown', function (e) { if (e.key !== 'Escape') return; var open = document.querySelector('.node details[open]'); if (open) { closeNodeDetails(null); var sm = open.querySelector('summary'); if (sm) sm.focus(); } });
-  var normalModeBtn = document.getElementById('normal-mode-btn');
-  var triadModeBtn = document.getElementById('triad-mode-btn');
-  if (normalModeBtn) normalModeBtn.addEventListener('click', function () { setDashboardView('NORMAL'); });
-  if (triadModeBtn) triadModeBtn.addEventListener('click', function () { setDashboardView('TRIAD'); });
-  var initialMode = 'NORMAL';
-  try { initialMode = window.localStorage.getItem('director-dashboard-mode') || 'NORMAL'; } catch (e) {}
-  var modeSwitch = document.getElementById('mode-switch');
-  if (modeSwitch && modeSwitch.hidden) initialMode = 'NORMAL';        // the TRIAD view is not offered: never open on it
-  setDashboardView(initialMode === 'TRIAD' ? 'TRIAD' : 'NORMAL');
   chatBox.scrollTop = chatBox.scrollHeight;               // initial load only
   pollStatus();
   pollMessages();
@@ -2349,10 +2108,6 @@ DASHBOARD_CSS = r"""
     #hdr .sep { color: var(--border); }
     #hdr .lbl { color: var(--muted); font-size: 12px; text-transform: uppercase; margin-right: 4px; }
     #hdr button { margin-left: auto; flex-shrink: 0; }
-    #hdr #mode-switch { display:flex; gap:4px; margin-left:auto; }
-    #hdr #mode-switch[hidden] { display:none; }
-    #hdr #mode-switch button { margin-left:0; }
-    #mode-switch button.on { color:var(--blue); border-color:var(--blue); background:rgba(90,169,255,0.10); }
     #todo-line { display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
     #core-mode { white-space: nowrap; }
     #right h2 { flex-wrap: wrap; row-gap: 2px; }
@@ -2400,20 +2155,6 @@ DASHBOARD_CSS = r"""
     @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 1px rgba(90,169,255,0.25), 0 0 8px rgba(90,169,255,0.12); } 50% { box-shadow: 0 0 0 1px rgba(90,169,255,0.45), 0 0 16px rgba(90,169,255,0.28); } }
     /* main */
     #main { display: grid; grid-template-columns: 250px minmax(600px, 1fr) 300px; gap: 10px; padding: 8px 12px; min-height: 0; }
-    #triad-research-center { display:none; grid-row:2 / 4; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); gap:10px; padding:8px 12px; min-height:0; overflow:auto; }
-    .research-hero { grid-column:1 / 4; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 18px; align-items:start; }
-    .research-hero h2 { color:var(--purple); margin-bottom:2px; }
-    .research-meta { display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
-    .research-moonshot { font-size:15px; line-height:1.45; color:var(--text); margin-top:4px; white-space:pre-wrap; }
-    .research-column { min-height:0; overflow:auto; }
-    .research-card { border:1px solid var(--border); border-radius:6px; background:var(--panel2); padding:8px 10px; margin-bottom:8px; }
-    .research-card h3 { color:var(--muted); font-size:12px; letter-spacing:.5px; text-transform:uppercase; margin:0 0 5px; }
-    .research-card p { margin:0; white-space:pre-wrap; word-break:break-word; }
-    .research-card ul { margin:0; padding-left:18px; }
-    .research-card li { margin:3px 0; line-height:1.35; }
-    .research-empty { color:var(--muted); }
-    #research-next { color:var(--green); }
-    #research-raw { max-height:280px; overflow:auto; white-space:pre; font:12px/1.4 Consolas,monospace; color:var(--muted); }
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     .panel h2 { font-size: 12px; margin: 0 0 6px 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
     .proj-name { font-size: 15px; font-weight: 600; color: var(--text); }
@@ -2563,7 +2304,7 @@ DASHBOARD_CSS = r"""
     .a-red button { background: #a33; border-color: #c55; }
     @media (prefers-reduced-motion: reduce) { .node.active, .stage.active, .node .tap.active::after { animation: none !important; } }
     @media (max-width: 1439px) { #main { grid-template-columns: 230px minmax(500px, 1fr) 240px; } #corestrip { grid-template-columns: 170px 1fr; } }
-    @media (max-width: 1023px) { body { display: block; overflow: auto; height: auto; } #main { display: block; } #triad-research-center { grid-template-columns:1fr; grid-template-rows:auto; } .research-hero { grid-column:1; } .panel { margin-bottom: 8px; max-height: 60vh; } #chat-box { max-height: 40vh; } #corestrip { grid-template-columns: 1fr; } #nodes { grid-template-columns: 1fr; } #bus { padding-left: 0; } }
+    @media (max-width: 1023px) { body { display: block; overflow: auto; height: auto; } #main { display: block; } .panel { margin-bottom: 8px; max-height: 60vh; } #chat-box { max-height: 40vh; } #corestrip { grid-template-columns: 1fr; } #nodes { grid-template-columns: 1fr; } #bus { padding-left: 0; } }
 """
 
 
@@ -2623,15 +2364,6 @@ def local_time_label(iso) -> str:
     except (TypeError, ValueError):
         return "" if iso in (None, "") else str(iso)
 
-
-def triad_switch_enabled() -> bool:
-    """The NORMAL / TRIAD switch of the workshop page. TRIAD research has an engine and a read-only status view,
-    but nothing in the console or the CLI can start a session yet, so the switch is hidden unless config.yaml says
-    `triad: {console_switch: true}` (for whoever is finishing that feature)."""
-    try:
-        return (load_config().get("triad") or {}).get("console_switch") is True
-    except Exception:
-        return False
 
 
 def render_html():
@@ -2804,32 +2536,6 @@ def render_html():
             alert_text = "HUMAN APPROVAL REQUIRED — " + (ap_item.get("title") or "") + ((" (" + ap_item.get("file") + ")") if ap_item.get("file") else "") + " — Approval required before continuing"
         core_stage = ("ORCHESTRATING \u00b7 " + (act.get("stage") or "")) if act.get("director") else "IDLE"
 
-        research = st.get("research") or {}
-        research_proposals_html = "".join(
-            f"<li>{html_lib.escape(str(p.get('domain') or 'AI'))} · "
-            f"{html_lib.escape(str(p.get('hypothesis') or '가설 없음'))}</li>"
-            for p in (research.get("proposals") or [])
-        ) or "<li class='research-empty'>아직 기록된 내용이 없습니다.</li>"
-        research_critiques_html = "".join(
-            f"<li>{html_lib.escape(str(c.get('domain') or 'AI'))} · "
-            f"{html_lib.escape(str(c.get('weakest_assumption') or c.get('logical_flaw') or c.get('self_critique') or '비평 기록'))}</li>"
-            for c in (research.get("cross_critiques") or [])
-        ) or "<li class='research-empty'>아직 기록된 내용이 없습니다.</li>"
-        research_rejected_html = "".join(
-            f"<li>{html_lib.escape(str(x))}</li>" for x in (research.get("rejected_ideas") or [])
-        ) or "<li class='research-empty'>아직 기록된 내용이 없습니다.</li>"
-        _rsyn = research.get("synthesis") or {}
-        _rexp = research.get("experiment") or {}
-        _rev = research.get("evidence") or {}
-        _research_evidence_parts = []
-        if _rev.get("baseline_state"):
-            _research_evidence_parts.append("기준선: " + str(_rev["baseline_state"]))
-        if _rexp.get("normal_final_state"):
-            _research_evidence_parts.append("실험 검증: " + str(_rexp["normal_final_state"]))
-        if _rexp.get("normal_run_id"):
-            _research_evidence_parts.append("Run: " + str(_rexp["normal_run_id"]))
-        research_raw = html_lib.escape(json.dumps(research, ensure_ascii=False, indent=2))
-
         html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -2849,7 +2555,6 @@ def render_html():
         <span class="sep">|</span>
         <span id="hdr-human" class="badge {'b-red' if human else 'b-green'}" data-raw="{'HUMAN REQUIRED' if human else 'SAFE'}">{I18N.t("human_required") if human else I18N.t("safe")}</span>
         <span class="lbl" style="margin-left:8px;">{I18N.t("my_todo")}</span><span id="todo-line" style="color:var(--amber);">{html_lib.escape(st.get("todo") or "")}</span>
-        <span id="mode-switch"{'' if triad_switch_enabled() else ' hidden'}><button id="normal-mode-btn" type="button" class="ghost on">NORMAL</button><button id="triad-mode-btn" type="button" class="ghost">TRIAD 연구</button></span>
     </div>
 
     <div id="corestrip" role="region" aria-label="AI 상태">
@@ -2890,35 +2595,6 @@ def render_html():
         html += f"""            </div>
         </div>
     </div>
-
-    <section id="triad-research-center" aria-label="TRIAD Research Center">
-        <div class="panel research-hero">
-            <div><h2>TRIAD RESEARCH CENTER <span id="triad-mode-badge" class="badge {'b-blue' if research.get('active') else 'b-muted'}">{'진행 중' if research.get('active') else '읽기 전용'}</span></h2>
-                <div class="research-moonshot" id="research-moonshot">{html_lib.escape(str(research.get('moonshot') or 'TRIAD 연구 세션이 없습니다.'))}</div>
-            </div>
-            <div class="research-meta">
-                <span>세션 <b class="mono" id="research-session-id">{html_lib.escape(str(research.get('session_id') or '없음'))}</b></span>
-                <span>사이클 <b id="research-cycle">{int(research.get('cycle_number') or 0)} / {int(research.get('cycle_budget') or 0)}</b></span>
-                <span>단계 <b id="research-stage">{html_lib.escape(str(research.get('current_stage_ko') or '연구 없음'))}</b></span>
-                <span>상태 <b class="mono" id="research-status">{html_lib.escape(str(research.get('status') or 'NONE'))}</b></span>
-            </div>
-        </div>
-        <div class="panel research-column">
-            <div class="research-card"><h3>3개 독립 제안</h3><ul id="research-proposals">{research_proposals_html}</ul></div>
-            <div class="research-card"><h3>교차 비평</h3><ul id="research-critiques">{research_critiques_html}</ul></div>
-            <div class="research-card"><h3>합성 가설</h3><p id="research-synthesis">{html_lib.escape(str(_rsyn.get('synthesized_hypothesis') or _rsyn.get('title') or '아직 합성된 가설이 없습니다.'))}</p></div>
-        </div>
-        <div class="panel research-column">
-            <div class="research-card"><h3>실험</h3><p id="research-experiment">{html_lib.escape(str(_rexp.get('goal') or _rexp.get('status') or '아직 계획된 실험이 없습니다.'))}</p></div>
-            <div class="research-card"><h3>증거</h3><p id="research-evidence">{html_lib.escape(' · '.join(_research_evidence_parts) or '아직 검증 증거가 없습니다.')}</p></div>
-            <div class="research-card"><h3>기각된 아이디어</h3><ul id="research-rejected">{research_rejected_html}</ul></div>
-        </div>
-        <div class="panel research-column">
-            <div class="research-card"><h3>배운 점</h3><p id="research-learned">{html_lib.escape(str(research.get('what_we_learned') or '아직 정리된 학습 내용이 없습니다.'))}</p></div>
-            <div class="research-card"><h3>다음 단계</h3><p id="research-next">{html_lib.escape(str(research.get('next_step') or '다음 단계가 정해지지 않았습니다.'))}</p></div>
-            <details class="research-card"><summary>원시 JSON · provenance · 실행 정보</summary><pre id="research-raw">{research_raw}</pre></details>
-        </div>
-    </section>
 
     <div id="main" role="main">
         <div class="panel" id="left">
@@ -3179,15 +2855,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(build_digest_payload())
             except Exception as e:
                 self._send_json({"error": str(e)[:300]}, 500)
-        elif parsed.path == '/research':
-            q = urllib.parse.parse_qs(parsed.query)
-            session_id = q.get('session_id', [None])[0]
-            try:
-                payload = build_research_status_payload(session_id=session_id)
-            except Exception as e:
-                payload = {"mode": "TRIAD_RESEARCH", "available": False, "active": False,
-                           "error": str(e)[:300]}
-            self._send_json(payload)
         elif parsed.path == '/result':
             q = urllib.parse.parse_qs(parsed.query)
             run_id = q.get('run_id', [''])[0]

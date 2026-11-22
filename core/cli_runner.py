@@ -1,6 +1,5 @@
-"""Official subscription-CLI runner for read-only TRIAD research stages."""
-import os
-import shutil
+"""Read-only runner for the official subscription CLIs: one prompt in, one answer out, in a git worktree the call
+must leave untouched. Used by the proposal MAKER and by the Google ARCHITECT/INSPECTOR roles."""
 import json
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +8,8 @@ from typing import Any, Dict, List, Optional
 from core.env_utils import get_sanitized_env, probe_version, resolve_cli, run_capture
 from core.process_runner import ProcessTreeRunner
 from core.provider_manager import ErrorCategory
-from core.triad_provider import ALL_TRIAD_DOMAINS
+
+DOMAINS = ("OPENAI", "ANTHROPIC", "GOOGLE")
 
 
 def _agy_args():
@@ -17,9 +17,9 @@ def _agy_args():
     return agy_extra_args()
 
 
-class ResearchProviderCallError(RuntimeError):
+class ProviderCallError(RuntimeError):
     """retryable=True marks a failure this module itself classified as a bounded-retry candidate (transport/
-    runtime level only - see TriadResearchRunner._is_retryable). meta carries whatever call metadata (executable,
+    runtime level only - see ReadOnlyCliRunner._is_retryable). meta carries whatever call metadata (executable,
     version, exit_code, duration, ...) was known at the moment of failure, in the same shape as a successful
     call result, so a caller can log a truthful provenance row for the failed attempt even though it never
     produced usable output."""
@@ -30,13 +30,11 @@ class ResearchProviderCallError(RuntimeError):
         self.meta = dict(meta or {})
 
 
-class TriadResearchRunner:
+class ReadOnlyCliRunner:
     """Invoke each official CLI without API keys. Callers provide an isolated git worktree as cwd.
 
-    Bounded transient retry (V3.0-H hardening, 2026-09-10): a research cycle needs ~15-20 real subscription
-    CLI calls to complete once, uninterrupted. Before this, any single transient transport/runtime hiccup on
-    any one call discarded the whole cycle to HUMAN_REQUIRED - correctly fail-closed, but too fragile for the
-    long-running autonomous research loop this system exists to run. `invoke()` now retries ONCE (initial
+    Bounded transient retry: a single transient transport/runtime hiccup should not fail a whole step.
+    `invoke()` retries ONCE (initial
     attempt + MAX_ATTEMPTS-1 retries, MAX_ATTEMPTS=2) and ONLY for failures classified as transient at the
     transport/runtime level: a genuinely transient process/CLI timeout, or Antigravity's stream-json mode
     reporting terminal SUCCESS with no parseable result / an empty response. Quota exhaustion, authentication
@@ -44,9 +42,9 @@ class TriadResearchRunner:
     they fail closed on the first attempt exactly as before. A retry always resends the identical original
     prompt (never the prior attempt's bad output, never another provider's output) into a fresh call; no
     provider is ever substituted for another. Every attempt, successful or not, is preserved for provenance
-    (see `attempts` on the return value / `ResearchProviderCallError`)."""
+    (see `attempts` on the return value / `ProviderCallError`)."""
 
-    MAX_ATTEMPTS = 2   # initial attempt + 1 bounded retry; never more, per V3.0-H hardening scope
+    MAX_ATTEMPTS = 2   # initial attempt + 1 bounded retry; never more
 
     def __init__(self, executables: Optional[Dict[str, str]] = None, timeout: float = 300.0,
                  no_output_timeout: float = 180.0, heartbeat_interval: float = 30.0):
@@ -64,7 +62,7 @@ class TriadResearchRunner:
     def _command(self, domain: str, executable: str, prompt: str):
         if domain == "OPENAI":
             # Codex official help: omitting PROMPT (or using '-') reads it from stdin.  This is required on
-            # Windows where synthesis/cross-critique evidence can exceed CreateProcess' command-line limit.
+            # Windows where a long prompt can exceed CreateProcess' command-line limit.
             from core.cli_models import codex_exec_argv, codex_exec_description
             return codex_exec_argv(executable), prompt, codex_exec_description()
         if domain == "ANTHROPIC":
@@ -79,11 +77,11 @@ class TriadResearchRunner:
                 json.dumps(message, ensure_ascii=False) + "\n",
                 " ".join(["agy --input-format stream-json --output-format stream-json --sandbox", *_agy_args(), "<stdin>"]),
             )
-        raise ValueError(f"unsupported TRIAD domain: {domain}")
+        raise ValueError(f"unsupported provider: {domain}")
 
     @staticmethod
     def _is_retryable(message: str) -> bool:
-        """Bounded-retry allowlist (V3.0-H hardening). Deliberately narrow: only failures with positive
+        """Bounded-retry allowlist . Deliberately narrow: only failures with positive
         evidence of being a transient transport/runtime hiccup are retried. Everything else - quota, auth,
         provider-unavailable, config error, safety/scope violations, semantic schema violations, and a real
         experiment/content failure - is excluded by construction and falls through to `ErrorCategory.classify`,
@@ -100,14 +98,14 @@ class TriadResearchRunner:
         executable = self.executables.get(normalized)
         meta: Dict[str, Any] = {"executable": executable}
         if not executable or not Path(executable).exists():
-            raise ResearchProviderCallError(
+            raise ProviderCallError(
                 f"CONFIG_ERROR: official {normalized} CLI is unavailable", retryable=False, meta=meta
             )
         workspace = Path(cwd).resolve()
         before = run_capture(["git", "status", "--porcelain=v1", "-uall"], cwd=workspace, timeout=20)
         if before.returncode != 0:
-            raise ResearchProviderCallError(
-                f"CONFIG_ERROR: research workspace is not a git worktree: {workspace}", retryable=False, meta=meta
+            raise ProviderCallError(
+                f"CONFIG_ERROR: workspace is not a git worktree: {workspace}", retryable=False, meta=meta
             )
 
         argv, stdin_data, invocation = self._command(normalized, str(Path(executable).resolve()), prompt)
@@ -132,18 +130,18 @@ class TriadResearchRunner:
         meta.update({"ended_at": ended_at, "duration_sec": result.duration_sec, "exit_code": result.exit_code})
         after = run_capture(["git", "status", "--porcelain=v1", "-uall"], cwd=workspace, timeout=20)
         if after.returncode != 0 or after.stdout != before.stdout:
-            raise ResearchProviderCallError(
-                f"RESEARCH_READ_ONLY_VIOLATION: {normalized} changed its isolated research workspace",
+            raise ProviderCallError(
+                f"READ_ONLY_VIOLATION: {normalized} changed its isolated workspace",
                 retryable=False, meta=meta,
             )
         if result.timed_out:
-            raise ResearchProviderCallError(
+            raise ProviderCallError(
                 f"TIMEOUT: {normalized}: {result.timeout_reason}", retryable=True, meta=meta
             )
         if result.exit_code != 0:
             error = (result.stderr or result.stdout or "provider call failed").strip()
             message = f"{normalized} CLI exit {result.exit_code}: {error[:500]}"
-            raise ResearchProviderCallError(message, retryable=self._is_retryable(message), meta=meta)
+            raise ProviderCallError(message, retryable=self._is_retryable(message), meta=meta)
         output = result.stdout
         if normalized == "GOOGLE":
             final_event = None
@@ -155,15 +153,15 @@ class TriadResearchRunner:
                 if event.get("event") == "result" and isinstance(event.get("result"), dict):
                     final_event = event["result"]
             if not final_event:
-                raise ResearchProviderCallError("GOOGLE_STREAM_RESULT_MISSING", retryable=True, meta=meta)
+                raise ProviderCallError("GOOGLE_STREAM_RESULT_MISSING", retryable=True, meta=meta)
             if final_event.get("status") != "SUCCESS":
                 message = "GOOGLE_STREAM_FAILED: " + str(
                     final_event.get("error") or final_event.get("status") or "UNKNOWN"
                 )[:500]
-                raise ResearchProviderCallError(message, retryable=self._is_retryable(message), meta=meta)
+                raise ProviderCallError(message, retryable=self._is_retryable(message), meta=meta)
             output = str(final_event.get("response") or "")
             if not output.strip():
-                raise ResearchProviderCallError("GOOGLE_STREAM_EMPTY_RESPONSE", retryable=True, meta=meta)
+                raise ProviderCallError("GOOGLE_STREAM_EMPTY_RESPONSE", retryable=True, meta=meta)
         if normalized not in self._versions:
             self._versions[normalized] = probe_version(executable)
         return {
@@ -186,10 +184,10 @@ class TriadResearchRunner:
 
     def invoke(self, domain: str, prompt: str, cwd: str, stage: str) -> Dict[str, Any]:
         normalized = str(domain).upper()
-        if normalized not in ALL_TRIAD_DOMAINS:
-            raise ValueError(f"unsupported TRIAD domain: {domain}")
+        if normalized not in DOMAINS:
+            raise ValueError(f"unsupported provider: {domain}")
         attempts: List[Dict[str, Any]] = []
-        last_error: Optional[ResearchProviderCallError] = None
+        last_error: Optional[ProviderCallError] = None
         for attempt_number in range(1, self.MAX_ATTEMPTS + 1):
             retry_reason = attempts[-1]["error"] if attempts else None
             try:
@@ -202,7 +200,7 @@ class TriadResearchRunner:
                 result["attempts"] = attempts
                 result["attempt_number"] = attempt_number
                 return result
-            except ResearchProviderCallError as exc:
+            except ProviderCallError as exc:
                 if stage == 'BUILDING' and str(exc).startswith('GOOGLE_STREAM_FAILED:') and 'output token limit' in str(exc).lower():
                     exc.retryable = True
                 record = dict(exc.meta)
@@ -217,39 +215,7 @@ class TriadResearchRunner:
         prior = attempts[:-1]
         final_meta = dict(attempts[-1]) if attempts else {}
         final_meta["attempts"] = prior
-        final = ResearchProviderCallError(str(last_error), retryable=False, meta=final_meta)
+        final = ProviderCallError(str(last_error), retryable=False, meta=final_meta)
         final.attempts = attempts
         final.failure_result = final_meta
         raise final
-
-
-def create_research_workspaces(project_path: str, workspace_root: Path, domains) -> Dict[str, str]:
-    """Create detached worktrees sequentially, then provider calls can safely run concurrently in isolation."""
-    project = Path(project_path).resolve()
-    head = run_capture(["git", "rev-parse", "--verify", "HEAD"], cwd=project, timeout=20)
-    if head.returncode != 0:
-        raise ResearchProviderCallError("RESEARCH_WORKSPACE_FAILED: project has no committed HEAD")
-    root = workspace_root.resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    created: Dict[str, str] = {}
-    try:
-        for domain in sorted(set(domains)):
-            target = (root / domain.lower()).resolve()
-            if os.path.commonpath([str(root), str(target)]) != str(root):
-                raise ResearchProviderCallError("RESEARCH_WORKSPACE_FAILED: workspace path escaped root")
-            result = run_capture(["git", "worktree", "add", "--detach", str(target), "HEAD"], cwd=project, timeout=60)
-            if result.returncode != 0:
-                raise ResearchProviderCallError(f"RESEARCH_WORKSPACE_FAILED: {result.stderr.strip()[:500]}")
-            created[domain] = str(target)
-        return created
-    except Exception:
-        cleanup_research_workspaces(project_path, created)
-        raise
-
-
-def cleanup_research_workspaces(project_path: str, workspaces: Dict[str, str]) -> None:
-    project = Path(project_path).resolve()
-    for path in workspaces.values():
-        run_capture(["git", "worktree", "remove", "--force", str(path)], cwd=project, timeout=60)
-        shutil.rmtree(path, ignore_errors=True)
-    run_capture(["git", "worktree", "prune"], cwd=project, timeout=30)
