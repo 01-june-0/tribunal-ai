@@ -869,6 +869,8 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
             "steps": [step_view(s) for s in m.get("steps", [])],
             "summary": (m.get("summary") or "")[:1200], "blocked_reason": (m.get("blocked_reason") or "")[:500],
             "deliverable": m.get("base_worktree"), "deliverable_run_id": deliverable_run_id(m),
+            "leftover": sum(1 for s in m.get("steps", []) if s.get("run_id") and _run_has_worktree(s["run_id"])), "closed": bool(m.get("closed")),
+            "settling": m.get("status") != "RUNNING" and _ACTIVE_PROJECTS.get(_project_key(m.get("project_path") or "")) == m["mission_id"],
             "applied": applied, "apply_state": (applied or {}).get("status") or ("pending" if m.get("base_worktree") and m.get("status") != "RUNNING" else None),
             "created_at": m.get("created_at"), "updated_at": m.get("updated_at")}
 
@@ -963,6 +965,14 @@ def stop_missions(reason: str = "", mission_id: Optional[str] = None, by: str = 
     return {"status": "stopped" if stopped else "idle", "missions": stopped, "killed": killed}
 
 
+def _run_has_worktree(run_id: str) -> bool:
+    try:
+        wt = (StateMachine().get_run(run_id) or {}).get("worktree_path") or ""
+        return bool(wt) and Path(wt).is_dir()
+    except Exception:
+        return False
+
+
 def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Optional[int] = None,
                    on_conflict: str = "block", by: str = "HUMAN", expected_run: str = "") -> dict:
     """A decision about a finished mission: apply its deliverable, discard it, extend its budget and continue,
@@ -994,6 +1004,11 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         m = store.load(mission_id) or m
         m["applied"] = {"run_id": rid, "at": datetime.utcnow().isoformat(), "by": by, **{k: v for k, v in result.items() if k != "request_id"}}
         store.save(m)
+        if result.get("status") == "applied" and not result.get("skipped_conflicts"):
+            try:                                    # steps that did not pass left copies too; none is needed any more
+                _result_manager().release_worktrees([s["run_id"] for s in m.get("steps", []) if s.get("run_id")], by=by, why="task applied")
+            except Exception:
+                pass
         ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} 결과물 적용: {result.get('status')}"
                                   + (f" · {len(result.get('files', []))}개 파일" if result.get("files") else "")
                                   + (" · " + "; ".join(result.get("blocks", []))[:300] if result.get("blocks") else ""), run_id=rid)
@@ -1001,7 +1016,27 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         return result
     if action == "discard":
         rid = deliverable_run_id(m)
-        result = _result_manager().discard(rid, request_id=f"{by.lower()}-{mission_id}", by=by) if rid else {"status": "refused", "reason": "no deliverable"}
+        rm = _result_manager()
+        steps = [s["run_id"] for s in m.get("steps", []) if s.get("run_id")]
+        with _RUN_LOCK:                             # a stopped task's loop may still be finishing its step in there
+            if _project_key(m.get("project_path") or "") in _ACTIVE_PROJECTS:
+                return {"status": "busy", "error": "a task is still working in this project"}
+        if rid:
+            result = rm.discard(rid, request_id=f"{by.lower()}-{mission_id}", by=by)
+        elif any(_run_has_worktree(r) for r in steps):
+            # A task that stopped before anything passed has no result to discard, only working copies to clear.
+            result = {"status": "discarded", "run_id": None, "removed": False}
+        else:
+            result = {"status": "refused", "reason": "no deliverable"}
+        if result.get("status") == "discarded":
+            m["closed"] = True                      # no step can be picked up again without its working copy
+            for earlier in steps:                   # earlier steps that passed are results too: discarded the same way
+                if earlier != rid:
+                    try:
+                        rm.discard(earlier, request_id=f"{by.lower()}-{mission_id}-{earlier[-6:]}", by=by)      # refuses what is not a waiting result
+                    except Exception:
+                        pass
+            result["released"] = rm.release_worktrees(steps, by=by, why="task discarded")     # and whatever is left
         m["applied"] = {"run_id": rid, "at": datetime.utcnow().isoformat(), "by": by, "status": "discarded" if result.get("status") == "discarded" else result.get("status"), "reason": reason[:300]}
         store.save(m)
         ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} 결과물 폐기: {result.get('status')} {reason[:200]}")
@@ -1010,6 +1045,8 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
     if action in ("extend", "replan"):
         if m.get("status") == "RUNNING":
             return {"status": "busy", "error": "mission is still running"}
+        if m.get("closed"):
+            return {"status": "refused", "reason": "this task's working copies were cleared; start a new task"}
         key = _project_key(m["project_path"])
         with _RUN_LOCK:
             if key in _ACTIVE_PROJECTS:
@@ -2864,12 +2901,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload["preconditions"].pop("manifest", None)
                 # The screen shows what applying would write. For a task of several steps that is more than this
                 # run's own changes (the earlier steps come with it), so the whole of it replaces the run's change set.
-                whole = None
-                if run_id and payload.get("is_pass") and (payload.get("result") or {}).get("state") not in ("APPLIED", "DISCARDED"):
+                whole, rstate = None, (payload.get("result") or {}).get("state")
+                if run_id and payload.get("is_pass") and rstate not in ("APPLIED", "DISCARDED"):
                     try:
                         whole = _result_manager().apply_view(run_id)
                     except Exception:
                         whole = None                    # the run's own change set stays on the screen
+                elif run_id and rstate == "APPLIED":    # what was written, kept at the moment of applying
+                    try:
+                        kept = json.loads((_result_manager().run_dir(run_id) / "applied_view.json").read_text(encoding="utf-8"))
+                        whole = kept if isinstance(kept.get("changed_files"), list) and isinstance(kept.get("file_diffs"), dict) else None
+                    except Exception:
+                        whole = None
                 if whole:
                     payload["run_changed_files"] = payload.get("changed_files")
                     for key in ("changed_files", "file_diffs", "changed_count", "counts"):

@@ -1676,6 +1676,8 @@ class Orchestrator:
 
         # 3. Create isolated worktree
         try:
+            if base_worktree and not Path(base_worktree).is_dir():
+                base_worktree = None                  # removed since (applied or discarded): never snapshot a path that is not there
             if base_worktree or self.config.get('bootstrap', {}).get('enabled'):
                 from core.bootstrap import snapshot, snapshot_excludes
                 seen: Dict[str, Any] = {}             # which untracked files went in, which stayed out and why

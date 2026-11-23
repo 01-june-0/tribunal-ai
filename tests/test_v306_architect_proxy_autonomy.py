@@ -493,7 +493,7 @@ def test_mission_builds_milestones_on_each_other_until_done(tmp_path, monkeypatc
     assert done["status"] == "DONE" and len(done["steps"]) == 2
     assert [s["result"]["final_state"] for s in done["steps"]] == ["PASS", "PASS"]
     step2 = Path(done["steps"][1]["result"]["worktree_path"])
-    assert (step2 / "feature.py").exists() and (step2 / "feature2.py").exists()   # built on step 1
+    assert not step2.exists()                      # applied below, so the working copies are cleared (was: left behind)
     assert done["base_worktree"] == str(step2) or Path(done["base_worktree"]) == step2
     assert any(role == "ARCHITECT" and "작업 완료" in text for role, text in messages)
     # v3.2: the finished deliverable is applied to the project (autonomy.auto_apply defaults to on_pass)
@@ -814,7 +814,9 @@ def test_architect_can_continue_from_a_failed_but_useful_attempt(tmp_path, monke
     assert [s["result"]["final_state"] for s in done["steps"]] == ["FAIL", "PASS"]
     attempt = done["steps"][0]["result"]["worktree_path"]
     assert done["steps"][1]["builds_on_failed_attempt"] == attempt
-    assert (Path(done["steps"][1]["result"]["worktree_path"]) / "feature.py").exists()   # step 1's code carried over
+    # step 1's code carried over into step 2 and, applied with it, into the project; the working copies are cleared
+    assert (tmp_path / "proj" / "feature.py").exists()
+    assert not Path(attempt).exists() and not Path(done["steps"][1]["result"]["worktree_path"]).exists()
 
 
 @pytest.mark.parametrize("entry,path", [

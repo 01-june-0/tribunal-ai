@@ -169,8 +169,8 @@ class MissionRunner:
     def reopen(self, mission_id: str) -> Optional[Dict[str, Any]]:
         """A BLOCKED/INCOMPLETE mission continues (e.g. after the user approved the blocking run)."""
         mission = self.store.load(mission_id)
-        if not mission or mission["status"] == "DONE":
-            return mission
+        if not mission or mission["status"] == "DONE" or mission.get("closed"):
+            return mission                      # closed: its working copies were cleared, nothing to continue from
         mission["status"], mission["blocked_reason"] = "RUNNING", None
         mission["stopped_at"] = None
         self.store.save(mission, force=True)
@@ -180,6 +180,10 @@ class MissionRunner:
     def _advance(self, mission: Dict[str, Any]) -> Dict[str, Any]:
         step = mission["steps"][-1]
         total = mission["max_steps"]
+        if mission.get("base_worktree") and not Path(mission["base_worktree"]).is_dir():
+            # The working copy this task builds on is gone - removed when its result was applied (the work is in the
+            # project now) or discarded. The next step starts from the project instead of from a path that is not there.
+            mission["base_worktree"] = None
         orch = self.factory()
         knobs = autopilot.profile_overrides(orch.config, mission.get("profile"))
         if knobs:                                              # the profile's budgets apply to every run of this mission
@@ -429,6 +433,11 @@ class MissionRunner:
             result = {"status": "error", "error": str(exc)[:500]}
         mission["applied"] = {"run_id": rid, "at": _now(), **{k: v for k, v in result.items() if k != "request_id"}}
         self.store.save(mission)
+        if result.get("status") == "applied" and not result.get("skipped_conflicts"):
+            try:                                # steps that did not pass left copies too; none is needed any more
+                ResultManager().release_worktrees([s["run_id"] for s in mission.get("steps", []) if s.get("run_id")], by="DIRECTOR_AUTO", why="task applied")
+            except Exception:
+                pass
         if result.get("status") == "applied":
             self.notify(f"결과물을 프로젝트에 적용했습니다: {len(result.get('files', []))}개 파일 "
                         f"({mission['project_path']}). 적용 후 테스트: {result.get('verification')}", run_id=rid)

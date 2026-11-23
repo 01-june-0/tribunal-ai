@@ -285,3 +285,134 @@ def test_a_decision_is_refused_for_a_running_mission_or_another_result(monkeypat
     again = d.decide_mission("MSN-D", "apply", expected_run="RUN-2")
     assert again["status"] == "applied" and again["already"] is True and applied == ["RUN-2"]      # not applied twice, record untouched
     assert mission["applied"]["status"] == "applied"
+
+
+# ------------------------------------------------------------------ working copies do not pile up
+
+def _branches(proj):
+    out = subprocess.run(["git", "branch", "--format=%(refname:short)"], cwd=proj, capture_output=True, text=True).stdout.split()
+    return sorted(b for b in out if b.startswith("RUN-"))
+
+
+def _in_task(run_id, task):
+    (RUNS / run_id / "mission_base.json").write_text(json.dumps({"mission_id": task}), encoding="utf-8")
+
+
+def test_an_applied_result_takes_its_working_copies_and_branches_with_it(tmp_path, cleanup_runs):
+    """Found in real runs: every applied task left a worktree and a branch per step behind."""
+    from core import result_manager
+    proj = project(tmp_path)
+    r0, r1, r2 = "RUN-TEST-REL0", "RUN-TEST-REL1", "RUN-TEST-REL2"; cleanup_runs += [r0, r1, r2]
+    wt0 = fake_run(proj, r0, snapshot(str(proj))); _in_task(r0, "MSN-OTHER")        # an earlier task it continued from
+    (wt0 / "zero.py").write_text("z = 0\n", encoding="utf-8")
+    wt1 = fake_run(proj, r1, snapshot(str(wt0)), base_worktree=str(wt0)); _in_task(r1, "MSN-T")
+    (wt1 / "a.py").write_text("a = 2\n", encoding="utf-8")
+    wt2 = fake_run(proj, r2, snapshot(str(wt1)), base_worktree=str(wt1)); _in_task(r2, "MSN-T")
+    (wt2 / "new.py").write_text("new = 1\n", encoding="utf-8")
+    result_manager._APPLY_VIEW_CACHE.clear()
+    rm = ResultManager(config={"verification": {"test_command": None}})
+    done = rm.apply_tree(r2, request_id="rel-a")
+    assert done["status"] == "applied" and sorted(done["files"]) == ["a.py", "new.py", "zero.py"]
+    assert done["released"] == [r2, r1]
+    assert not wt2.exists() and not wt1.exists() and wt0.exists()               # another task's copy is its own business
+    assert _branches(proj) == [r0]
+    assert rm.result_state(r1)["state"] == "APPLIED" and r2 in rm.result_state(r1)["detail"]     # not left "ready" with no copy
+    kept = json.loads((RUNS / r2 / "applied_view.json").read_text(encoding="utf-8"))            # what was written stays readable
+    assert sorted(f["path"] for f in kept["changed_files"]) == ["a.py", "new.py", "zero.py"] and "+a = 2" in kept["file_diffs"]["a.py"]
+    assert json.loads((RUNS / r1 / "applied_view.json").read_text(encoding="utf-8"))["applied_with"] == r2     # the earlier step shows the same
+    assert (proj / "new.py").read_text(encoding="utf-8") == "new = 1\n"
+    assert "WORKTREE_RELEASED" in [a["action"] for a in StateMachine().get_audit_logs(r2)]
+
+
+def test_the_working_copy_stays_when_a_conflicting_file_was_skipped(tmp_path, cleanup_runs):
+    proj = project(tmp_path)
+    rid = "RUN-TEST-REL3"; cleanup_runs.append(rid)
+    wt = fake_run(proj, rid, snapshot(str(proj))); _in_task(rid, "MSN-T")
+    (wt / "a.py").write_text("a = 2\n", encoding="utf-8"); (wt / "b.py").write_text("b = 2\n", encoding="utf-8")
+    (proj / "b.py").write_text("b = 99\n", encoding="utf-8")
+    done = ResultManager(config={"verification": {"test_command": None}}).apply_tree(rid, request_id="rel-b", on_conflict="skip")
+    assert done["status"] == "applied" and "released" not in done
+    assert (wt / "b.py").read_text(encoding="utf-8") == "b = 2\n" and _branches(proj) == [rid]    # the AIs' b.py exists only here
+
+
+def test_a_task_never_continues_from_a_working_copy_that_is_gone(tmp_path):
+    """After an apply removed the copy, "continue" must start from the project - not from a path that is not there
+    (snapshotting it would create an empty repository in its place)."""
+    from core.mission import MissionRunner, MissionStore
+    store = MissionStore(tmp_path / "missions")
+    seen = {}
+
+    class Orch:
+        config = {}
+        class sm:
+            @staticmethod
+            def get_run(rid): return None
+    runner = MissionRunner(lambda: Orch(), store)
+    runner._execute = lambda orch, mission, step: seen.update(base=mission.get("base_worktree")) or (_ for _ in ()).throw(RuntimeError("stop here"))
+    gone, here = tmp_path / "gone", tmp_path / "here"; here.mkdir()
+    for base, expect in ((gone, None), (here, str(here))):
+        mission = {"mission_id": "MSN-B", "status": "RUNNING", "max_steps": 2, "steps": [{"index": 1, "run_id": None, "result": None}], "base_worktree": str(base)}
+        with pytest.raises(RuntimeError):
+            runner._advance(mission)
+        assert seen["base"] == expect
+    src = (Path(__file__).resolve().parents[1] / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert "if base_worktree and not Path(base_worktree).is_dir():" in src                     # the engine checks too
+    closed = {"mission_id": "MSN-C", "status": "STOPPED", "closed": True, "steps": [], "project_path": str(tmp_path), "goal": "g"}
+    store.save(closed)
+    assert runner.reopen("MSN-C")["status"] == "STOPPED"                                       # a cleared task is not reopened
+
+
+def test_release_touches_only_a_runs_own_directory_and_branch(tmp_path, cleanup_runs):
+    proj = project(tmp_path)
+    rid = "RUN-TEST-REL4"; cleanup_runs.append(rid)
+    wt = fake_run(proj, rid, snapshot(str(proj)))
+    sm, rm = StateMachine(), ResultManager()
+    elsewhere = tmp_path / "elsewhere"; elsewhere.mkdir(); (elsewhere / "keep.txt").write_text("mine\n", encoding="utf-8")
+    sm.update_run_worktree(rid, str(elsewhere), rid)
+    assert rm.release_worktrees([rid, "RUN-TEST-NOPE", ""]) == [] and (elsewhere / "keep.txt").exists() and wt.exists()
+    sm.update_run_worktree(rid, str(wt), "main")                       # a branch the run did not create is never deleted
+    git(proj, "branch", "-M", "main")
+    assert rm.release_worktrees([rid]) == [rid] and not wt.exists()
+    assert "main" in subprocess.run(["git", "branch"], cwd=proj, capture_output=True, text=True).stdout
+
+
+def test_a_task_that_stopped_with_nothing_passed_can_have_its_working_copies_cleared(tmp_path, cleanup_runs, monkeypatch):
+    """A stopped task has no result, so "discard" used to answer "no deliverable" and the copy stayed for good."""
+    import dashboard_server as d
+    proj = project(tmp_path)
+    rid = "RUN-TEST-REL5"; cleanup_runs.append(rid)
+    sm = StateMachine()
+    sm.create_run(rid, str(proj), "goal")
+    wt, branch = GitManager.create_worktree(str(proj), rid, base_ref=snapshot(str(proj)))
+    sm.update_run_worktree(rid, wt, branch)
+    for nxt in (State.PLANNING, State.ORDER_READY, State.BUILDING, State.VERIFYING):     # stopped by the person here
+        sm.transition_to(rid, nxt, details="t")
+    mission = {"mission_id": "MSN-S", "status": "STOPPED", "project_path": str(proj), "steps": [{"index": 1, "run_id": rid}], "base_worktree": None}
+
+    class Store:
+        def load(self, mid): return dict(mission) if mid == "MSN-S" else None
+        def save(self, m): mission.update(m)
+    monkeypatch.setattr(d, "MissionStore", Store)
+    monkeypatch.setattr(d, "_result_manager", lambda: ResultManager())
+    monkeypatch.setattr(d, "active_session_id", lambda: "S")
+    monkeypatch.setattr(d, "ChatManager", lambda: type("C", (), {"add_message": lambda *a, **k: None})())
+    monkeypatch.setattr(d, "invalidate_status_cache", lambda: None)
+    mission["status"] = "RUNNING"
+    assert d.decide_mission("MSN-S", "discard")["status"] == "busy" and Path(wt).exists()        # never under a running task
+    mission["status"] = "STOPPED"
+    monkeypatch.setitem(d._ACTIVE_PROJECTS, d._project_key(str(proj)), "MSN-S")                 # its loop is still finishing the step
+    assert d.decide_mission("MSN-S", "discard")["status"] == "busy" and Path(wt).exists()
+    monkeypatch.delitem(d._ACTIVE_PROJECTS, d._project_key(str(proj)))
+    out = d.decide_mission("MSN-S", "discard")
+    assert out["status"] == "discarded" and out["released"] == [rid]
+    assert not Path(wt).exists() and _branches(proj) == [] and mission["closed"] is True
+    assert (proj / "a.py").read_text(encoding="utf-8") == "a = 1\n"                           # the project is untouched
+    assert d.decide_mission("MSN-S", "extend")["status"] == "refused"                          # nothing left to continue from
+    assert d.decide_mission("MSN-S", "discard")["status"] == "refused"                         # and nothing left to clear
+
+
+def test_the_stage_offers_to_clear_a_stopped_task_and_shows_why_it_stopped():
+    stage = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "['BLOCKED','INCOMPLETE','FAILED','STOPPED']" in stage and "ms.status!=='STOPPED'&&last&&AT_WORK.has(last.state)" in stage
+    assert "!ms.deliverable&&ms.leftover" in stage and "decideMission(ms.id,'discard',{cleared:'1'})" in stage
+    assert "ms.closed" in stage and "ms.settling" in stage

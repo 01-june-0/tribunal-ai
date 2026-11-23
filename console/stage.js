@@ -141,7 +141,7 @@ function liveModel(){
   return {working,assign:assignment(),...phaseOf(working,verifying,!!(focus&&focus.live)),
     mission:focus&&{goal:focus.goal,project:focus.project,status:focus.status,live:focus.live,max:Math.max(focus.max_steps||0,focus.steps.length),
       steps:focus.steps.map(s=>({index:s.index,state:s.rejected?'REJECTED':s.state,tests:s.tests,itests:s.inspector_tests,run:s.run_id,note:s.note,review:s.review,repairs:s.repairs})),passed:focus.passed_steps,blocked:focus.blocked_reason,summary:focus.summary,deliverableRun:focus.deliverable_run_id,updated:utc(focus.updated_at),id:focus.mission_id,
-      deliverable:focus.deliverable,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
+      deliverable:focus.deliverable,leftover:focus.leftover||0,closed:!!focus.closed,settling:!!focus.settling,applied:focus.applied,applyState:focus.apply_state,source:focus.source,profile:focus.profile},
     usage:usage[win]||{by_role:{},by_provider:{},total:{calls:0,seconds:0,tokens:0,exact_tokens:0}},windows:{mission:!!usage.mission,today:!!usage.today,all:!!usage.all},
     log:a.log||[],logLost:a.log===null,
     stats,project:(status&&status.project_name)||(focus&&focus.project)||'—'};
@@ -217,7 +217,7 @@ async function decideMission(id,action,extra){
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
     if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),discarded:T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),discarded:extra&&extra.cleared?T('작업 사본을 지웠습니다'):T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);answer=out;}
   catch(e){notice(T('요청 실패 · ')+e.message);}
   finally{deliveryBusy=false;if(lastModel){paintAttention(lastModel);paintDelivery(lastModel);}await pollActivity();if(result)paintResult();}
@@ -288,10 +288,10 @@ function attentionKind(m){
   if(mine&&ap.required)return 'approve';
   if(mine&&(ap.inflight||ap.approved)&&!ap.rejected)return 'wait';
   if(mine&&!ap.rejected&&(ap.blocking||[]).length)return 'stuck';
-  if(ms&&!ms.live&&['BLOCKED','INCOMPLETE','FAILED'].includes(ms.status)){
+  if(ms&&!ms.live&&['BLOCKED','INCOMPLETE','FAILED','STOPPED'].includes(ms.status)){
     // An approved run is picked up again before the mission record says so: its last step is at work, nothing is stopped.
     const last=ms.steps[ms.steps.length-1];
-    return last&&AT_WORK.has(last.state)?'wait':'stopped';}
+    return ms.status!=='STOPPED'&&last&&AT_WORK.has(last.state)?'wait':'stopped';}   // a step stopped by 작업 정지 keeps its last state
   return null;
 }
 function paintAttention(m){
@@ -301,7 +301,7 @@ function paintAttention(m){
   $('mission-card').classList.toggle('attn',kind==='approve');$('mission-card').classList.toggle('stopped',kind==='stuck'||(kind==='stopped'&&!turnedDown(ms)));
   const dstate=ms?((ms.applied&&ms.applied.status)||ms.applyState||'pending'):'',offered=!!(ms&&ms.deliverable&&dstate!=='applied'&&dstate!=='discarded');   // the delivery box below offers "이어서 진행"
   const own=!!(ms&&ms.steps.some(s=>s.run===ap.run_id));                // false: a new task that has no card yet
-  const sig=JSON.stringify(!kind?[]:[kind,own,ap.goal,ms&&ms.id,ms&&ms.status,ms&&ms.blocked,ms&&ms.summary,ms&&ms.steps,ap.run_id,ap.stage,ap.items,ap.blocking,approvalBusy,deliveryBusy,offered]);
+  const sig=JSON.stringify(!kind?[]:[kind,own,ap.goal,ms&&ms.id,ms&&ms.status,ms&&ms.blocked,ms&&ms.summary,ms&&ms.steps,ms&&ms.leftover,ms&&ms.closed,ms&&ms.settling,ap.run_id,ap.stage,ap.items,ap.blocking,approvalBusy,deliveryBusy,offered]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;        // rebuilt only on a real change: an open list or the focus survives every poll
   const held=box.contains(document.activeElement)?document.activeElement.dataset.act:null,opened=[...box.querySelectorAll('details[open]')].map(d=>d.dataset.k);
   box.replaceChildren();box.hidden=!kind;if(!kind){delete box.dataset.kind;return;}
@@ -326,14 +326,22 @@ function paintAttention(m){
     box.append(el('strong',no?T('거절한 작업'):T('멈춘 이유')));
     if(kind==='stuck'){box.append(el('p',T('승인으로 풀 수 없는 문제로 멈췄습니다. ARCHITECT에게 다시 지시해 주세요.')));if(!own&&ap.goal)box.append(el('p',ap.goal,'new-goal'));box.append(list(ap.blocking));
       const first=ap.blocking[0];if(why(first))box.append(el('small',why(first),'ai-sub'));}
-    else box.append(el('p',no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
+    else box.append(el('p',no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):ms.status==='STOPPED'?T('작업 정지로 멈췄습니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
     if(ms&&ms.steps.length&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='steps';d.append(el('summary',T('단계별 결과')));const ol=el('ol');
       for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
       d.append(ol);box.append(d);}
     if(ms&&ms.summary&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='summary';d.append(el('summary',T('ARCHITECT 요약')),el('p',ms.summary));box.append(d);}
-    if(kind==='stopped'&&(!offered||ms.status==='BLOCKED')){      // BLOCKED: more steps would stop at the same gate, so the ARCHITECT plans again
+    if(kind==='stopped'&&ms.closed)box.append(el('small',T('작업 사본을 지운 작업입니다. 이어서 하려면 새로 지시해 주세요.'),'ai-sub'));
+    else if(kind==='stopped'&&ms.settling)box.append(el('small',T('하던 단계를 마무리하는 중입니다…'),'ai-sub'));       // the loop has not let go yet: nothing to decide
+    else if(kind==='stopped'&&(!offered||ms.status==='BLOCKED')){      // BLOCKED: more steps would stop at the same gate, so the ARCHITECT plans again
       const act=ms.status==='BLOCKED'?'replan':'extend',row=el('div','','delivery-actions'),again=el('button',deliveryBusy?T('처리 중…'):act==='replan'?T('다시 계획해서 시도'):T('이어서 시도'));
-      again.type='button';again.dataset.act=act;again.disabled=deliveryBusy;again.onclick=()=>decideMission(ms.id,act);row.append(again);box.append(row);}
+      again.type='button';again.dataset.act=act;again.disabled=deliveryBusy;again.onclick=()=>decideMission(ms.id,act);row.append(again);
+      if(!ms.deliverable&&ms.leftover){        // nothing passed, so there is no result to discard - only working copies left behind
+        const clear=el('button',T('작업 사본 지우기'));clear.type='button';clear.dataset.act='clear';clear.disabled=deliveryBusy;
+        clear.title=T('이 작업이 남긴 작업 사본 {0}개와 실행 브랜치를 지웁니다. 원본 프로젝트는 바뀌지 않습니다.',ms.leftover);
+        clear.onclick=()=>{if(confirm(T('이 작업의 작업 사본 {0}개를 지울까요? 원본 프로젝트는 바뀌지 않습니다. 지운 뒤에는 이 작업을 이어서 할 수 없습니다.',ms.leftover)))decideMission(ms.id,'discard',{cleared:'1'});};
+        row.append(clear);}
+      box.append(row);}
   }
   for(const d of box.querySelectorAll('details'))if(opened.includes(d.dataset.k)||(d.dataset.k==='steps'&&box.dataset.kind!==kind))d.open=true;   // the step list starts open
   box.dataset.kind=kind;

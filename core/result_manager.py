@@ -792,9 +792,29 @@ class ResultManager:
             _APPLY_INFLIGHT.add(key)
         try:
             self.config = configure_runtime(self.config, proj)          # per-project test command for the re-verify
+            try:                                       # read before anything is written: afterwards there is no difference left
+                shown, same_task = self.apply_view(run_id), self._same_task_ancestors(run_id)
+            except Exception:
+                shown, same_task = None, []
             result = self._apply_locked(run_id, pre, rid, applied_by, None)
             result["skipped_conflicts"] = pre["conflicts"]
             result["deleted_not_applied"] = pre["deleted"]
+            if result.get("status") == "applied":
+                try:
+                    for earlier in same_task:          # their work went into the project with this one: not left "ready"
+                        if (self.sm.get_run(earlier) or {}).get("current_state") == State.PASS \
+                                and self.result_state(earlier).get("state") not in (RESULT_APPLIED, RESULT_DISCARDED):
+                            self._set_state(earlier, RESULT_APPLIED, f"applied together with {run_id}", rid)
+                    if shown:
+                        for one in [run_id] + same_task:
+                            self._save(one, "applied_view.json", {**shown, "applied_with": run_id, "at": datetime.utcnow().isoformat()})
+                    _APPLY_VIEW_CACHE.pop(run_id, None)
+                    # Everything of this result is in the project now, so its working copies are only clutter - unless
+                    # a conflicting file was skipped: the AIs' version of that file exists nowhere else.
+                    if not pre["conflicts"]:
+                        result["released"] = self.release_worktrees([run_id] + same_task, by=applied_by, why="applied")
+                except Exception:
+                    pass                               # tidying up never changes the outcome of an apply
             return result
         finally:
             with _APPLY_LOCK:
@@ -836,6 +856,45 @@ class ResultManager:
         branch_removed = self._drop_run_branch(run, proj)
         self.sm.log_audit(run_id, by, "RESULT_DISCARDED", json.dumps({"worktree": wt, "removed": True, "branch_removed": branch_removed, "request_id": request_id}))
         return {"status": "discarded", "run_id": run_id, "removed": True}
+
+    def _same_task_ancestors(self, run_id: str) -> List[str]:
+        """The earlier steps of the same task this run was built on. A run of another task it continued from is left
+        out: that task has its own card and its own decision."""
+        task = (self._load(run_id, "mission_base.json") or {}).get("mission_id")
+        if not task:
+            return []
+        return [rid for rid in self.builds_on(run_id) if (self._load(rid, "mission_base.json") or {}).get("mission_id") == task]
+
+    def release_worktrees(self, run_ids: List[str], by: str = "TRIBUNAL", why: str = "") -> List[str]:
+        """Remove the working copies and run branches of these runs, where they still exist. Only a directory that is
+        the run's own (named after it, inside the project's .director_worktrees) and only the branch the run created
+        are touched. The caller decides that the runs are no longer needed; a failure for one run is skipped."""
+        gone: List[str] = []
+        for rid in dict.fromkeys(r for r in run_ids if r):
+            try:
+                run = self.sm.get_run(rid)
+                if not run:
+                    continue
+                proj, wt = run.get("project_path") or "", run.get("worktree_path") or ""
+                removed = False
+                if wt and Path(wt).exists():
+                    if not self.worktree_contained(proj, wt) or Path(wt).resolve().name != rid:
+                        continue
+                    _git(["worktree", "remove", "--force", str(Path(wt).resolve())], proj)
+                    if Path(wt).exists():
+                        continue
+                    removed = True
+                    try:
+                        self.sm.upsert_result_state(rid, worktree_state="MISSING")
+                    except Exception:
+                        pass
+                branch = self._drop_run_branch(run, proj)
+                if removed or branch:
+                    gone.append(rid)
+                    self.sm.log_audit(rid, by, "WORKTREE_RELEASED", json.dumps({"worktree": wt, "removed": removed, "branch_removed": branch, "why": why[:200]}, ensure_ascii=False))
+            except Exception:
+                continue
+        return gone
 
     @staticmethod
     def _drop_run_branch(run: Dict[str, Any], proj: str) -> bool:
