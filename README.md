@@ -3,6 +3,12 @@
 구독으로 로그인해 둔 AI 코딩 CLI 세 개(Claude Code, OpenAI Codex, Google Antigravity)를 **설계 · 제작 · 감리** 세 역할로 나눠 돌리고,
 목표 한 줄을 테스트와 독립 검토를 거친 코드로 바꾸는 로컬 개발 감독관입니다. 종량제 API는 쓰지 않습니다.
 
+> **In English** — Tribunal AI is a local supervisor that runs three subscription AI coding CLIs (Claude Code, OpenAI Codex,
+> Google Antigravity) as **architect, maker and inspector**, and turns a one-line goal into code that has passed tests and an
+> independent review. Changes are made in an isolated git worktree and reach your project only when you apply them; the tests
+> are run by the program itself, not by an AI; no metered API is used. Verified on macOS only. The console has an English
+> mode (the **EN** button); the documentation is in Korean.
+
 > **출처** — 이 프로젝트는 MIT 라이선스 오픈소스 [AI DEV DIRECTOR](https://github.com/digilogd-cmd/ai-dev-director) v3.1.8을
 > 바탕으로 만들었습니다. 원본의 저작권 표시와 라이선스 전문은 [LICENSE](LICENSE)에 그대로 있습니다.
 > 원본에서 무엇을 물려받았고 무엇을 바꿨는지는 [docs/CHANGELOG.md](docs/CHANGELOG.md)에 있습니다.

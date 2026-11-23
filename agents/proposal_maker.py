@@ -1,5 +1,6 @@
 """Maker proposes complete file contents; Director validates and applies them."""
 import json
+import re
 import os
 import sys
 import tempfile
@@ -127,19 +128,61 @@ class ProposalMaker(AntigravityMaker):
             named = rel in order_text or Path(rel).name in order_text
             return (0 if rel in wanted else 1 if named else 2, path.stat().st_size, rel)
         editable.sort(key=rank)
-        context.sort(key=lambda item: ('test' in Path(item[0]).name.lower() or '/tests/' in '/' + item[0], item[0]))
-        omitted = []
-        for budget, group in ((self.EDITABLE_BUDGET, editable), (self.CONTEXT_BUDGET, context)):
-            used = 0
-            for rel, path in group:
-                text = path.read_text(encoding='utf-8', errors='replace')
-                if used + len(text) <= budget:
-                    sources[rel] = text
-                    used += len(text)
-                elif group is editable:
-                    omitted.append(rel)
+        # Read-only files are there to be read, not all of them to be sent: in a large project most have nothing to do
+        # with this ORDER, and they cost input on every call (each retry and repair round too). The ones the ORDER
+        # names, the ones the writable files import and their neighbours share the full budget, most relevant first;
+        # everything else gets a small one and is otherwise listed by path, so the Maker knows it exists.
+        writable = {rel for rel, _path in editable}
+        linked = self.linked_files([path for _rel, path in editable], root)
+        # ...and the other way round: files that import a writable one (a changed signature breaks them) and the
+        # tests of a writable file, by the usual names.
+        stems = {Path(rel).stem for rel in writable if Path(rel).stem not in ('__init__', 'index', 'main')}
+        tests_of = {f'test_{s}' for s in stems} | {f'{s}_test' for s in stems} | {f'{s}.test' for s in stems} | {f'{s}.spec' for s in stems}
+        users = {rel for rel, path in context if writable & self.linked_files([path], root)}
+        beside = {Path(rel).parent.as_posix() for rel in writable}
+        # A bare file name in the ORDER counts only when it is a whole word there and no other candidate shares it
+        # ("README.md" or "__init__.py" named once must not lift every file of that name).
+        names = {}
+        for rel, _path in (*editable, *context):
+            names[Path(rel).name] = names.get(Path(rel).name, 0) + 1
+
+        def named(rel):
+            if rel in order_text:
+                return True
+            name = Path(rel).name
+            return names.get(name) == 1 and re.search(r'(?<![\w./-])' + re.escape(name) + r'(?![\w/-])', order_text) is not None
+
+        def nearness(item):
+            rel = item[0]
+            if named(rel):
+                return 0
+            if rel in linked or rel in users or Path(rel).name.rsplit('.', 1)[0] in tests_of or Path(rel).stem in tests_of:
+                return 1
+            return 2 if Path(rel).parent.as_posix() in beside else 3
+        context.sort(key=lambda item: (nearness(item), 'test' in Path(item[0]).name.lower() or '/tests/' in '/' + item[0], item[0]))
+        omitted, unread = [], []
+        used = 0
+        for rel, path in editable:
+            text = path.read_text(encoding='utf-8', errors='replace')
+            if used + len(text) <= self.EDITABLE_BUDGET:
+                sources[rel] = text
+                used += len(text)
+            else:
+                omitted.append(rel)
+        used = far = 0
+        for item in context:
+            rel, path = item
+            text = path.read_text(encoding='utf-8', errors='replace')
+            distant = nearness(item) == 3
+            if used + len(text) <= self.CONTEXT_BUDGET and not (distant and far + len(text) > self.DISTANT_BUDGET):
+                sources[rel] = text
+                used += len(text)
+                far += len(text) if distant else 0
+            else:
+                unread.append(rel)
         self.last_context_files = list(sources)          # in priority order: editable first
         self.last_omitted_files = omitted
+        self.last_unread_files = unread
         prompt = ('You are the implementation Maker. Do not use tools. All source context is supplied below. '
                   'Return ONLY JSON: {"files":[{"path":"relative/file.py","content":"complete file contents"}],'
                   '"edits":[{"path":"existing/file.py","old":"exact text copied from that file","new":"replacement text"}],'
@@ -154,7 +197,9 @@ class ProposalMaker(AntigravityMaker):
                   '\nREFERENCE DOCUMENTS:\n' + json.dumps(documents, ensure_ascii=False) +
                   '\nREFERENCE SOURCE FILES (read-only unless ORDER allows writes; omitted files are not necessarily absent):\n' + json.dumps(sources, ensure_ascii=False)
                   + ('\nWRITABLE FILES NOT SHOWN (too large for this prompt; they exist - do NOT rewrite or edit them): '
-                     + json.dumps(omitted) if omitted else ''))
+                     + json.dumps(omitted) if omitted else '')
+                  + ('\nREAD-ONLY FILES NOT SHOWN (they exist; unrelated to this ORDER as far as Tribunal can tell): '
+                     + json.dumps(unread[:150]) + (f' and {len(unread) - 150} more' if len(unread) > 150 else '') if unread else ''))
         domain = self.provider.upper()
         runner = ReadOnlyCliRunner(executables={domain: self.executable}, timeout=self.timeout,
                                      no_output_timeout=self.no_progress_timeout)
@@ -172,7 +217,7 @@ class ProposalMaker(AntigravityMaker):
                                     'execution_duration_sec': result['duration_sec'], 'output': result['output'],
                                     'attempts': result.get('attempts', []), 'attempt_number': result.get('attempt_number', 1),
                                     'context_files': self.last_context_files, 'prompt_chars': len(prompt),
-                                    'omitted_files': self.last_omitted_files}
+                                    'omitted_files': self.last_omitted_files, 'unread_files': len(self.last_unread_files)}
         text = result['output'].strip()
         if text.startswith('```'):
             text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
@@ -209,7 +254,60 @@ class ProposalMaker(AntigravityMaker):
                                    commands_run=[result['invocation']], summary=proposal.get('summary', 'Files implemented'))
 
     EDITABLE_BUDGET = 140_000
-    CONTEXT_BUDGET = 60_000
+    CONTEXT_BUDGET = 60_000       # read-only files, all of them together
+    DISTANT_BUDGET = 20_000       # of that, files the ORDER does not name and the writable files neither import nor sit beside
+
+    IMPORT = re.compile(r'^[ \t]*(?:from[ \t]+([\w.]+)[ \t]+import[ \t]+\(?([\w \t,]+)|import[ \t]+([\w.]+(?:[ \t]*,[ \t]*[\w.]+)*))', re.M)
+    JS_IMPORT = re.compile(r"""(?:from|require\(|import\()\s*['"](\.{1,2}/[^'"]+)['"]""")
+
+    @classmethod
+    def linked_files(cls, paths, root):
+        """Repo-relative files the given files import: Python modules by dotted name, JS/TS by relative path. A guess
+        from the text - enough to order what is sent, never used to decide what may be written."""
+        root = Path(root)
+        found = set()
+        for path in paths:
+            try:
+                text = path.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            if path.suffix == '.py':
+                def add(home, parts):
+                    for depth in range(len(parts), 0, -1):           # `a.b.c` may be module a/b/c.py or name c in a/b.py
+                        base = Path(*parts[:depth])
+                        for cand in (base.with_suffix('.py'), base / '__init__.py'):
+                            if (home / cand).is_file():
+                                try:
+                                    found.add((home / cand).resolve().relative_to(root.resolve()).as_posix())
+                                except ValueError:
+                                    pass
+                                return
+                for module, names, plain in cls.IMPORT.findall(text):
+                    if plain:
+                        for name in (n.strip() for n in plain.split(',')):
+                            for home in (root, path.parent):
+                                add(home, [p for p in name.split('.') if p])
+                        continue
+                    dots = len(module) - len(module.lstrip('.'))
+                    parts = [p for p in module.split('.') if p]
+                    homes = [path.parents[dots - 1]] if dots and dots <= len(path.parents) else [] if dots else [root, path.parent]
+                    for home in homes:
+                        if parts:
+                            add(home, parts)
+                        for name in (n.strip() for n in names.split(',') if n.strip()):    # `from pkg import core`: maybe a module
+                            if name != '*':
+                                add(home, [*parts, name.split()[0]])
+            elif path.suffix in {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'}:
+                for target in cls.JS_IMPORT.findall(text):
+                    base = (path.parent / target)
+                    for cand in (base, *(base.with_name(base.name + ext) for ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs')),
+                                 *(base / ('index' + ext) for ext in ('.js', '.ts', '.tsx'))):
+                        if cand.is_file():
+                            try:
+                                found.add(cand.resolve().relative_to(root.resolve()).as_posix())
+                            except ValueError:
+                                pass
+        return found
 
     @staticmethod
     def resolve_changes(files, edits, root, order):

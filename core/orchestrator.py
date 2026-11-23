@@ -61,7 +61,7 @@ class Orchestrator:
 
     def _init_architect(self, provider_override: Optional[str] = None) -> BaseArchitect:
         architect_cfg = self.config.get("architect", {})
-        provider = (provider_override or architect_cfg.get("provider", "openai")).lower()
+        provider = (provider_override or architect_cfg.get("provider", "claude")).lower()
         model = architect_cfg.get("model", "cli-default")
         executable = architect_cfg.get("executable")
         timeout = self.timeouts.get("architect", 300)
@@ -98,7 +98,7 @@ class Orchestrator:
 
     def _init_inspector(self, provider_override: Optional[str] = None) -> Any:
         rev_cfg = self.config.get("inspector", {})
-        provider = (provider_override or rev_cfg.get("provider", "codex")).lower()
+        provider = (provider_override or rev_cfg.get("provider", "antigravity")).lower()
         model = rev_cfg.get("model", "codex-cli")
         executable = rev_cfg.get("executable")
         timeout = self.timeouts.get("inspector", 300)
@@ -1085,13 +1085,17 @@ class Orchestrator:
             stop_summary = self._handle_provider_failure(architect_domain, err_str, run_id, "DECIDING", logger, provenance_records)
             if stop_summary:
                 return None, stop_summary
-            architect_prov = getattr(self.architect, "provider", "openai").lower()
-            if architect_prov in ("openai", "codex"):
-                logger.warning("[FAILOVER TRIGGERED] Primary ARCHITECT decision failed. Switching to Claude ARCHITECT...")
-                assigned = self.pm.resolve_roles(requested_architect="claude", requested_maker="antigravity", requested_inspector=getattr(self.inspector, "provider", "claude"))
+            # Whichever AI is the ARCHITECT, another working one takes the decision over. (This used to exist for a
+            # Codex ARCHITECT only, with Claude as the one backup: the default of the time.)
+            backup = autopilot.pick_alternative(self.pm, exclude={architect_domain}) if architect_domain in autopilot.ALIAS_BY_DOMAIN else None
+            if backup:
+                logger.warning(f"[FAILOVER TRIGGERED] Primary ARCHITECT decision failed. Switching to {backup.capitalize()} ARCHITECT...")
+                assigned = self.pm.resolve_roles(requested_architect=backup,
+                                                 requested_maker=autopilot.ALIAS_BY_DOMAIN.get(self._get_agent_domain(self.maker), "antigravity"),
+                                                 requested_inspector=getattr(self.inspector, "provider", "claude"))
                 if assigned["can_proceed"]:
-                    self.architect = self._init_architect("claude")
-                    self.current_architect_name = "CLAUDE"
+                    self.architect = self._init_architect(backup)
+                    self.current_architect_name = backup.upper()
                     stop_trial = self._claim_trial_for(self.architect, run_id, "DECIDING_BACKUP", logger)
                     if stop_trial:
                         return None, stop_trial
@@ -1101,7 +1105,7 @@ class Orchestrator:
                         return decision, None
                     except Exception as e2:
                         err_str2 = str(e2)
-                        stop2 = self._handle_provider_failure("ANTHROPIC", err_str2, run_id, "DECIDING_BACKUP", logger, provenance_records)
+                        stop2 = self._handle_provider_failure(self._get_agent_domain(self.architect), err_str2, run_id, "DECIDING_BACKUP", logger, provenance_records)
                         if stop2:
                             return None, stop2
                         return None, self._stop(run_id, State.FAIL, f"Decision error: {err_str2}", logger, provenance_records)
@@ -1491,9 +1495,9 @@ class Orchestrator:
             (getattr(self.inspector, "provider", "") == "mock" or getattr(self.inspector, "provider", "") == "")
         )
 
-        req_architect = self.config.get("architect", {}).get("provider", "openai")
-        req_maker = self.config.get("maker", {}).get("provider", "antigravity")
-        req_inspector = self.config.get("inspector", {}).get("provider", "codex")
+        req_architect = self.config.get("architect", {}).get("provider", "claude")
+        req_maker = self.config.get("maker", {}).get("provider", "codex")
+        req_inspector = self.config.get("inspector", {}).get("provider", "antigravity")
 
         if not is_mock_run:
             self.pm.check_health()
@@ -1612,16 +1616,27 @@ class Orchestrator:
                 if stop_summary:
                     return stop_summary
     
-                if architect_prov.lower() in ("openai", "codex"):
-                    logger.warning("[FAILOVER TRIGGERED] Primary ARCHITECT failed. Switching to backup provider (Claude)...")
-                    assigned = self.pm.resolve_roles(requested_architect="claude", requested_maker="antigravity", requested_inspector="claude")
+                # Whichever AI is the ARCHITECT, another working one takes over; an INSPECTOR that was the same AI moves
+                # too (preferably not onto the maker's). This used to assume the old default, Codex backed by Claude.
+                backup = autopilot.pick_alternative(self.pm, exclude={architect_domain}) if architect_domain in autopilot.ALIAS_BY_DOMAIN else None
+                if backup:
+                    maker_domain = self._get_agent_domain(self.maker)
+                    inspector_now = getattr(self.inspector, "provider", "claude")
+                    moved = self._get_agent_domain(self.inspector) == architect_domain
+                    inspector_next = (autopilot.pick_alternative(self.pm, exclude={architect_domain}, avoid={maker_domain}) or backup) if moved else inspector_now
+                    logger.warning(f"[FAILOVER TRIGGERED] Primary ARCHITECT failed. Switching to backup provider ({backup.capitalize()})...")
+                    assigned = self.pm.resolve_roles(requested_architect=backup,
+                                                     requested_maker=autopilot.ALIAS_BY_DOMAIN.get(maker_domain, "antigravity"),
+                                                     requested_inspector=inspector_next)
                     if assigned["can_proceed"]:
+                        # Built from what the provider manager settled on, so the name on screen is the AI that works.
                         self.current_failover_mode = assigned["mode"]
                         self.current_architect_name = assigned["architect_provider"].upper()
                         self.current_inspector_name = assigned["inspector_provider"].upper()
-                        self.architect = self._init_architect("claude")
-                        self.inspector = self._init_inspector("claude")
-                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_ARCHITECT", f"Switched to Claude ARCHITECT due to {err_str}")
+                        self.architect = self._init_architect(assigned["architect_provider"])
+                        if assigned["inspector_provider"] != inspector_now:
+                            self.inspector = self._init_inspector(assigned["inspector_provider"])
+                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_ARCHITECT", f"Switched to {backup.capitalize()} ARCHITECT due to {err_str}")
                         stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING_BACKUP", logger)
                         if stop_trial:
                             return stop_trial
@@ -1638,14 +1653,14 @@ class Orchestrator:
                                     self.pm.update_latency(architect_prov, prov.duration_sec)
                         except Exception as e2:
                             err_str2 = str(e2)
-                            logger.error(f"Backup Planning failed on Claude: {err_str2}")
+                            logger.error(f"Backup Planning failed on {backup.capitalize()}: {err_str2}")
                             if hasattr(self.architect, "get_provenance"):
                                 architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
                                 prov = self.architect.get_provenance(exit_code=1)
                                 provenance_records.append(prov.model_dump())
                                 if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
                                     self.pm.update_latency(architect_prov, prov.duration_sec)
-                            stop2 = self._handle_provider_failure("ANTHROPIC", err_str2, run_id, "PLANNING_BACKUP", logger, provenance_records)
+                            stop2 = self._handle_provider_failure(self._get_agent_domain(self.architect), err_str2, run_id, "PLANNING_BACKUP", logger, provenance_records)
                             if stop2:
                                 return stop2
                             self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})

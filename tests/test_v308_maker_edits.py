@@ -91,3 +91,68 @@ def test_anchor_miss_gets_retry_advice():
     from core.autopilot import maker_retry_feedback
     assert "verbatim" in maker_retry_feedback("Edit for a.py must match exactly once (found 0)",
                                         OrderSchema(goal="g", allowed_paths=["src/**"]))
+
+
+def test_read_only_files_are_sent_by_how_much_they_have_to_do_with_the_order(tmp_path, monkeypatch):
+    """A large project's unrelated read-only files used to fill 60 KB of every Maker call, alphabetically. What the
+    ORDER names, what the writable files import and what sits beside them goes first; the rest gets a small share and
+    is otherwise listed by path."""
+    write(tmp_path, "src/app.py", "from lib.rates import rate\nimport lib.helpers\n\n\ndef total(x):\n    return x * rate()\n")
+    write(tmp_path, "src/notes.md", "# BESIDE-MARKER\n")                                # same folder as the writable file
+    write(tmp_path, "lib/rates.py", "# IMPORTED-MARKER\ndef rate():\n    return 2\n")
+    write(tmp_path, "lib/helpers.py", "# IMPORTED-TOO\n")
+    write(tmp_path, "docs/billing.md", "# NAMED-MARKER\n" + "n" * 30_000)               # named by the ORDER: goes first
+    for i in range(8):                                                                   # 8 x 9 KB that nothing points at
+        write(tmp_path, f"vendor/aaa_{i}.py", f"# DISTANT-{i}\n" + "d" * 9_000)
+    seen = {}
+    reply(monkeypatch, {"edits": [{"path": "src/app.py", "old": "return x * rate()", "new": "return x * rate() + 1"}]}, seen)
+    maker = ProposalMaker(executable=sys.executable)
+    maker.run(OrderSchema(goal="Add one to the total; the rules are in docs/billing.md", allowed_paths=["src/app.py"]), str(tmp_path))
+    info, prompt = maker.last_execution_info, seen["prompt"]
+    shown = info["context_files"]
+    assert shown[0] == "src/app.py"                                                      # writable first, as before
+    assert shown[1] == "docs/billing.md" and set(shown[2:4]) == {"lib/helpers.py", "lib/rates.py"} and shown[4] == "src/notes.md"
+    for marker in ("NAMED-MARKER", "IMPORTED-MARKER", "IMPORTED-TOO", "BESIDE-MARKER"):
+        assert marker in prompt
+    distant = [f for f in shown if f.startswith("vendor/")]
+    assert len(distant) == 2 and info["unread_files"] == 6                              # 20 KB of the unrelated, not all 72 KB
+    assert "READ-ONLY FILES NOT SHOWN" in prompt and "vendor/aaa_7.py" in prompt and "DISTANT-7" not in prompt
+    assert info["prompt_chars"] < 60_000
+    # nothing left out in a small project: no such line at all
+    small = tmp_path / "small"; small.mkdir()
+    write(small, "src/a.py", "A = 1\n"); write(small, "README.md", "hello\n")
+    reply(monkeypatch, {"edits": [{"path": "src/a.py", "old": "A = 1", "new": "A = 2"}]}, seen)
+    maker.run(OrderSchema(goal="g", allowed_paths=["src/**"]), str(small))
+    assert "READ-ONLY FILES NOT SHOWN" not in seen["prompt"] and maker.last_execution_info["unread_files"] == 0
+
+
+def test_linked_files_follow_python_and_relative_js_imports(tmp_path):
+    write(tmp_path, "pkg/__init__.py", ""); write(tmp_path, "pkg/core.py", "X = 1\n"); write(tmp_path, "util.py", "U = 1\n")
+    write(tmp_path, "main.py", "import util, os\nfrom pkg.core import X\nfrom pkg import core\nimport missing.thing\n")
+    write(tmp_path, "web/a.ts", "import {b} from './b'\nconst c = require('../shared/c.js')\nimport x from 'react'\n")
+    write(tmp_path, "web/b.ts", "export const b = 1\n"); write(tmp_path, "shared/c.js", "module.exports = 1\n")
+    found = ProposalMaker.linked_files([tmp_path / "main.py", tmp_path / "web/a.ts", tmp_path / "gone.py"], tmp_path)
+    assert found == {"util.py", "pkg/core.py", "pkg/__init__.py", "web/b.ts", "shared/c.js"}
+
+
+def test_callers_and_tests_of_a_writable_file_are_sent_and_relative_imports_are_followed(tmp_path, monkeypatch):
+    """From the review: a file that imports the one being changed, and that file's tests, must not be cut as
+    unrelated - the Maker cannot read them by itself and would break a call it never saw."""
+    write(tmp_path, "src/pricing.py", "def price(x):\n    return x\n")
+    write(tmp_path, "app/checkout.py", "# CALLER-MARKER\nfrom src.pricing import price\n" + "c" * 9_000)
+    write(tmp_path, "tests/test_pricing.py", "# TEST-MARKER\n" + "t" * 9_000)
+    write(tmp_path, "pkg/__init__.py", ""); write(tmp_path, "pkg/core.py", "# REL-MARKER\n")
+    write(tmp_path, "pkg/use.py", "from . import core\nfrom .core import X\n")
+    for i in range(6):
+        write(tmp_path, f"vendor/zzz_{i}.py", "d" * 9_000)
+    write(tmp_path, "a/README.md", "# README-A\n"); write(tmp_path, "b/README.md", "# README-B\n" + "r" * 30_000)
+    seen = {}
+    reply(monkeypatch, {"edits": [{"path": "src/pricing.py", "old": "return x", "new": "return x + 1"}]}, seen)
+    maker = ProposalMaker(executable=sys.executable)
+    maker.run(OrderSchema(goal="price adds one (see README.md)", allowed_paths=["src/pricing.py"]), str(tmp_path))
+    prompt, shown = seen["prompt"], maker.last_execution_info["context_files"]
+    assert "CALLER-MARKER" in prompt and "TEST-MARKER" in prompt
+    assert shown.index("app/checkout.py") < shown.index("vendor/zzz_0.py") if "vendor/zzz_0.py" in shown else True
+    assert "README-B" not in prompt                         # "README.md" is two files' name: naming it lifts neither
+    linked = ProposalMaker.linked_files([tmp_path / "pkg/use.py"], tmp_path)
+    assert linked == {"pkg/core.py"}                      # `from . import core` and `from .core import X`
