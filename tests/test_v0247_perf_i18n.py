@@ -266,3 +266,35 @@ def test_19_pending_action_state_is_persisted_and_resolved(env):
     sm2 = _run("RUN-HA-2", [State.PLANNING, State.HUMAN_REQUIRED], details="FINAL_GATE: refused")
     assert sm2.stale_human_actions() == ["RUN-HA-2"]
     assert dashboard_server.pending_actions() == [] and sm2.stale_human_actions() == []   # non-approvable -> persisted as not actionable
+
+
+def test_a_run_cut_short_by_a_stop_is_shown_as_stopped_not_in_progress_or_stale(server, env, monkeypatch, tmp_path):
+    """Found in real runs: the Details tab kept saying "building · 4m" for a task the person had stopped, and after
+    fifteen minutes listed it as a stale run to recover."""
+    import dashboard_server
+    from core.mission import MissionStore
+    from datetime import datetime, timedelta
+    _set("OPENAI", "HEALTHY", "MAKER"); _set("GOOGLE", "HEALTHY", "INSPECTOR"); _set("ANTHROPIC", "HEALTHY", "ARCHITECT")
+    _run("RUN-KO-PARK", [State.PLANNING, State.ORDER_READY, State.BUILDING])
+    store = MissionStore(tmp_path / "missions")
+    store.save({"mission_id": "MSN-PARK", "status": "STOPPED", "goal": "g", "project_path": str(tmp_path), "steps": [{"index": 1, "run_id": "RUN-KO-PARK"}]}, force=True)
+    monkeypatch.setattr(dashboard_server, "MissionStore", lambda: store)
+    dashboard_server.invalidate_status_cache()
+    st = _get_json(server, "/status")[1]
+    assert st["run"]["state"] == "PARKED" and st["stage_sentence"] == "작업 정지로 멈춘 실행입니다 · 이어서 시도로 이어 갑니다"
+    assert st["run"]["last_stage"] == "BUILDING"                    # the pipeline marks where it stands
+    with dashboard_server.get_db_conn() as conn:                    # long ago: still parked, never "stale"
+        conn.execute("UPDATE runs SET updated_at=? WHERE run_id=?", ((datetime.utcnow() - timedelta(hours=2)).isoformat(), "RUN-KO-PARK"))
+        conn.commit()
+    dashboard_server.invalidate_status_cache()
+    st = _get_json(server, "/status")[1]
+    assert st["stale_runs"] == [] and st["run"]["state"] == "PARKED"
+    page = render_html()
+    assert "PARKED: 1" in page and "정지한 작업" in page
+    # resumed from outside (`director resume`): the run moved on after the stop, so it is at work again
+    m = store.load("MSN-PARK"); m["stopped_at"] = (datetime.utcnow() - timedelta(minutes=10)).isoformat(); store.save(m, force=True)
+    with dashboard_server.get_db_conn() as conn:
+        conn.execute("UPDATE runs SET updated_at=? WHERE run_id=?", (datetime.utcnow().isoformat(), "RUN-KO-PARK"))
+        conn.commit()
+    dashboard_server.invalidate_status_cache()
+    assert _get_json(server, "/status")[1]["run"]["state"] == "BUILDING"

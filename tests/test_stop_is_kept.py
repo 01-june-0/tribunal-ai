@@ -147,3 +147,13 @@ def test_a_stop_that_arrives_while_a_command_is_starting_still_ends_it(tmp_path,
     assert time.monotonic() - began < 10                 # killed at once, not left to run
     from core.process_runner import active_processes
     assert not active_processes()
+
+
+def test_a_resumed_runs_first_call_is_recorded_as_that_runs(clean):
+    """Found in a real run: the decision call made right after "continue" had no run and no stage in the ledger."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    body = src[src.index("    def resume("):]
+    body = body[:body.index("\n    def ", 10)]
+    assert "usage.set_context(run_id=run_id, stage=curr_state)" in body
+    assert body.index("usage.set_context(run_id=run_id, stage=curr_state)") < body.index("self._setup_logger(run_id)")

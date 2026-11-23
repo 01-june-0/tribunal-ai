@@ -329,7 +329,8 @@ function paintAttention(m){
     box.append(el('strong',no?T('거절한 작업'):T('멈춘 이유')));
     if(kind==='stuck'){box.append(el('p',T('승인으로 풀 수 없는 문제로 멈췄습니다. ARCHITECT에게 다시 지시해 주세요.')));if(!own&&ap.goal)box.append(el('p',ap.goal,'new-goal'));box.append(list(ap.blocking));
       const first=ap.blocking[0];if(why(first))box.append(el('small',why(first),'ai-sub'));}
-    else box.append(el('p',no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):ms.status==='STOPPED'?T('작업 정지로 멈췄습니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
+    // Rejected after the code was written: it was built, in the working copy; what did not happen is the testing and applying.
+    else box.append(el('p',no&&own&&ap.rejected&&ap.stage==='POST_BUILD'?T('만든 코드를 거절했습니다. 테스트와 적용은 진행하지 않았고, 원본 프로젝트는 그대로입니다.'):no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):ms.status==='STOPPED'?T('작업 정지로 멈췄습니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
     if(ms&&ms.steps.length&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='steps';d.append(el('summary',T('단계별 결과')));const ol=el('ol');
       for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
       d.append(ol);box.append(d);}
@@ -357,7 +358,10 @@ function diffBody(text){                                   // the file header (u
   const lines=String(text||'').split('\n'),at=lines.findIndex(l=>l.startsWith('@@'));
   return at<0?lines.filter(l=>!/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode|similarity index|rename (from|to) )/.test(l)):lines.slice(at);
 }
-function diffLines(text){let a=0,d=0;for(const l of diffBody(text)){if(l[0]==='+')a++;else if(l[0]==='-')d++;}return [a,d];}
+function diffLines(text){
+  const whole=/^\(new file\)\n/.exec(String(text||''));          // a new file is shown whole, without "+" marks: every line of it is added
+  if(whole){const body=String(text).slice(whole[0].length).replace(/\n$/,'');return [body?body.split('\n').length:0,0];}
+  let a=0,d=0;for(const l of diffBody(text)){if(l[0]==='+')a++;else if(l[0]==='-')d++;}return [a,d];}
 async function openResult(ms){
   if(!$('ai-panel').hidden)setAIPanel(false,true);if(openKey!=null)closeCall();
   resultOpener=document.activeElement;const mine=result={ms,data:null,file:null,done:null};
@@ -1076,7 +1080,7 @@ function paintAITools(){
 }
 function paintLimitAlert(){
   const box=$('limit-alert'),list=(ai&&ai.alerts)||[];
-  box.hidden=!list.length||!$('ai-panel').hidden;if(box.hidden)return;   // the open panel shows the same warning on its cards
+  box.hidden=!list.length||!$('ai-panel').hidden;document.body.classList.toggle('alerted',!box.hidden);if(box.hidden)return;   // the open panel shows the same warning on its cards
   box.textContent=T('한도 경고 · ')+list.map(a=>{const p=CLI[a.cli],left=a.resets_at?(utc(a.resets_at)-Date.now())/1000:null;
     return T('{0} {1} {2}% (임계치 {3}%)',(AI[p]||{name:a.cli}).name+(a.group?' '+a.group:''),a.window==='weekly'?T('주간'):T('5시간'),Math.round(a.used_percent),a.threshold)
       +(left>0?' · '+T('{0} 뒤 초기화',left>=86400?T('{0}일 {1}시간',Math.floor(left/86400),Math.floor(left%86400/3600)):span(left)):'');}).join('  /  ');

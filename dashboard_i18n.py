@@ -101,6 +101,7 @@ STATE_TEXT: Dict[str, str] = {            # run states
     "IDLE": "대기 중", "PLANNING": "설계 중", "ORDER_READY": "제작 준비 완료", "BUILDING": "제작 중",
     "VERIFYING": "테스트·검증 중", "REVIEWING": "감리 중", "DECIDING": "최종 판단 중", "PASS": "완료",
     "FAIL": "실패", "FAILED": "실패", "RECOVERED": "복구 완료", "TIMEOUT": "시간 초과", "HUMAN_REQUIRED": "사용자 확인 필요", "NONE": "작업 없음",
+    "PARKED": "정지한 작업",                # display only: a run cut short by 작업 정지, waiting to be continued
     "REJECTED": "거절한 작업",              # display only: a HUMAN_REQUIRED run the user rejected (dashboard_server.build_status_payload)
 }
 
@@ -330,6 +331,7 @@ def stage_sentence(state: str, roles: Dict[str, str], elapsed: str = "") -> str:
         "TIMEOUT": "작업이 시간 초과로 중단되었습니다",
         "HUMAN_REQUIRED": "사용자 확인이 필요합니다",
         "REJECTED": "거절한 작업입니다 · 실행되지 않았습니다",
+        "PARKED": "작업 정지로 멈춘 실행입니다 · 이어서 시도로 이어 갑니다",
         "IDLE": "대기 중입니다",
         "NONE": t("architect_ready"),
     }.get(s, s)

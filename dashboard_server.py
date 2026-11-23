@@ -360,15 +360,38 @@ def refresh_providers() -> dict:
     return {k: v.value for k, v in statuses.items()}
 
 
+PARKED_SLACK_SEC = 30     # the stopped loop may still record a state change or two right after the stop
+
+
+def _parked_runs(rows) -> set:
+    """Runs cut short by 작업 정지 that still stand where they were stopped. A run that moved on after its task was
+    stopped (someone resumed it, e.g. `director resume`) is at work again and is not parked."""
+    try:
+        stopped = {s.get("run_id"): m.get("stopped_at") for m in MissionStore().all() if m.get("status") == "STOPPED"
+                   for s in m.get("steps", []) if s.get("run_id")}
+    except Exception:
+        return set()
+    parked = set()
+    for r in rows:
+        rid = r["run_id"]
+        if rid not in stopped:
+            continue
+        try:
+            moved = (datetime.fromisoformat(str(r["updated_at"])) - datetime.fromisoformat(str(stopped[rid]))).total_seconds()
+        except (TypeError, ValueError):
+            moved = 0                     # no time to compare: it is a stopped task's run, so it is parked
+        if moved <= PARKED_SLACK_SEC:
+            parked.add(rid)
+    return parked
+
+
 def _project_busy(sm: StateMachine, project_path: str) -> bool:
     """A DB-visible non-terminal, non-stale run for the same project counts as active."""
     key = _project_key(project_path)
     now = datetime.utcnow()
-    try:        # a run cut short by 작업 정지 stays where it was (to be continued later); it is parked, not at work
-        parked = {s.get("run_id") for m in MissionStore().all() if m.get("status") == "STOPPED" for s in m.get("steps", [])}
-    except Exception:
-        parked = set()
-    for r in sm.list_runs():
+    runs = sm.list_runs()
+    parked = _parked_runs(runs)             # stays where it was, to be continued later: parked, not at work
+    for r in runs:
         if r["current_state"] in TERMINAL_STATES or r["run_id"] in parked:
             continue
         if _project_key(r.get("project_path") or "") != key:
@@ -1342,6 +1365,7 @@ def build_status_payload() -> dict:
     last_run = None
     stale_runs = []
     now = datetime.utcnow()
+    parked = _parked_runs(all_active)       # they wait for "continue" on purpose: neither at work nor forgotten
     for row in all_active:
         if str(row['run_id']).startswith("RUN-TEST-"):
             continue
@@ -1349,6 +1373,8 @@ def build_status_payload() -> dict:
             last_run = row
         if row['current_state'] in TERMINAL_STATES:
             continue
+        if row['run_id'] in parked:
+            continue                        # shown below as the latest run when it is that; never as a stale one
         updated = datetime.fromisoformat(row['updated_at'])
         if (now - updated).total_seconds() > ACTIVE_RUN_WINDOW_SEC:
             stale_runs.append(row)
@@ -1386,6 +1412,10 @@ def build_status_payload() -> dict:
         # The user said no. The run record stays HUMAN_REQUIRED (it is the audit trail), but nothing waits for anyone:
         # on screen it is a closed, rejected task, not an open request.
         state = "REJECTED"
+    if current_run and raw_state not in TERMINAL_STATES and current_run['run_id'] in parked:
+        # Stopped by the person. The run record keeps the stage it was at (it is taken up again from there), but on
+        # screen nothing is "in progress": it is a stopped task, shown at the stage where it stands.
+        state, last_stage = "PARKED", raw_state
     preview = _effective_mode_preview()
     cm = ChatManager()
     sid = active_session_id()
@@ -1484,7 +1514,7 @@ DASHBOARD_JS = r"""
   function scheduleMessages(ms) { if (pollMsgTimer) clearTimeout(pollMsgTimer); pollMsgTimer = setTimeout(function () { if (unseen()) { scheduleMessages(2000); return; } pollMessages(); }, ms); }
   var STAGES = ['ARCHITECT', 'BUILD', 'VERIFY', 'REVIEW', 'DECIDE'];
   var STATE_INDEX = { PLANNING: 0, ORDER_READY: 0, BUILDING: 1, VERIFYING: 2, REVIEWING: 3, DECIDING: 4 };
-  var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1, REJECTED: 1 };
+  var TERMINAL = { PASS: 1, RECOVERED: 1, FAIL: 1, HUMAN_REQUIRED: 1, TIMEOUT: 1, REJECTED: 1, PARKED: 1 };
   var EVENT_LABELS = [
     [/\[(?:작업|미션) \d+\/\d+\] 실행 시작/, 'STEP STARTED', 'ev-info'], [/\[(?:작업|미션) \d+\/\d+\] 결과 PASS/, 'STEP PASS', 'ev-ok'], [/\[(?:작업|미션) \d+\/\d+\] 결과 /, 'STEP NOT PASSED', 'ev-bad'],
     [/\[(?:작업|미션) \d+\/\d+\] 사용자 확인 요청/, 'ARCHITECT REVIEW', 'ev-info'], [/\[(?:작업|미션) \d+\/\d+\] (?:ARCHITECT|HEAD) 계획/, 'ARCHITECT PLAN', 'ev-info'], [/^(?:작업|미션) 시작/, 'MISSION STARTED', 'ev-info'],
@@ -1571,7 +1601,7 @@ DASHBOARD_JS = r"""
       else if (terminal) {
         var stop = (stopAt === undefined || stopAt === null) ? -1 : stopAt;
         if (i < stop) { mark = '\u2713'; cls = 'done'; }
-        else if (i === stop) { mark = state === 'HUMAN_REQUIRED' ? '\u26a0' : (state === 'REJECTED' ? '\u2014' : '\u2717'); cls = state === 'HUMAN_REQUIRED' ? 'warn' : (state === 'REJECTED' ? 'todo' : 'failed'); }   // rejected: stopped here by the user, nothing failed
+        else if (i === stop) { mark = state === 'HUMAN_REQUIRED' ? '\u26a0' : ((state === 'REJECTED' || state === 'PARKED') ? '\u2014' : '\u2717'); cls = state === 'HUMAN_REQUIRED' ? 'warn' : ((state === 'REJECTED' || state === 'PARKED') ? 'todo' : 'failed'); }   // rejected / parked: stopped here by the user, nothing failed
         else { mark = '\u25cb'; cls = 'todo'; }
       }
       else if (cur === undefined) { mark = '\u25cb'; cls = 'todo'; }
@@ -1581,10 +1611,10 @@ DASHBOARD_JS = r"""
     }
     var pb = document.getElementById('pipeline-badge');
     if (pb) {
-      var t = (state === 'PASS' || state === 'RECOVERED' || state === 'REJECTED') ? ko(I18N.state, state) : (state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : (state === 'FAIL' || state === 'TIMEOUT' ? ko(I18N.state, state) : (cur !== undefined ? '진행 중' : '')));
+      var t = (state === 'PASS' || state === 'RECOVERED' || state === 'REJECTED' || state === 'PARKED') ? ko(I18N.state, state) : (state === 'HUMAN_REQUIRED' ? ko(I18N.ui, 'human_required') : (state === 'FAIL' || state === 'TIMEOUT' ? ko(I18N.state, state) : (cur !== undefined ? '진행 중' : '')));
       pb.setAttribute('data-raw', state);
       if (pb.textContent !== t) pb.textContent = t;
-      pb.className = 'badge ' + (state === 'PASS' ? 'b-green' : (state === 'REJECTED' ? 'b-muted' : (terminal ? 'b-red' : (cur !== undefined ? 'b-blue' : 'b-muted'))));
+      pb.className = 'badge ' + (state === 'PASS' ? 'b-green' : ((state === 'REJECTED' || state === 'PARKED') ? 'b-muted' : (terminal ? 'b-red' : (cur !== undefined ? 'b-blue' : 'b-muted'))));
       pb.style.display = t ? '' : 'none';
     }
   }
@@ -2392,7 +2422,7 @@ def _event_kind(text: str) -> str:
 def _elapsed_label(run: dict) -> str:
     try:
         t0 = datetime.fromisoformat(run.get("created_at") or "")
-        t1 = datetime.fromisoformat(run.get("updated_at") or "") if run.get("state") in (TERMINAL_STATES | {"RECOVERED", "REJECTED"}) else datetime.utcnow()
+        t1 = datetime.fromisoformat(run.get("updated_at") or "") if run.get("state") in (TERMINAL_STATES | {"RECOVERED", "REJECTED", "PARKED"}) else datetime.utcnow()
         sec = max(0, int((t1 - t0).total_seconds()))
         return f"{sec}s" if sec < 60 else f"{sec // 60}m{sec % 60}s"
     except Exception:

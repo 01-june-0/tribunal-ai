@@ -1,7 +1,7 @@
 'use strict';
 const T=(window.I18N&&window.I18N.t)||((s,...a)=>s.replace(/\{(\d+)\}/g,(m,i)=>i<a.length?String(a[i]):m));   // i18n.js missing: Korean, and the stop buttons still work
 const frame=document.getElementById('workspace');
-const labels={NONE:T('작업 대기'),IDLE:T('작업 대기'),PLANNING:T('설계 중'),ORDER_READY:T('제작 준비'),BUILDING:T('제작 중'),VERIFYING:T('테스트 실행 중'),REVIEWING:T('감리 중'),DECIDING:T('결과 판단 중'),PASS:T('검증 통과'),RECOVERED:T('복구 완료 · 검증 통과'),FAIL:T('검증 실패'),HUMAN_REQUIRED:T('확인 · 수정 필요'),REJECTED:T('거절한 작업'),TIMEOUT:T('실행 시간 초과')};
+const labels={PARKED:T('정지한 작업'),NONE:T('작업 대기'),IDLE:T('작업 대기'),PLANNING:T('설계 중'),ORDER_READY:T('제작 준비'),BUILDING:T('제작 중'),VERIFYING:T('테스트 실행 중'),REVIEWING:T('감리 중'),DECIDING:T('결과 판단 중'),PASS:T('검증 통과'),RECOVERED:T('복구 완료 · 검증 통과'),FAIL:T('검증 실패'),HUMAN_REQUIRED:T('확인 · 수정 필요'),REJECTED:T('거절한 작업'),TIMEOUT:T('실행 시간 초과')};
 let busy=false,doc;
 function el(tag,text,cls){const n=doc.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;}
 // The Details tab in English. The page is rendered in Korean and its own script keeps rewriting it, so its text is

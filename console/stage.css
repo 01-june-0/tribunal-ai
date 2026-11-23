@@ -435,6 +435,7 @@ body.broadcast #call-panel,body.broadcast #now-doing{display:none}
   .top-meta .meta-chip{max-width:170px}
   #topbar{gap:12px}.top-actions{min-width:0;overflow-x:auto;scrollbar-width:none}.top-actions button{padding:0 12px;flex:none}
   #btn-broadcast,#btn-lang{order:1}   /* the row scrolls sideways from here down: the stop buttons stay in view, the rest is reached by swiping */
+  body.alerted:not(.broadcast):not(.inside):not([data-view="workshop"]) #stage{margin-top:124px}   /* the limit warning sits above the scene here, not on the top cloud's label */
   #topbar{background:#04060cf2}       /* the page scrolls under the bar at this width: what passes behind must not show through the buttons */
 }
 @media(max-width:760px){

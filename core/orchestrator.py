@@ -1864,6 +1864,11 @@ class Orchestrator:
                 "error": f"Cannot resume run {run_id}: already in terminal state {curr_state}."
             }
 
+        try:        # the ledger learns a call's run and stage from state changes; a resumed run makes its first call
+            from core import usage                 # before any, so that call would be recorded as nobody's
+            usage.set_context(run_id=run_id, stage=curr_state)
+        except Exception:
+            pass
         project_path = run["project_path"]
         if self.config.get('bootstrap', {}).get('enabled'):
             from core.bootstrap import configure_runtime

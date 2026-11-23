@@ -286,3 +286,12 @@ def test_the_server_says_whether_a_run_belongs_to_a_mission(tmp_path, monkeypatc
     assert d._run_in_mission("RUN-M") is True and d._run_in_mission("RUN-S") is False and d._run_in_mission("RUN-NONE") is False
     assert d._run_in_mission("RUN-BAD") is True and d._run_in_mission("../x") is True and d._run_in_mission(None) is True   # in doubt: not offered on its own
     assert "ap.in_mission===false" in JS
+
+
+def test_a_new_file_counts_its_lines_as_added(tmp_path):
+    """Found on a real result: 4 new files read "+0줄". A new file is shown whole, without "+" marks."""
+    src = JS[JS.index("function diffBody(text){"):JS.index("async function openResult(ms){")]
+    out = _node(tmp_path, src + """
+console.log(JSON.stringify([diffLines("(new file)\\nimport re\\n\\ndef f():\\n    return 1\\n"), diffLines("(new file)\\n"),
+  diffLines("diff --git a/a b/a\\n--- a/a\\n+++ b/a\\n@@ -1 +1,2 @@\\n-x\\n+y\\n+z\\n"), diffLines("(new binary/unreadable file)"), diffLines("")]));""")
+    assert json.loads(out) == [[4, 0], [0, 0], [2, 1], [0, 0], [0, 0]]
