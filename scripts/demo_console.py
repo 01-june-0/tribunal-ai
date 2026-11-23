@@ -342,7 +342,7 @@ def demo_ai():
                                    "groups": [gemini, {"name": "Claude and GPT models", "five_hour": window(0.0, 4), "weekly": window(3.0, 150)}]}},
         "accounts": {c: {"installed": True, "signed_in": True, "email_masked": m, "has_email": bool(m), "method": "subscription", "org": None,
                          "identity_known": c != "antigravity", "actions": [], "pending": False}
-                     for c, m in (("claude", "d•••@e•••.com"), ("openai", "d•••@e•••.com"), ("antigravity", None))},   # invented; a demo has no buttons
+                     for c, m in (("claude", "u•••@e•••.com"), ("openai", "u•••@e•••.com"), ("antigravity", None))},   # invented; a demo has no buttons
         "alerts": [{"cli": "openai", "window": "weekly", "used_percent": 86.0, "threshold": 80, "resets_at": soon(40)}]}
 
 

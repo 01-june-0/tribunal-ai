@@ -139,8 +139,8 @@ autonomy:
 
 ```yaml
 bridge:
-  allowed_roots: ["~/Developer"]        # 이 아래의 git 프로젝트만 대상으로 받음
-  denied: ["~/Developer/tribunal-ai"]   # Tribunal 자신의 폴더는 대상이 될 수 없음
+  allowed_roots: ["~/Developer", "~/work", "~/projects"]   # 이 아래의 git 프로젝트만 대상으로 받음 (없는 폴더는 무시)
+  denied: []                            # 그 아래에서 대상이 되면 안 되는 폴더. Tribunal 자신의 폴더는 적지 않아도 항상 제외
 ```
 
 `director do`와 다른 로컬 프로그램이 목표를 넘기는 입구입니다. 요청에는 브리지 토큰이 필요합니다(3절).

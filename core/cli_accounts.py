@@ -43,7 +43,7 @@ def _testing() -> bool:
 
 
 def mask_email(email: Optional[str]) -> Optional[str]:
-    """'dev3@example.com' -> 'd•••@e•••.com': enough to tell two accounts apart, not enough to read off a screen."""
+    """'user@example.com' -> 'u•••@e•••.com': enough to tell two accounts apart, not enough to read off a screen."""
     if not isinstance(email, str) or "@" not in email:
         return None
     name, _, domain = email.partition("@")

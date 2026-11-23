@@ -8,7 +8,7 @@ architect:
   executable: null        # Discovered automatically (PATH or the standard install folder)
 
 maker:
-  mode: proposal          # Maker returns whole files as JSON; the Director validates and writes them.
+  mode: proposal          # Maker returns whole files as JSON; Tribunal validates and writes them.
   provider: codex         # Primary MAKER: OpenAI Codex CLI (if it is down: claude, then antigravity)
   model: cli-default
   executable: null        # Discovered automatically via resolve_cli('codex')
@@ -55,7 +55,7 @@ bootstrap:
 # Per-project verification (kept here, never inside the project, so a Maker cannot weaken it).
 # Keys are absolute project roots. Example:
 # projects:
-#   "D:/work/my_service":
+#   "/home/me/work/my_service":
 #     verification:
 #       build_command: ["npm", "run", "build"]
 #       test_command: "python -m pytest -q"
@@ -69,7 +69,7 @@ autonomy:
   # real credentials/accounts and irreversible external actions stop for a human decision.
   architect_proxy: true
   maker_attempts: 3          # retry with feedback; the last attempt moves to another provider
-  # The inspector may propose new test files; the Director runs them and removes them again (evidence only,
+  # The inspector may propose new test files; Tribunal runs them and removes them again (evidence only,
   # never part of the deliverable). A failure is a P1 finding. See core/inspector_tests.py.
   inspector_tests: true
   max_steps: 6                 # milestones per mission
@@ -85,14 +85,12 @@ autonomy:
     deep:     {max_steps: 12, max_repairs: 3, maker_attempts: 3}
 
 # The bridge: where `director do` and other local programs hand in a goal (POST /bridge/missions, token required).
-# Only git projects under allowed_roots may be targeted; the Director's own folder is never a target.
+# Only git projects under allowed_roots may be targeted; Tribunal's own folder is never a target.
 
 bridge:
   # "~" is expanded; a root that does not exist on this machine simply never matches.
   allowed_roots:
-    - "D:/work"
     - "~/Developer"
-  denied:
-    - "D:/work/ai-dev-director"
-    - "~/Developer/ai-dev-director"
-    - "~/Developer/tribunal-ai"
+    - "~/work"
+    - "~/projects"
+  denied: []          # folders under the roots that must never be a target (Tribunal's own folder never is)

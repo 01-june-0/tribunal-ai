@@ -23,10 +23,10 @@ def done(stdout="", code=0, stderr=""):
 
 
 def test_an_address_is_masked_unless_asked_for():
-    assert acc.mask_email("dev3@example.com") == "d•••@e•••.com"
+    assert acc.mask_email("user@example.com") == "u•••@e•••.com"
     assert acc.mask_email("a@localhost") == "a•••@l•••" and acc.mask_email(None) is None and acc.mask_email("nope") is None
-    shown = acc.public("claude", {"installed": True, "signed_in": True, "email": "dev3@example.com", "method": "subscription", "org": "acme"})
-    assert "dev3@example.com" not in json.dumps(shown, ensure_ascii=False) and shown["email_masked"] == "d•••@e•••.com" and shown["has_email"]
+    shown = acc.public("claude", {"installed": True, "signed_in": True, "email": "user@example.com", "method": "subscription", "org": "acme"})
+    assert "user@example.com" not in json.dumps(shown, ensure_ascii=False) and shown["email_masked"] == "u•••@e•••.com" and shown["has_email"]
     assert shown["actions"] == ["switch", "logout"]                         # signed in: no "sign in" button
 
 
@@ -122,8 +122,8 @@ def test_the_terminal_script_only_runs_the_cli(tmp_path):
 
 
 def test_an_organisation_named_after_an_address_is_masked_too():
-    shown = acc.public("claude", {"installed": True, "signed_in": True, "email": "dev3@example.com", "org": "dev3@example.com's Organization"})
-    assert shown["org"] == "d•••@e•••.com's Organization" and "dev3" not in json.dumps(shown, ensure_ascii=False)
+    shown = acc.public("claude", {"installed": True, "signed_in": True, "email": "user@example.com", "org": "user@example.com's Organization"})
+    assert shown["org"] == "u•••@e•••.com's Organization" and "user@" not in json.dumps(shown, ensure_ascii=False)
 
 
 def test_reading_an_account_does_not_hold_the_request(monkeypatch):

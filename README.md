@@ -7,6 +7,10 @@
 > 바탕으로 만들었습니다. 원본의 저작권 표시와 라이선스 전문은 [LICENSE](LICENSE)에 그대로 있습니다.
 > 원본에서 무엇을 물려받았고 무엇을 바꿨는지는 [docs/CHANGELOG.md](docs/CHANGELOG.md)에 있습니다.
 
+![한눈에 탭: 세 AI와 가운데의 Tribunal, 지금 하는 일과 기록](docs/images/overview.jpg)
+
+<sub>데모 콘솔(`scripts/demo_console.py`)의 화면입니다. 보이는 작업과 숫자는 모두 지어낸 것입니다.</sub>
+
 ## 무엇을 하나
 
 ```
