@@ -77,7 +77,60 @@ def _reject(rel: Any, content: Any, worktree: Path) -> Optional[str]:
     return None
 
 
-def select(tests: Any, worktree_path: str) -> Tuple[List[Tuple[str, str]], List[Dict[str, str]]]:
+def created_files(raw_git_diff: str) -> set:
+    """Paths this run created (`--- /dev/null` in the worktree's diff)."""
+    out, created = set(), False
+    for line in (raw_git_diff or "").splitlines():
+        if line.startswith("--- "):
+            created = line[4:].strip() == "/dev/null"
+        elif line.startswith("+++ ") and created:
+            target = line[4:].strip()
+            out.add(target[2:] if target.startswith("b/") else target)
+            created = False
+    return out
+
+
+def _imported_project_files(rel: str, content: Any, worktree: Path, created: Optional[set] = None) -> Dict[str, str]:
+    """Python files THIS RUN created that the test names in `from M import ...`, read from the work folder. With them
+    the money check can see that `order_send` is the plain function this change wrote - the file was itself checked
+    when it was built - and not an order sent anywhere. A file that was already in the project is never added: its
+    function may reach a broker in a way no pattern sees, and the old rule (the name alone refuses the test) holds.
+    A module the test's own folder would shadow is not added either (pytest puts that folder first on the path)."""
+    import ast
+    if not isinstance(content, str) or not str(rel).endswith(".py"):
+        return {}
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError):
+        return {}
+    found: Dict[str, str] = {}
+    base = PurePosixPath(str(rel)).parent
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        if node.level:
+            if node.level - 1 > len(base.parts):
+                continue
+            home_dir = PurePosixPath(*base.parts[:len(base.parts) - (node.level - 1)]) if base.parts else PurePosixPath()
+        else:
+            home_dir = PurePosixPath()
+        home = (home_dir / PurePosixPath(*node.module.split("."))).as_posix() + ".py"
+        if home not in (created or set()):
+            continue
+        first = node.module.split(".")[0]
+        if not node.level and any((worktree / base / cand).exists() for cand in (first + ".py", first)) and base.parts:
+            continue                                    # tests/<first> would be imported instead of the project's
+        target = worktree / home
+        try:
+            if (target.is_file() and not target.is_symlink() and target.resolve().is_relative_to(worktree)
+                    and target.stat().st_size <= MAX_CHARS * 10):
+                found[home] = target.read_text(encoding="utf-8")
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+    return found
+
+
+def select(tests: Any, worktree_path: str, created: Optional[set] = None) -> Tuple[List[Tuple[str, str]], List[Dict[str, str]]]:
     """(accepted [(path, content)], rejected [{path, reason}]). Nothing is written here."""
     from core import autopilot
     worktree = Path(worktree_path).resolve()
@@ -90,7 +143,8 @@ def select(tests: Any, worktree_path: str) -> Tuple[List[Tuple[str, str]], List[
             reason = "listed twice"
         if not reason and len(accepted) >= MAX_FILES:
             reason = f"more than {MAX_FILES} files"
-        if not reason and autopilot.money_code_findings("", {rel: content}):
+        if not reason and autopilot.money_code_findings("", {rel: content, **_imported_project_files(rel, content, worktree, created)},
+                                                       root=str(worktree)):
             reason = "contains code that could move real money"        # never executed, like any other such code
         if reason:
             rejected.append({"path": str(rel)[:200], "reason": reason})
@@ -132,7 +186,7 @@ def run(orch, run_id: str, review, worktree_path: Optional[str], verification: O
             record["skipped"] = "the work folder is missing"
         orch._save_json(run_id, "inspector_tests.json", record)
         return
-    accepted, record["rejected"] = select(tests, worktree_path)
+    accepted, record["rejected"] = select(tests, worktree_path, created_files((verification or {}).get("git_diff", "")))
     _, test_cmd, _ = orch._verification_cmds()
     worktree, holder = Path(worktree_path).resolve(), None
     skipped = ("no acceptable test file" if not accepted else "no test command is configured" if not test_cmd

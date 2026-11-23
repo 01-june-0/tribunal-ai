@@ -9,7 +9,7 @@ function el(tag,text,cls){const n=doc.createElement(tag);n.textContent=text;if(c
 // messages, file contents, the draft in the input box - is left alone; a text without an entry stays Korean.
 function english(d){
  const C=window.I18N_CLASSIC;if(!C||!(window.I18N&&window.I18N.lang==='en')||d.__english)return;d.__english=true;
- const ATTRS=['title','placeholder','aria-label'],KEEP_PRE=new Set(['mission-details','confirm-body']);
+ const ATTRS=['title','placeholder','aria-label','data-prompt'],KEEP_PRE=new Set(['mission-details','confirm-body']);
  // Names and words that are somebody's own: a project folder, the goal in a result's header, a system line's original.
  const THEIRS='#project-name,#project-label,.pname,#rd-head,.evraw';
  const theirs=node=>{for(let e=node.nodeType===1?node:node.parentElement;e;e=e.parentElement){const t=e.tagName;

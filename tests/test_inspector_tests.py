@@ -266,3 +266,33 @@ def test_every_fixed_reason_has_a_korean_text_on_the_stage():
     assert len(reasons) >= 16
     for reason in reasons:
         assert ("'" + reason + "':") in stage or ('"' + reason + '":') in stage, reason
+
+
+def test_a_test_that_uses_the_projects_own_order_like_function_is_accepted(project):
+    """Found in a real run: an inspector test that imported the project's pure `order_send` was refused by name alone."""
+    (project / "src").mkdir()
+    (project / "src" / "__init__.py").write_text("", encoding="utf-8")
+    (project / "src" / "queue_util.py").write_text("def order_send(queue, item):\n    return queue + [item]\n", encoding="utf-8")
+    (project / "src" / "live.py").write_text("import stripe\n\ndef order_send(queue, item):\n    return stripe.Charge.create(amount=item)\n",
+                                             encoding="utf-8")
+    pure = "from src.queue_util import order_send\n\n\ndef test_inspector_appends():\n    assert order_send([1], 2) == [1, 2]\n"
+    live = pure.replace("src.queue_util", "src.live")
+    through = "import src.queue_util as q\n\n\ndef test_inspector_x():\n    assert q.order_send([], 1) == [1]\n"
+    made = it.created_files("diff --git a/src/queue_util.py b/src/queue_util.py\nnew file mode 100644\n--- /dev/null\n+++ b/src/queue_util.py\n"
+                            "@@ -0,0 +1,2 @@\n+x\n--- /dev/null\n+++ b/src/live.py\n@@ -0,0 +1 @@\n+y\n--- a/README.md\n+++ b/README.md\n")
+    assert made == {"src/queue_util.py", "src/live.py"}
+    accepted, rejected = it.select([{"path": "tests/test_inspector_pure.py", "content": pure},
+                                    {"path": "tests/test_inspector_live.py", "content": live},
+                                    {"path": "tests/test_inspector_through.py", "content": through}], str(project), made)
+    assert [p for p, _ in accepted] == ["tests/test_inspector_pure.py"]
+    assert {r["path"]: r["reason"] for r in rejected} == {"tests/test_inspector_live.py": "contains code that could move real money",
+                                                          "tests/test_inspector_through.py": "contains code that could move real money"}
+    assert it._imported_project_files("tests/test_inspector_x.py", "from ..outside import a\n", project) == {}
+    # a file that was already in the project (not created by this run) is never vouched for: the name alone refuses
+    accepted, _ = it.select([{"path": "tests/test_inspector_pure.py", "content": pure}], str(project), set())
+    assert accepted == []
+    assert it.select([{"path": "tests/test_inspector_pure.py", "content": pure}], str(project))[0] == []      # no diff given: as before
+    # the test folder's own module of the same name would be imported instead: not vouched for
+    (project / "tests" / "src").mkdir()
+    accepted, _ = it.select([{"path": "tests/test_inspector_pure.py", "content": pure}], str(project), made)
+    assert accepted == []

@@ -268,6 +268,7 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "정지함": "Stopped",
   "시간 초과 · 제한 시간 안에 끝나지 않음": "timed out · did not finish within the time limit",
   "{0} 중에 멈춤": "stopped during: {0}",
   "{0} 중": "in progress: {0}",

@@ -495,3 +495,19 @@ def test_n_run_id_unique_and_collision_retry(isolate_provider_db, monkeypatch):
     import sqlite3
     with pytest.raises(sqlite3.IntegrityError):
         orch._create_run_with_retry(existing, "p", "g")
+
+
+def test_a_trial_claimed_for_a_call_a_stop_refused_is_handed_back(isolate_provider_db, monkeypatch):
+    """From a review: a recovery trial claimed right before a stop refused the call was neither a success nor a
+    failure, so the recovering AI waited out the whole cooldown for a check that never happened."""
+    from core.mission import MissionRunner
+    pm = ProviderManager()
+    pm.set_status("OPENAI", ProviderStatus.RECOVERING, "probe ok")
+    assert pm.claim_trial("OPENAI") is True
+    assert ProviderManager().claim_trial("OPENAI") is False                  # another process: held
+    MissionRunner._let_trials_go(type("Orch", (), {"pm": pm})())
+    assert "OPENAI" not in pm.active_trials and pm._health_row("OPENAI")["trial_started_at"] is None
+    assert ProviderManager().claim_trial("OPENAI") is True                   # free again
+    other = ProviderManager()
+    assert other.release_trial("OPENAI") is False                            # never releases a claim it does not hold
+    MissionRunner._let_trials_go(type("Orch", (), {"pm": None})())          # nothing to do, nothing raised

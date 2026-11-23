@@ -490,6 +490,21 @@ class ProviderManager:
             "statuses": {d: s.value for d, s in self.status_map.items()},
         }
 
+    def release_trial(self, domain: str) -> bool:
+        """Give back a trial this process claimed but never used (its call was refused by a stop). Only a claim this
+        process holds is released; another process's claim, or a provider that left RECOVERING meanwhile, is not touched."""
+        d = domain.upper()
+        if d not in self.active_trials:
+            return False
+        self.active_trials.discard(d)
+        try:
+            with self._get_conn() as conn:
+                conn.execute("UPDATE provider_health SET trial_started_at = NULL WHERE provider = ? AND status = ?",
+                             (d, ProviderStatus.RECOVERING.value))
+        except Exception:
+            return False
+        return True
+
     def claim_trial(self, domain: str) -> bool:
         """ATOMIC single-owner claim of one real trial call for a RECOVERING provider (cross-process safe).
         One conditional UPDATE decides ownership: only the process whose UPDATE affected a row is the owner."""

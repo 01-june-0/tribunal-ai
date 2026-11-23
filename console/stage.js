@@ -24,7 +24,7 @@ const STAGE_LABEL={PLANNING:T('설계'),ORDER_READY:T('제작 준비'),BUILDING:
   HUMAN_REQUIRED:T('사용자 확인'),TIMEOUT:T('시간 초과'),IDLE:T('대기'),MISSION_PLANNING:T('다음 단계 계획'),ENTRY_REVIEW:T('오더 검토'),CHAT:T('대화')};
 const STATE_KO={PASS:T('통과'),FAIL:T('실패'),TIMEOUT:T('시간 초과'),HUMAN_REQUIRED:T('확인 필요'),RECOVERED:T('복구 완료'),REJECTED:T('거절함')};
 const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIRED:'warn',REJECTED:'off'},STEP_MARK={ok:'✓',bad:'✗',warn:'!',off:'—',run:'▶',todo:''};
-const MISSION_BADGE={DONE:[T('완료'),'ok'],INCOMPLETE:[T('단계 한도 도달'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
+const MISSION_BADGE={RUNNING:[T('진행 중'),''],STOPPED:[T('정지함'),'warn'],DONE:[T('완료'),'ok'],INCOMPLETE:[T('단계 한도 도달'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
 // A task whose last step the user rejected is closed by their own decision: nothing waits, nothing failed.
 function turnedDown(ms){const last=ms&&ms.steps[ms.steps.length-1];return !!(last&&last.state==='REJECTED'&&ms.status==='BLOCKED'&&!ms.live);}
 function missionBadge(ms){return turnedDown(ms)?[T('거절함'),'']:(MISSION_BADGE[ms.status]||[ms.status,'']);}

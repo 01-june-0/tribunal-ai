@@ -313,8 +313,13 @@ class MissionRunner:
         row = orch.sm.get_run(rid) if rid else None
         if row and row["current_state"] in TERMINAL_STATES:
             return
+        from core.process_runner import StopRequested
         if row and row["current_state"] != State.IDLE:
-            orch.resume(rid)                              # interrupted mid-pipeline (e.g. reboot)
+            try:
+                orch.resume(rid)                          # interrupted mid-pipeline (e.g. reboot)
+            except StopRequested:
+                self._let_trials_go(orch)
+                raise
             return
         if not rid:
             rid = orch.reserve_run_id(project, order.goal)
@@ -325,15 +330,26 @@ class MissionRunner:
         else:
             orch._reserved_run_ids = set(getattr(orch, "_reserved_run_ids", set())) | {rid}
         self.notify(f"[작업 {step['index']}/{mission['max_steps']}] 실행 시작: {order.goal[:300]}", run_id=rid)
-        from core.process_runner import StopRequested
         try:
             orch.run(project, order.goal, run_id=rid, order=order, base_worktree=mission.get("base_worktree"))
         except StopRequested:
+            self._let_trials_go(orch)
             return                              # the run stays where it was: not failed, to be taken up again
         except Exception as exc:
             row = orch.sm.get_run(rid) or {}
             if row.get("current_state") not in TERMINAL_STATES:
                 orch.sm.transition_to(rid, State.FAIL, details=f"MISSION_STEP_EXCEPTION: {str(exc)[:500]}")
+
+    @staticmethod
+    def _let_trials_go(orch) -> None:
+        """A recovery trial claimed for a call that a stop then refused never got its call: hand it back, so the
+        recovering AI is not left waiting out the whole cooldown for a check that did not happen."""
+        pm = getattr(orch, "pm", None)
+        for domain in list(getattr(pm, "active_trials", None) or ()):
+            try:
+                pm.release_trial(domain)
+            except Exception:
+                pass
 
     @staticmethod
     def _record_escalation(orch, mission, order: OrderSchema, reason: str) -> str:

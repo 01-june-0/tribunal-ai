@@ -10,8 +10,7 @@
    RULES  a sentence with a value inside: "$1" is the value as it is, "{1}" the value translated in its turn.
    INLINE pieces replaced wherever they stand, for the status sentence put together from several clauses.
 
-   Not translated: what people and AIs wrote (chat messages, goals, file contents) and the draft the "ask again"
-   button puts in the input box. */
+   Not translated: what people and AIs wrote (chat messages, goals, file contents). */
 (function(){
 const EXACT={
  "AI 개발 오케스트레이션 시스템": "AI development orchestration",
@@ -343,6 +342,18 @@ const EXACT={
  "접수됨": "received",
  "새 대화를 시작할까요?": "Start a new chat?",
  "지금 대화는 화면에서 사라집니다. 기록은 서버에 남고, 프로젝트 선택은 그대로입니다.": "The current chat leaves the screen. Its record stays on the server, and the chosen project stays as it is.",
+ "Git 내부 영역": "Git's internal area",
+ "TRIBUNAL AI 보호 파일": "TRIBUNAL AI's protected files",
+ "보호된 경로": "the protected paths",
+ "TRIBUNAL AI 설정 파일": "TRIBUNAL AI's settings files",
+ "해당 경로": "that path",
+ "해당 문제": "the problem",
+ "작업 폴더 밖으로 연결되는 경로 없이, 작업 폴더 안에서만 접근하도록 기존 요청을 다시 계획해줘.": "Plan the request again so that it reaches only inside the work folder, with no path leading outside it.",
+ "작업 폴더 밖 경로 없이, 작업 폴더 안 경로만 사용하도록 기존 요청을 다시 계획해줘.": "Plan the request again using only paths inside the work folder.",
+ "경로 형식을 프로젝트 기준 상대 경로로 바로잡아서 기존 요청을 다시 계획해줘.": "Plan the request again with paths written relative to the project.",
+ "파일 삭제 없이 기존 요청을 다시 계획해줘.": "Plan the request again without deleting files.",
+ "허용된 작업 범위 안에서만 변경하도록 기존 요청을 다시 계획해줘.": "Plan the request again so that it changes only what the allowed scope covers.",
+ "작업 범위(허용 경로)를 구체적으로 지정해서 기존 요청을 다시 계획해줘.": "Plan the request again with a specific scope (allowed paths).",
  "외부 지시": "External request",
  "CLI 지시": "CLI request",
  "ARCHITECT 대리 처리:": "Handled by the ARCHITECT for you:",
@@ -350,9 +361,9 @@ const EXACT={
  "5시간": "5h",
  "주간": "week"
 };
-const RULES=[["^(.+?)가 요청을 분석하고 있습니다$", "$1 is analysing the request"], ["^(.+?)가 코드를 작성하고 있습니다$", "$1 is writing the code"], ["^(.+?)가 변경 내용을 검토하고 있습니다$", "$1 is reviewing the changes"], ["^(.+?)가 최종 판단을 내리고 있습니다$", "$1 is making the final decision"], ["^(\\d+(?:\\.\\d+)?)초$", "$1s"], ["^결과물 (\\d+)건$", "Results ($1)"], ["^승인 대기 (\\d+)건$", "Awaiting approval ($1)"], ["^적용 대기 결과물 (\\d+)건$", "$1 result(s) waiting to be applied"], ["^나머지 (\\d+)건 보기$", "Show the other $1"], ["^(\\d+)건$", "$1"], ["^다음 단계: (.+)$", "Next step: {1}"], ["^(.+) 복구 중$", "$1 recovering"], ["^5시간 (.+)$", "5h $1"], ["^주간 (.+)$", "week $1"], ["^요금제 (.+)$", "plan $1"], ["^변경 파일 (\\d+)개$", "$1 changed file(s)"], ["^(.+) 변경 승인 필요$", "$1: the change needs approval"], ["^(.+) 승인 필요$", "{1}: approval needed"], ["^※ 아직 적용하지 않은 이전 결과물 (\\d+)건의 변경도 함께 적용됩니다$", "※ the changes of $1 earlier result(s) not applied yet are applied with it"], ["^\\(상세 코드: (.+)\\)$", "(detail code: $1)"], ["^(.+) \\(읽기 전용\\)$", "{1} (read-only)"], ["^승인: (.+)$", "Approve: {1}"], ["^거절: (.+)$", "Reject: {1}"], ["^적용: (.+)$", "Apply: {1}"], ["^폐기: (.+)$", "Discard: {1}"], ["^프로젝트: (.+)$", "Project: $1"], ["^작업: (.+)$", "Task: $1"], ["^이 작업의 변경 파일: (\\d+)개$", "Files changed by this run: $1"], ["^새 대화를 시작하지 못했습니다 · (.*)$", "Could not start a new chat · $1"], ["^새 대화 요청 실패 · (.*)$", "The new-chat request failed · $1"], ["^(.+?)\\s+(\\d+)개\\s+\\(추가 (\\d+) / 수정 (\\d+) / 삭제 (\\d+)\\)$", "{1} $2 (added $3 / modified $4 / deleted $5)"]].map(([p,r])=>[new RegExp(p),r]);
+const RULES=[["^(.+?)가 요청을 분석하고 있습니다$", "$1 is analysing the request"], ["^(.+?)가 코드를 작성하고 있습니다$", "$1 is writing the code"], ["^(.+?)가 변경 내용을 검토하고 있습니다$", "$1 is reviewing the changes"], ["^(.+?)가 최종 판단을 내리고 있습니다$", "$1 is making the final decision"], ["^(\\d+(?:\\.\\d+)?)초$", "$1s"], ["^(.+)은\\(는\\) 수정하지 말고, (.+) 부분을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘\\.$", "Do not change {1}, and plan the request again without the part that caused this: {2}."], ["^수정하지 말고, (.+) 부분을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘\\.$", "Plan the request again without the part that caused this: {1}."], ["^(.+)은\\(는\\) 수정하지 말고, (.+)[을를] 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘\\.$", "Do not change {1}; leave {2} out of the scope and plan the request again."], ["^(.+?) \\((.+)\\) 문제를 해결해서 기존 요청을 다시 계획해줘\\.$", "Plan the request again, solving this problem: {1} ($2)."], ["^(.+?) 문제를 해결해서 기존 요청을 다시 계획해줘\\.$", "Plan the request again, solving this problem: {1}."], ["^결과물 (\\d+)건$", "Results ($1)"], ["^승인 대기 (\\d+)건$", "Awaiting approval ($1)"], ["^적용 대기 결과물 (\\d+)건$", "$1 result(s) waiting to be applied"], ["^나머지 (\\d+)건 보기$", "Show the other $1"], ["^(\\d+)건$", "$1"], ["^다음 단계: (.+)$", "Next step: {1}"], ["^(.+) 복구 중$", "$1 recovering"], ["^5시간 (.+)$", "5h $1"], ["^주간 (.+)$", "week $1"], ["^요금제 (.+)$", "plan $1"], ["^변경 파일 (\\d+)개$", "$1 changed file(s)"], ["^(.+) 변경 승인 필요$", "$1: the change needs approval"], ["^(.+) 승인 필요$", "{1}: approval needed"], ["^※ 아직 적용하지 않은 이전 결과물 (\\d+)건의 변경도 함께 적용됩니다$", "※ the changes of $1 earlier result(s) not applied yet are applied with it"], ["^\\(상세 코드: (.+)\\)$", "(detail code: $1)"], ["^(.+) \\(읽기 전용\\)$", "{1} (read-only)"], ["^승인: (.+)$", "Approve: {1}"], ["^거절: (.+)$", "Reject: {1}"], ["^적용: (.+)$", "Apply: {1}"], ["^폐기: (.+)$", "Discard: {1}"], ["^프로젝트: (.+)$", "Project: $1"], ["^작업: (.+)$", "Task: $1"], ["^이 작업의 변경 파일: (\\d+)개$", "Files changed by this run: $1"], ["^새 대화를 시작하지 못했습니다 · (.*)$", "Could not start a new chat · $1"], ["^새 대화 요청 실패 · (.*)$", "The new-chat request failed · $1"], ["^(.+?)\\s+(\\d+)개\\s+\\(추가 (\\d+) / 수정 (\\d+) / 삭제 (\\d+)\\)$", "{1} $2 (added $3 / modified $4 / deleted $5)"]].map(([p,r])=>[new RegExp(p),r]);
 const WHOLE=[["^([A-Z]+(?: · [A-Z]+)*) \\((.+)\\)$", "$1 ({2})"]].map(([p,r])=>[new RegExp(p),r]);
-const INLINE=[["(\\S+) 백업 AI가 (일부 기능 제한|사용량 초과|사용량 부족|확인 안 됨|실행 중지|인증 실패|설정 오류|사용 불가|응답 없음|복구 중|정상)입니다\\.", "$1 (the backup AI) is: {2}."], ["(\\S+)가 (일부 기능 제한|사용량 초과|사용량 부족|확인 안 됨|실행 중지|인증 실패|설정 오류|사용 불가|응답 없음|복구 중|정상)입니다\\.", "$1 is: {2}."], ["((?:\\S+와 )*\\S+)는 정상 사용 가능합니다\\.", "$1 can be used."], ["\\((\\d)/3 AI 사용 가능\\)", "($1/3 AIs usable)"], ["(\\S+)와 (?=\\S)", "$1 and "]].map(([p,r])=>[new RegExp(p,'g'),r]);
+const INLINE=[["(\\S+) 백업 AI가 (일부 기능 제한|사용량 초과|사용량 부족|확인 안 됨|사용 불가|인증 실패|응답 없음|설정 오류|실행 중지|복구 중|정상)입니다\\.", "$1 (the backup AI) is: {2}."], ["(\\S+)가 (일부 기능 제한|사용량 초과|사용량 부족|확인 안 됨|사용 불가|인증 실패|응답 없음|설정 오류|실행 중지|복구 중|정상)입니다\\.", "$1 is: {2}."], ["((?:\\S+와 )*\\S+)는 정상 사용 가능합니다\\.", "$1 can be used."], ["\\((\\d)/3 AI 사용 가능\\)", "($1/3 AIs usable)"], ["(\\S+)와 (?=\\S)", "$1 and "]].map(([p,r])=>[new RegExp(p,'g'),r]);
 const HAN=/[\uac00-\ud7a3]/;
 function fill(template,m,depth){
   return template.replace(/\$(\d)|\{(\d)\}/g,(all,raw,again)=>raw?(m[+raw]??''):tr(m[+again]??'',depth+1));

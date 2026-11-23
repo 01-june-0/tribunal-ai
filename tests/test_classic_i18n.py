@@ -134,3 +134,17 @@ def test_the_page_as_the_server_renders_it_holds_no_text_without_english():
     out = translate(korean)
     still = [(before, after) for before, after in zip(korean, out) if HANGUL.search(after)]
     assert still == [], f"add these to console/i18n_classic.js: {still}"
+
+
+def test_the_ask_again_draft_comes_out_in_english():
+    """It is written into the input box and sent to the ARCHITECT; in the English console it was Korean."""
+    texts = []
+    for code in [*K._RETRY_TEMPLATES, "HIGH_RISK", "UNKNOWN", "REGRESSION"]:
+        texts += [K.retry_prompt(code, ""), K.retry_prompt(code, "src/app.py")]
+    texts += ["src/a.py은(는) 수정하지 말고, " + K.REASON_TEXT["SCOPE_VIOLATION"][0] + " 부분을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘.",
+              "수정하지 말고, 해당 문제 부분을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘."]       # the page's retryPromptJs
+    out = translate(texts)
+    assert [(a, b) for a, b in zip(texts, out) if HANGUL.search(b)] == []
+    assert "src/app.py" in out[1]                                                 # the file name survives
+    js = (CONSOLE / "console.js").read_text(encoding="utf-8")
+    assert "'data-prompt'" in js[js.index("function english("):js.index("function setup(")]
