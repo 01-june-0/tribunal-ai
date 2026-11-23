@@ -295,3 +295,11 @@ def test_a_new_file_counts_its_lines_as_added(tmp_path):
 console.log(JSON.stringify([diffLines("(new file)\\nimport re\\n\\ndef f():\\n    return 1\\n"), diffLines("(new file)\\n"),
   diffLines("diff --git a/a b/a\\n--- a/a\\n+++ b/a\\n@@ -1 +1,2 @@\\n-x\\n+y\\n+z\\n"), diffLines("(new binary/unreadable file)"), diffLines("")]));""")
     assert json.loads(out) == [[4, 0], [0, 0], [2, 1], [0, 0], [0, 0]]
+
+
+def test_a_task_called_done_with_nothing_passed_says_so_and_can_be_cleared():
+    """Found in a real run: the ARCHITECT declared the goal met (a test meant to fail), no step passed, the card read
+    "완료" with nothing to apply and two working copies nobody could remove from the screen."""
+    assert "(ms.status==='DONE'&&!ms.deliverable&&ms.steps.length&&!ms.steps.some(s=>s.state==='PASS'))" in JS
+    assert "검증을 통과한 단계가 없어 적용할 결과물이 없습니다" in JS
+    assert "if(ms.status!=='DONE')row.append(again)" in JS and "if(!ms.deliverable&&ms.leftover){" in JS

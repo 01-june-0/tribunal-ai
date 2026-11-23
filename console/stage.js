@@ -291,7 +291,9 @@ function attentionKind(m){
   if(mine&&ap.required)return 'approve';
   if(mine&&(ap.inflight||ap.approved)&&!ap.rejected)return 'wait';
   if(mine&&!ap.rejected&&(ap.blocking||[]).length)return 'stuck';
-  if(ms&&!ms.live&&['BLOCKED','INCOMPLETE','FAILED','STOPPED'].includes(ms.status)){
+  // DONE with nothing passed: the ARCHITECT called the goal met, but no step got through Tribunal's checks, so there is
+  // no result to apply - said in the same box, with the way to clear what was left behind.
+  if(ms&&!ms.live&&(['BLOCKED','INCOMPLETE','FAILED','STOPPED'].includes(ms.status)||(ms.status==='DONE'&&!ms.deliverable&&ms.steps.length&&!ms.steps.some(s=>s.state==='PASS')))){
     // An approved run is picked up again before the mission record says so: its last step is at work, nothing is stopped.
     const last=ms.steps[ms.steps.length-1];
     return ms.status!=='STOPPED'&&last&&AT_WORK.has(last.state)?'wait':'stopped';}   // a step stopped by 작업 정지 keeps its last state
@@ -330,7 +332,7 @@ function paintAttention(m){
     if(kind==='stuck'){box.append(el('p',T('승인으로 풀 수 없는 문제로 멈췄습니다. ARCHITECT에게 다시 지시해 주세요.')));if(!own&&ap.goal)box.append(el('p',ap.goal,'new-goal'));box.append(list(ap.blocking));
       const first=ap.blocking[0];if(why(first))box.append(el('small',why(first),'ai-sub'));}
     // Rejected after the code was written: it was built, in the working copy; what did not happen is the testing and applying.
-    else box.append(el('p',no&&own&&ap.rejected&&ap.stage==='POST_BUILD'?T('만든 코드를 거절했습니다. 테스트와 적용은 진행하지 않았고, 원본 프로젝트는 그대로입니다.'):no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):ms.status==='STOPPED'?T('작업 정지로 멈췄습니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
+    else box.append(el('p',no&&own&&ap.rejected&&ap.stage==='POST_BUILD'?T('만든 코드를 거절했습니다. 테스트와 적용은 진행하지 않았고, 원본 프로젝트는 그대로입니다.'):no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):ms.status==='STOPPED'?T('작업 정지로 멈췄습니다.'):ms.status==='DONE'?T('ARCHITECT는 목표를 마쳤다고 판단했지만, 검증을 통과한 단계가 없어 적용할 결과물이 없습니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
     if(ms&&ms.steps.length&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='steps';d.append(el('summary',T('단계별 결과')));const ol=el('ol');
       for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
       d.append(ol);box.append(d);}
@@ -339,7 +341,7 @@ function paintAttention(m){
     else if(kind==='stopped'&&ms.settling)box.append(el('small',T('하던 단계를 마무리하는 중입니다…'),'ai-sub'));       // the loop has not let go yet: nothing to decide
     else if(kind==='stopped'&&(!offered||ms.status==='BLOCKED')){      // BLOCKED: more steps would stop at the same gate, so the ARCHITECT plans again
       const act=ms.status==='BLOCKED'?'replan':'extend',row=el('div','','delivery-actions'),again=el('button',deliveryBusy?T('처리 중…'):act==='replan'?T('다시 계획해서 시도'):T('이어서 시도'));
-      again.type='button';again.dataset.act=act;again.disabled=deliveryBusy;again.onclick=()=>decideMission(ms.id,act);row.append(again);
+      again.type='button';again.dataset.act=act;again.disabled=deliveryBusy;again.onclick=()=>decideMission(ms.id,act);if(ms.status!=='DONE')row.append(again);   // a task called done is not continued: a new instruction starts the next one
       if(!ms.deliverable&&ms.leftover){        // nothing passed, so there is no result to discard - only working copies left behind
         const clear=el('button',T('작업 사본 지우기'));clear.type='button';clear.dataset.act='clear';clear.disabled=deliveryBusy;
         clear.title=T('이 작업이 남긴 작업 사본 {0}개와 실행 브랜치를 지웁니다. 원본 프로젝트는 바뀌지 않습니다.',ms.leftover);

@@ -268,6 +268,7 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "ARCHITECT는 목표를 마쳤다고 판단했지만, 검증을 통과한 단계가 없어 적용할 결과물이 없습니다.": "The ARCHITECT judged the goal met, but no step passed verification, so there is no result to apply.",
   "만든 코드를 거절했습니다. 테스트와 적용은 진행하지 않았고, 원본 프로젝트는 그대로입니다.": "You rejected the code that was built. It was not tested or applied, and the original project is unchanged.",
   "정지한 작업": "Stopped task",
   "건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.": "The AIs' version of the skipped files is still in the working copy.",

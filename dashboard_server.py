@@ -895,10 +895,12 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
             "passed_steps": sum(1 for s in m.get("steps", []) if (s.get("result") or {}).get("final_state") == "PASS"),
             "steps": [step_view(s) for s in m.get("steps", [])],
             "summary": (m.get("summary") or "")[:1200], "blocked_reason": (m.get("blocked_reason") or "")[:500],
-            "deliverable": m.get("base_worktree"), "deliverable_run_id": deliverable_run_id(m),
+            # A result is a step that passed. The task's base_worktree may also be a failed attempt the ARCHITECT chose
+            # to build on: that is not something to offer for applying.
+            "deliverable": m.get("base_worktree") if deliverable_run_id(m) else None, "deliverable_run_id": deliverable_run_id(m),
             "leftover": sum(1 for s in m.get("steps", []) if s.get("run_id") and _run_has_worktree(s["run_id"])), "closed": bool(m.get("closed")),
             "settling": m.get("status") != "RUNNING" and _ACTIVE_PROJECTS.get(_project_key(m.get("project_path") or "")) == m["mission_id"],
-            "applied": applied, "apply_state": (applied or {}).get("status") or ("pending" if m.get("base_worktree") and m.get("status") != "RUNNING" else None),
+            "applied": applied, "apply_state": (applied or {}).get("status") or ("pending" if deliverable_run_id(m) and m.get("status") != "RUNNING" else None),
             "created_at": m.get("created_at"), "updated_at": m.get("updated_at")}
 
 

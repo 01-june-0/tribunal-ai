@@ -480,3 +480,15 @@ def test_clean_worktrees_takes_what_was_applied_discarded_or_closed_changes_and_
     assert wt2.exists() and "Keeping " + waits in out.output
     out = CliRunner().invoke(director.cli, ["clean-worktrees", "-p", str(proj), "--purge-reviewed"])
     assert not wt2.exists() and _branches(proj) == []
+
+
+def test_a_failed_attempt_kept_as_a_base_is_not_offered_as_a_result(monkeypatch):
+    """Found in a real run: no step passed, yet the card read "결과물 · 적용 대기 · 원본에 적용" - the task's base was a
+    failed attempt the ARCHITECT had chosen to build on."""
+    import dashboard_server as d
+    src = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
+    assert '"deliverable": m.get("base_worktree") if deliverable_run_id(m) else None' in src
+    assert '("pending" if deliverable_run_id(m) and m.get("status") != "RUNNING" else None)' in src
+    from core.mission import deliverable_run_id
+    failed = {"base_worktree": "X/.director_worktrees/RUN-F", "steps": [{"run_id": "RUN-F", "result": {"final_state": "FAIL", "worktree_path": "X/.director_worktrees/RUN-F"}}]}
+    assert deliverable_run_id(failed) is None
