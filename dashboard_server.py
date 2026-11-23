@@ -930,6 +930,14 @@ def start_goal_mission(project_path: str, goal: str, profile: Optional[str] = No
         orch = Orchestrator(config=load_config())
     except Exception as e:
         return {"status": "rejected", "error": str(e)[:300]}
+    # The goal and ARCHITECT's answer go into this chat session, so the session follows the project they are about:
+    # otherwise the console header and the Details tab fall back to the previously selected project once the mission ends.
+    # Not while a console chat is in flight: handle_chat_message reads the session project after it starts, and a switch
+    # in between would send the user's message about one project to another.
+    if not chat_in_flight() and _project_key((cm.get_session(sid) or {}).get("project_path") or "") != _project_key(project_path):
+        cm.set_project(sid, project_path)
+        cm.add_message(sid, "SYSTEM", f"PROJECT_SELECTED: {project_path}")
+        invalidate_status_cache()
     label = {"bridge": "외부 지시", "cli": "CLI 지시", "api": "외부 지시"}.get(source, source)
     cm.add_message(sid, "USER", f"[{label} · {profile}] {goal}")
     try:
