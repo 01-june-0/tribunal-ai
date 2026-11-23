@@ -253,10 +253,10 @@ def _print_summary(summary: dict):
     click.echo(f"{run_id}{mode_tag}\n")
     click.echo(f"ARCHITECT             PASS")
     click.echo(f"BASELINE TEST    {base_test_info}")
-    click.echo(f"ANTIGRAVITY      {maker_status}")
+    click.echo(f"MAKER            {maker_status}")          # the role: which AI holds it is a setting, and may have moved
     click.echo(f"BUILD            {build_info}")
     click.echo(f"POST TEST        {test_info}")
-    click.echo(f"{inspector_label} REVIEW".ljust(17) + f"{review_verdict}")
+    click.echo("INSPECTOR".ljust(17) + f"{review_verdict}")
     click.echo("")
     click.echo(f"FILES CHANGED    {files_changed}")
     click.echo(f"SCOPE VIOLATION  {scope_violations}")

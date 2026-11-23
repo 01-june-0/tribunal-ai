@@ -364,8 +364,12 @@ def _project_busy(sm: StateMachine, project_path: str) -> bool:
     """A DB-visible non-terminal, non-stale run for the same project counts as active."""
     key = _project_key(project_path)
     now = datetime.utcnow()
+    try:        # a run cut short by 작업 정지 stays where it was (to be continued later); it is parked, not at work
+        parked = {s.get("run_id") for m in MissionStore().all() if m.get("status") == "STOPPED" for s in m.get("steps", [])}
+    except Exception:
+        parked = set()
     for r in sm.list_runs():
-        if r["current_state"] in TERMINAL_STATES:
+        if r["current_state"] in TERMINAL_STATES or r["run_id"] in parked:
             continue
         if _project_key(r.get("project_path") or "") != key:
             continue

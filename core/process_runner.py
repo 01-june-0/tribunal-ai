@@ -19,6 +19,11 @@ def active_processes() -> Dict[int, str]:
     with _ACTIVE_LOCK:
         return dict(_ACTIVE)
 
+class StopRequested(BaseException):
+    """The operator stopped the task this call belongs to. Not an Exception on purpose: the retry and failover code
+    around a CLI call catches Exception and would answer a stop with one more attempt or another AI."""
+
+
 class ProcessKillFailedError(Exception):
     """Raised when taskkill fails to terminate the process tree and process.poll() remains None."""
     pass
@@ -63,6 +68,10 @@ class ProcessTreeRunner:
     - Verifies process.poll() confirms termination
     """
     blocked_real_cli_calls: List[List[str]] = []   # real-CLI launches refused under DIRECTOR_TESTING=1
+
+    # Set by the task loop (core.mission): given the folder a command is about to run in, says whether the task that
+    # owns it was stopped. None: nothing is ever refused.
+    stop_gate: Optional[Callable[[Optional[str]], bool]] = None
 
     @classmethod
     def kill_active(cls) -> List[int]:
@@ -133,6 +142,14 @@ class ProcessTreeRunner:
         """Every AI CLI call is written to the work ledger (core.usage) around the real execution; ledger problems
         never affect the call itself. `on_output` (for commands that are not AI calls: a test run) is handed stdout
         and stderr text the moment it arrives - pieces, not whole lines - and only observes."""
+        gate = cls.stop_gate
+        if gate is not None:                      # asked before anything is started: a stopped task launches nothing more
+            try:
+                halted = bool(gate(cwd))
+            except Exception:
+                halted = False                    # a broken gate never blocks work
+            if halted:
+                raise StopRequested("the task was stopped by the operator")
         row_id = None
         on_stdout_line = None
         try:
@@ -225,6 +242,21 @@ class ProcessTreeRunner:
         pid = process.pid
         with _ACTIVE_LOCK:
             _ACTIVE[pid] = str(argv[0])
+        gate = ProcessTreeRunner.stop_gate
+        if gate is not None:
+            # A stop that arrived between the question in run() and this registration found no process to kill.
+            try:
+                halted = bool(gate(cwd))
+            except Exception:
+                halted = False
+            if halted:
+                try:
+                    ProcessTreeRunner.kill_process_tree(pid)
+                except Exception:
+                    pass
+                with _ACTIVE_LOCK:
+                    _ACTIVE.pop(pid, None)
+                raise StopRequested("the task was stopped by the operator")
 
         if stdin_data is not None:
             try:

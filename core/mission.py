@@ -42,9 +42,9 @@ class MissionStore:
     def save(self, mission: Dict[str, Any], force: bool = False) -> None:
         """A stop request written by the operator (status STOPPED on disk) survives saves from the running mission
         thread, which still holds a RUNNING copy in memory. Only reopen() (force=True) may clear it."""
-        if not force and mission.get("status") == "RUNNING":
+        if not force:                       # whatever the loop thinks the task is by now (RUNNING, DONE, ...): stopped stays stopped
             current = self.load(mission["mission_id"])
-            if current and current.get("status") == "STOPPED":
+            if current and current.get("status") == "STOPPED" and mission.get("status") != "STOPPED":
                 mission["status"] = "STOPPED"
                 mission["blocked_reason"] = current.get("blocked_reason")
                 mission["stopped_at"] = current.get("stopped_at")
@@ -152,15 +152,25 @@ class MissionRunner:
         mission["owner_pid"] = os.getpid()
         self.store.save(mission)
         from core import usage
+        from core.process_runner import ProcessTreeRunner, StopRequested
+        was_task, was_gate = usage.context().get("mission_id"), ProcessTreeRunner.stop_gate
         usage.set_context(mission_id=mission_id)
+        store = self.store
+        ProcessTreeRunner.stop_gate = staticmethod(lambda cwd: stop_gate(cwd, store))
         try:
             while mission["status"] == "RUNNING":
-                mission = self._advance(mission)
+                try:
+                    mission = self._advance(mission)
+                except StopRequested:                               # a call was refused: the task was stopped
+                    pass
                 fresh = self.store.load(mission_id)
                 if fresh and fresh.get("status") == "STOPPED":      # the operator pressed 작업 정지 during this step
                     mission = fresh
                     break
         finally:
+            # The loop is over: whatever runs on this thread next is not this task's, and is not asked about its stop.
+            usage.set_context(mission_id=was_task)
+            ProcessTreeRunner.stop_gate = was_gate
             latest = self.store.load(mission_id) or mission
             latest["owner_pid"] = None
             self.store.save(latest)
@@ -191,8 +201,18 @@ class MissionRunner:
         row = orch.sm.get_run(step["run_id"]) if step.get("run_id") else None
         # a recorded result goes stale when the run moved on afterwards (e.g. the user approved a blocked step)
         stale = step.get("result") is not None and row is not None and row["current_state"] != step["result"].get("final_state")
+        if self._stop_asked(mission):
+            return mission
         if step.get("result") is None or stale:
             self._execute(orch, mission, step)
+            if self._stop_asked(mission):
+                # Stopped while this step ran. Nothing is planned, finished or applied after a stop. A step that had
+                # already reached its end keeps its result; one cut short has none, so "continue" takes it up again.
+                state = (orch.sm.get_run(step["run_id"]) or {}).get("current_state") if step.get("run_id") else None
+                if state in TERMINAL_STATES:
+                    step["result"] = self._evidence(orch, step["run_id"])
+                    self.store.save(mission)
+                return mission
             step["result"] = self._evidence(orch, step["run_id"])
             self.store.save(mission)
             r = step["result"]
@@ -305,8 +325,11 @@ class MissionRunner:
         else:
             orch._reserved_run_ids = set(getattr(orch, "_reserved_run_ids", set())) | {rid}
         self.notify(f"[작업 {step['index']}/{mission['max_steps']}] 실행 시작: {order.goal[:300]}", run_id=rid)
+        from core.process_runner import StopRequested
         try:
             orch.run(project, order.goal, run_id=rid, order=order, base_worktree=mission.get("base_worktree"))
+        except StopRequested:
+            return                              # the run stays where it was: not failed, to be taken up again
         except Exception as exc:
             row = orch.sm.get_run(rid) or {}
             if row.get("current_state") not in TERMINAL_STATES:
@@ -400,7 +423,17 @@ class MissionRunner:
             parts.append((result.get("stop_detail") or "")[:200])
         return ", ".join(parts)
 
+    def _stop_asked(self, mission: Dict[str, Any]) -> bool:
+        """The operator stopped this task (the record on disk says so, whatever this loop holds in memory)."""
+        fresh = self.store.load(mission["mission_id"])
+        if fresh and fresh.get("status") == "STOPPED":
+            mission["status"], mission["stopped_at"] = "STOPPED", fresh.get("stopped_at")
+            return True
+        return False
+
     def _finish(self, mission: Dict[str, Any], status: str, summary: str = "", blocked: Optional[str] = None):
+        if self._stop_asked(mission):
+            return mission                      # never "done", announced or applied on its own after a stop
         mission["status"] = status
         mission["summary"] = summary or mission.get("summary", "")
         mission["blocked_reason"] = blocked
@@ -450,6 +483,18 @@ class MissionRunner:
 class _NullLogger:
     def __getattr__(self, name):
         return lambda *a, **k: None
+
+
+def stop_gate(cwd: Optional[str], store: Optional[MissionStore] = None) -> bool:
+    """For the process runner: does the command about to start belong to a task that was stopped? The task is the one
+    whose loop is running on this thread (core.usage carries its id), so a chat or another project's work that happens
+    to start a command at the same moment is never refused, and the gate closes by itself when the loop ends."""
+    from core import usage
+    mission_id = usage.context().get("mission_id")
+    if not mission_id:
+        return False
+    m = (store or MissionStore()).load(mission_id)
+    return bool(m and m.get("status") == "STOPPED")
 
 
 def stop_request(mission_id: str, reason: str = "", by: str = "사용자", store: Optional[MissionStore] = None) -> Optional[Dict[str, Any]]:
