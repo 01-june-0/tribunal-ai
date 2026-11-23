@@ -15,7 +15,7 @@
 
 ### 현재 결과
 
-2026-11-23 기준 **798개 모두 통과**합니다. 새 변경은 이 상태를 유지해야 합니다.
+2026-11-23 기준 **799개 모두 통과**합니다. 새 변경은 이 상태를 유지해야 합니다.
 
 원본에서 넘어올 때는 7개가 macOS에서 실패했습니다. 하나씩 원인을 확인해 보니 여섯은 테스트가 Windows나 특정 환경을 전제로 한
 것이었고, 하나는 제품 코드에도 문제가 있었습니다.
@@ -102,7 +102,7 @@ sh start-companion.sh
 | `/chat`, `/chat/new` | ARCHITECT에게 지시, 새 대화 |
 | `/project` | 프로젝트 선택 |
 | `/run/approve`, `/run/reject` | 멈춘 실행의 승인 · 거절 |
-| `/ops/mission/decide` | 작업의 결과물 적용 · 폐기, 이어서 시도, 다시 계획 |
+| `/ops/mission/decide` | 작업의 결과물 적용 · 폐기, 이어서 시도, 다시 계획, 남은 작업 사본 지우기 |
 | `/result/apply`, `/result/discard` | 작업 기록 없이 끝난 결과물의 적용 · 폐기 |
 | `/result/open_worktree`, `/result/open_project` | 폴더 열기 |
 | `/ops/roles`, `/ops/ai`, `/ops/ai/refresh`, `/ops/ai/account` | 역할 배정, 모델 설정, 한도 다시 조회, 로그인 · 계정 변경 · 로그아웃 창 열기 |

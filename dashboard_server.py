@@ -992,6 +992,20 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
             return {"status": "busy", "error": "mission is still running"}
         if expected_run and expected_run != (deliverable_run_id(m) or ""):
             return {"status": "stale", "error": "the result changed since it was shown; open it again"}
+    if action == "clear":
+        # The working copies an apply left on purpose (a conflicting file was skipped, and the AIs' version of it lives
+        # only there). Once the person has taken what they need from it, this removes them. Nothing else changes.
+        if m.get("status") == "RUNNING":
+            return {"status": "busy", "error": "mission is still running"}
+        with _RUN_LOCK:
+            if _project_key(m.get("project_path") or "") in _ACTIVE_PROJECTS:
+                return {"status": "busy", "error": "a task is still working in this project"}
+        if (m.get("applied") or {}).get("status") != "applied":
+            return {"status": "refused", "reason": "only the working copies of an applied result are cleared this way"}
+        released = _result_manager().release_worktrees([s["run_id"] for s in m.get("steps", []) if s.get("run_id")], by=by, why="cleared after apply")
+        ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} 작업 사본 정리: {len(released)}개")
+        invalidate_status_cache()
+        return {"status": "cleared", "released": released}
     if action == "apply":
         rid = deliverable_run_id(m)
         if not rid:

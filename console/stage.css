@@ -93,7 +93,7 @@ body.broadcast button.meta-chip::after{content:""}
 .delivery-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .delivery-actions{display:flex;gap:6px;flex-wrap:wrap}
 .delivery-actions button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--text);font-size:var(--fs-sm)}
-.delivery-actions button:first-child{background:var(--ok);border-color:var(--ok);color:#06101c;font-weight:700}
+.delivery-actions button:first-child:not(.ghost){background:var(--ok);border-color:var(--ok);color:#06101c;font-weight:700}
 .delivery-actions button.ghost{color:var(--muted)}
 .delivery-actions button.warn{background:var(--warn);border-color:var(--warn);color:#1a1204;font-weight:700}
 .delivery-actions button:disabled{opacity:.55;cursor:default}

@@ -425,3 +425,34 @@ def test_the_stage_says_why_an_apply_was_undone():
     assert "else if(state==='rolled_back')said=undone(live.applied);" in stage
     assert "else if(out.status==='rolled_back')mine.done='rolled_back';" in stage
     assert "if(state==='rolled_back')box.append(el('small',undone(ms.applied),'ai-sub'));" in stage
+
+
+def test_the_working_copy_kept_after_a_skipped_conflict_can_be_cleared_from_the_card(tmp_path, cleanup_runs, monkeypatch):
+    import dashboard_server as d
+    proj = project(tmp_path)
+    rid = "RUN-TEST-REL6"; cleanup_runs.append(rid)
+    wt = fake_run(proj, rid, snapshot(str(proj))); _in_task(rid, "MSN-K")
+    (wt / "a.py").write_text("a = 2\n", encoding="utf-8"); (wt / "b.py").write_text("b = 2\n", encoding="utf-8")
+    (proj / "b.py").write_text("b = 99\n", encoding="utf-8")
+    mission = {"mission_id": "MSN-K", "status": "DONE", "project_path": str(proj), "steps": [{"index": 1, "run_id": rid}], "base_worktree": str(wt)}
+
+    class Store:
+        def load(self, mid): return dict(mission) if mid == "MSN-K" else None
+        def save(self, m): mission.update(m)
+    monkeypatch.setattr(d, "MissionStore", Store)
+    monkeypatch.setattr(d, "_result_manager", lambda: ResultManager(config={"verification": {"test_command": None}}))
+    monkeypatch.setattr(d, "active_session_id", lambda: "S")
+    monkeypatch.setattr(d, "ChatManager", lambda: type("C", (), {"add_message": lambda *a, **k: None})())
+    monkeypatch.setattr(d, "invalidate_status_cache", lambda: None)
+    assert d.decide_mission("MSN-K", "clear")["status"] == "refused" and wt.exists()          # a result still waiting is not cleared this way
+    ResultManager(config={"verification": {"test_command": None}}).apply_tree(rid, request_id="rel6", on_conflict="skip")
+    mission["applied"] = {"status": "applied", "run_id": rid}
+    assert wt.exists()                                                                          # kept: the AIs' b.py is only there
+    monkeypatch.setitem(d._ACTIVE_PROJECTS, d._project_key(str(proj)), "MSN-OTHER")
+    assert d.decide_mission("MSN-K", "clear")["status"] == "busy" and wt.exists()
+    monkeypatch.delitem(d._ACTIVE_PROJECTS, d._project_key(str(proj)))
+    out = d.decide_mission("MSN-K", "clear")
+    assert out == {"status": "cleared", "released": [rid]} and not wt.exists() and _branches(proj) == []
+    assert (proj / "a.py").read_text(encoding="utf-8") == "a = 2\n" and (proj / "b.py").read_text(encoding="utf-8") == "b = 99\n"
+    stage = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "if(state==='applied'&&ms.leftover){" in stage and "decideMission(ms.id,'clear')" in stage

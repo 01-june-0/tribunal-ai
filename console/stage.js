@@ -220,7 +220,7 @@ async function decideMission(id,action,extra){
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
     if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),rolled_back:T('적용한 뒤 테스트가 통과하지 못해 원본을 되돌렸습니다.'),discarded:extra&&extra.cleared?T('작업 사본을 지웠습니다'):T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),rolled_back:T('적용한 뒤 테스트가 통과하지 못해 원본을 되돌렸습니다.'),cleared:T('작업 사본을 지웠습니다'),discarded:extra&&extra.cleared?T('작업 사본을 지웠습니다'):T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);answer=out;}
   catch(e){notice(T('요청 실패 · ')+e.message);}
   finally{deliveryBusy=false;if(lastModel){paintAttention(lastModel);paintDelivery(lastModel);}await pollActivity();if(result)paintResult();}
@@ -474,7 +474,7 @@ function paintDelivery(m){
   if(!box){box=el('div','','delivery');box.id='mission-delivery';$('mission-card').append(box);}
   const ms=m.mission,shown=!!(ms&&ms.deliverable&&ms.status!=='RUNNING');
   const state=shown?((ms.applied&&ms.applied.status)||ms.applyState||'pending'):'',[label,cls]=APPLY_KO[state]||[state,''];
-  const sig=JSON.stringify(shown?[ms.id,state,ms.applied&&ms.applied.files,ms.applied&&ms.applied.blocks,ms.source,deliveryBusy]:[]);
+  const sig=JSON.stringify(shown?[ms.id,state,ms.applied&&ms.applied.files,ms.applied&&ms.applied.blocks,ms.source,deliveryBusy,ms.leftover]:[]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;      // rebuilt only when something changed: a click or the focus is never lost to a poll
   const held=box.contains(document.activeElement)?document.activeElement.dataset.act:null;
   box.replaceChildren();if(!shown)return;
@@ -482,6 +482,14 @@ function paintDelivery(m){
   if(ms.applied&&ms.applied.files)box.append(el('small',ms.applied.files.slice(0,6).join(', ')+(ms.applied.files.length>6?T(' 외 {0}개',ms.applied.files.length-6):''),'ai-sub'));
   if(state==='rolled_back')box.append(el('small',undone(ms.applied),'ai-sub'));
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',blockText(ms.applied.blocks).slice(0,220),'ai-sub'));
+  if(state==='applied'&&ms.leftover){          // kept on purpose: the AIs' version of a skipped file exists only in there
+    const skipped=((ms.applied||{}).skipped_conflicts||[]).map(c=>c.path).filter(Boolean);
+    box.append(el('small',T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')+(skipped.length?' '+skipped.slice(0,6).join(', '):''),'ai-sub'));
+    const row=el('div','','delivery-actions'),clear=el('button',deliveryBusy?T('처리 중…'):T('작업 사본 지우기'));clear.type='button';clear.className='ghost';clear.dataset.act='clear';clear.disabled=deliveryBusy;
+    clear.onclick=()=>{if(confirm(T('남겨 둔 작업 사본 {0}개를 지울까요? 건너뛴 파일의 AI 버전도 함께 사라집니다. 원본 프로젝트는 바뀌지 않습니다.',ms.leftover)))decideMission(ms.id,'clear');};
+    row.append(clear);box.append(row);
+    if(held==='clear'&&!clear.disabled)clear.focus();
+  }
   if(state!=='applied'&&state!=='discarded'){
     const row=el('div','','delivery-actions');
     // The first button shows what changed; "원본에 적용" lives in that panel, after the changes have been seen.

@@ -268,6 +268,8 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.": "The AIs' version of the skipped files is still in the working copy.",
+  "남겨 둔 작업 사본 {0}개를 지울까요? 건너뛴 파일의 AI 버전도 함께 사라집니다. 원본 프로젝트는 바뀌지 않습니다.": "Clear the {0} working copies that were kept? The AIs' version of the skipped files goes with them. The original project does not change.",
   "적용한 뒤 테스트가 통과하지 못해 원본을 되돌렸습니다.": "The tests did not pass after applying, so the original was put back.",
   "건너뛴 파일 없이는 결과물이 동작하지 않는 것으로 보입니다: {0}": "The result does not seem to work without the skipped files: {0}",
   "하던 단계를 마무리하는 중입니다…": "Finishing the step it was on…",
