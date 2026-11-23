@@ -416,3 +416,12 @@ def test_the_stage_offers_to_clear_a_stopped_task_and_shows_why_it_stopped():
     assert "['BLOCKED','INCOMPLETE','FAILED','STOPPED']" in stage and "ms.status!=='STOPPED'&&last&&AT_WORK.has(last.state)" in stage
     assert "!ms.deliverable&&ms.leftover" in stage and "decideMission(ms.id,'discard',{cleared:'1'})" in stage
     assert "ms.closed" in stage and "ms.settling" in stage
+
+
+def test_the_stage_says_why_an_apply_was_undone():
+    """Found in a real run: skipping a conflicting file left the result broken, the engine put the project back, and
+    the open change panel went on saying "held back: conflict" while the card said only "failed"."""
+    stage = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "else if(state==='rolled_back')said=undone(live.applied);" in stage
+    assert "else if(out.status==='rolled_back')mine.done='rolled_back';" in stage
+    assert "if(state==='rolled_back')box.append(el('small',undone(ms.applied),'ai-sub'));" in stage

@@ -268,6 +268,8 @@ const EN={
   "\n최근 실행 기록: ": "\nLatest run: ",
   "없음": "none",
   "상태 연결을 확인하고 있습니다 · ": "Checking the status connection · ",
+  "적용한 뒤 테스트가 통과하지 못해 원본을 되돌렸습니다.": "The tests did not pass after applying, so the original was put back.",
+  "건너뛴 파일 없이는 결과물이 동작하지 않는 것으로 보입니다: {0}": "The result does not seem to work without the skipped files: {0}",
   "하던 단계를 마무리하는 중입니다…": "Finishing the step it was on…",
   "작업 정지로 멈췄습니다.": "Stopped by the stop button.",
   "작업 사본을 지운 작업입니다. 이어서 하려면 새로 지시해 주세요.": "The working copies of this task were cleared. Give a new instruction to go on.",

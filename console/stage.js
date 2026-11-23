@@ -209,6 +209,9 @@ function paintMission(m){
   const mk=ms.id+':status',prev=seenSteps.get(mk);seenSteps.set(mk,ms.status);
   if(!firstPaint&&prev&&prev!==ms.status&&ms.status==='DONE')Trinity.pulse(PULSE.done);
 }
+// An apply that was undone: the files were written, the project's tests did not pass with them, the project was put back.
+function undone(ap){const skipped=((ap||{}).skipped_conflicts||[]).map(c=>c.path).filter(Boolean);
+  return T('적용한 뒤 테스트가 통과하지 못해 원본을 되돌렸습니다.')+(skipped.length?' '+T('건너뛴 파일 없이는 결과물이 동작하지 않는 것으로 보입니다: {0}',skipped.slice(0,6).join(', ')):'');}
 const APPLY_KO={applied:[T('원본에 적용됨'),'ok'],blocked:[T('적용 보류 · 충돌/조건'),'warn'],pending:[T('적용 대기'),'warn'],discarded:[T('폐기됨'),''],rolled_back:[T('적용 실패 · 복구됨'),'bad'],busy:[T('적용 진행 중'),'run'],error:[T('적용 오류'),'bad']};
 let deliveryBusy=false;
 async function decideMission(id,action,extra){
@@ -217,7 +220,7 @@ async function decideMission(id,action,extra){
     const res=await fetch('/ops/mission/decide',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body});
     const out=await res.json().catch(()=>({}));
     if(!res.ok||!out.status)throw Error(out.error||out.reason||(T('서버 응답 ')+res.status));
-    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),discarded:extra&&extra.cleared?T('작업 사본을 지웠습니다'):T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
+    const msg={applied:T('원본에 적용했습니다 · {0}개 파일',(out.files||[]).length),blocked:T('적용할 수 없습니다 · ')+blockText(out.blocks).slice(0,160),rolled_back:T('적용한 뒤 테스트가 통과하지 못해 원본을 되돌렸습니다.'),discarded:extra&&extra.cleared?T('작업 사본을 지웠습니다'):T('결과물을 폐기했습니다'),resumed:T('작업을 이어서 진행합니다 (최대 {0}단계)',out.max_steps),busy:T('다른 작업이 진행 중입니다'),stale:T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.')}[out.status]||(out.status+' '+(out.error||out.reason||''));
     notice(msg);Trinity.pulse(out.status==='applied'?PULSE.done:out.status==='blocked'?PULSE.warn:PULSE.ok);answer=out;}
   catch(e){notice(T('요청 실패 · ')+e.message);}
   finally{deliveryBusy=false;if(lastModel){paintAttention(lastModel);paintDelivery(lastModel);}await pollActivity();if(result)paintResult();}
@@ -417,6 +420,7 @@ function paintResult(){
   const open=state!=='applied'&&state!=='discarded';
   if(open&&moved)said=moved;
   else if(state==='blocked'){const why=result.blocks||(live.applied&&live.applied.blocks)||[];said=T('적용 보류: ')+(blockText(why).slice(0,300)||T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'));}
+  else if(state==='rolled_back')said=undone(live.applied);
   // (the server's own pre-check is not repeated here: it is decided, and explained, when "원본에 적용" is pressed)
   if(note.textContent!==said)note.textContent=said;
   once(acts,JSON.stringify([state,deliveryBusy,!!moved,open]),()=>{
@@ -425,7 +429,7 @@ function paintResult(){
     apply.onclick=async()=>{const mine=result;let out=null;
       if(!loose)out=await applyMission(mine.ms,state);
       else if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',mine.ms.project||'—'):T('이 작업의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',mine.ms.project||'—')))out=await decideResult(mine.ms.id,'apply',state==='blocked'?{on_conflict:'skip'}:{});
-      if(out&&result===mine){if(out.status==='applied')mine.done='applied';else if(out.status==='blocked'){mine.done='blocked';mine.blocks=out.blocks||[];}}
+      if(out&&result===mine){if(out.status==='applied')mine.done='applied';else if(out.status==='blocked'){mine.done='blocked';mine.blocks=out.blocks||[];}else if(out.status==='rolled_back')mine.done='rolled_back';}
       paintResult();if(result===mine&&mine.done==='applied')$('rp-close').focus();};
     const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=async()=>{await decideMission(result.ms.id,'extend');closeResult();};
     const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';
@@ -476,6 +480,7 @@ function paintDelivery(m){
   box.replaceChildren();if(!shown)return;
   const head=el('div','','delivery-head');head.append(el('span',(ms.source==='bridge'||ms.source==='solomon'?T('외부 지시 · '):ms.source==='cli'?T('CLI 지시 · '):'')+T('결과물'),'kicker'),el('span',label,'badge '+cls));box.append(head);
   if(ms.applied&&ms.applied.files)box.append(el('small',ms.applied.files.slice(0,6).join(', ')+(ms.applied.files.length>6?T(' 외 {0}개',ms.applied.files.length-6):''),'ai-sub'));
+  if(state==='rolled_back')box.append(el('small',undone(ms.applied),'ai-sub'));
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',blockText(ms.applied.blocks).slice(0,220),'ai-sub'));
   if(state!=='applied'&&state!=='discarded'){
     const row=el('div','','delivery-actions');
