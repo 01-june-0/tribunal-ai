@@ -658,7 +658,7 @@ function callFacts(d){
 function verifyFacts(d){
   if(d.skipped)return [facts(T('검증'),[[T('시작'),stamp(d.at)],[T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]],[el('p',T('테스트를 실행하기 전에, 바뀐 내용을 검사하는 단계에서 멈췄습니다. 이때는 테스트가 실행되지 않았습니다. 멈춘 이유는 바로 위 줄에 있습니다.'),'cp-hint')])];
   const round=[T('회차'),T('{0}회차 · 전체 {1}회',d.round,d.rounds)];
-  if(!d.found)return [facts(T('검증'),[round,[T('시작'),stamp(d.at)]],[el('p',T('이 회차의 검증 기록은 남아 있지 않습니다.'),'cp-hint')])];
+  if(!d.found)return [facts(T('검증'),[round,[T('시작'),stamp(d.at)]],[el('p',d.running?T('결과는 실행이 끝나면 나옵니다.'):T('이 회차의 검증 기록은 남아 있지 않습니다.'),'cp-hint')])];
   const t=d.test||{},b=d.baseline;
   const out=[facts(T('검증'),[round,[T('명령'),t.command?codeEl(t.command):T('설정된 테스트 명령이 없습니다')],[T('결과'),d.timed_out?T('시간 초과 · 제한 시간 안에 끝나지 않음'):t.ran?passFail(d.counts,t.passed):T('실행한 테스트 없음')],
     [T('종료 코드'),t.exit_code!=null?String(t.exit_code):null],[T('시작 전 기준'),b?passFail(b.counts,b.passed):null],[T('시작 → 끝'),stamp(d.at)+' → '+(d.ended_at?hms(utc(d.ended_at)):'—')],[T('걸린 시간'),took(d.at,d.ended_at)],
@@ -838,7 +838,7 @@ function paintCore(){
   const more=el('button',T('자세한 기록 열기'));more.type='button';more.onclick=()=>{const key=insideKey;leaveCloud();openRecord(key);};
   const changed=done?d.changed||[]:[];
   right.replaceChildren(el('span',T('이 테스트 실행'),'kicker'),head,cells,el('span',T('이때 바뀌어 있던 파일'),'kicker'),
-    changed.length?listEl(changed.slice(0,12).map(codeEl)):el('small',done?T('바뀐 파일이 없습니다.'):T('기록 없음'),'cp-hint'),more);
+    changed.length?listEl(changed.slice(0,12).map(codeEl)):el('small',done?T('바뀐 파일이 없습니다.'):d.running?T('끝나면 기록됩니다'):T('기록 없음'),'cp-hint'),more);
   ticks.replaceChildren();
   if(c&&c.total>0){const a=el('i','','bar ok'),b=el('i','','bar bad');a.style.width=(c.passed/c.total*100)+'%';b.style.left=(c.passed/c.total*100)+'%';b.style.width=(c.failed/c.total*100)+'%';ticks.append(a,b);}
   }
