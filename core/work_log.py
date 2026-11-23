@@ -113,6 +113,12 @@ def _strings(value: Any, limit: int = LIST_MAX, chars: int = 300) -> List[str]:
     return [_text(x, chars) for x in (value if isinstance(value, list) else [])][:limit]
 
 
+def _timed_out(test: Any) -> bool:
+    """The test command was cut off by the time limit (core.verifier's record of that): it has no counts, and "no test
+    result" would not say why."""
+    return isinstance(test, dict) and test.get("exit_code") == -1 and str(test.get("output") or "").startswith("Command timed out")
+
+
 def _counts(verification: Optional[dict]) -> Optional[dict]:
     counts = (verification or {}).get("test_counts")
     if isinstance(counts, dict) and all(isinstance(counts.get(k), int) for k in ("passed", "failed", "total")):
@@ -333,7 +339,7 @@ def rows(limit: int = 40) -> List[dict]:
                 test = (found or {}).get("test") if isinstance((found or {}).get("test"), dict) else {}
                 row.update(event="verify", round=nth, rounds=rounds, known=found is not None, skipped=nth == 0,
                            passed=found.get("passed") if found else None, counts=_counts(found),
-                           ran=bool(test.get("executed")) if found else None)
+                           ran=bool(test.get("executed")) if found else None, timed_out=_timed_out(test))
             else:
                 row.update(event="end", state=t["to_state"],
                            stage="ENTRY" if str(t["details"] or "").startswith("APPROVAL_REQUIRED") else None)
@@ -413,7 +419,7 @@ def _transition_detail(tr_id: int) -> dict:
                 out["test"] = {"command": _text(test.get("command"), 300) or None, "ran": bool(test.get("executed")),
                                "passed": test.get("passed"), "exit_code": test.get("exit_code"),
                                "output_tail": str(test.get("output") or "")[-TAIL_CHARS:]}
-                out["passed"], out["counts"] = found.get("passed"), _counts(found)
+                out["passed"], out["counts"], out["timed_out"] = found.get("passed"), _counts(found), _timed_out(test)
                 out["changed"] = [line for line in str(found.get("git_status") or "").splitlines() if line.strip()][:LIST_MAX]
                 out["missing_outputs"] = _strings(found.get("required_outputs_missing"))
                 baseline = _read(run_id, "baseline_verification.json")

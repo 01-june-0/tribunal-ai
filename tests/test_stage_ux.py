@@ -303,3 +303,28 @@ def test_a_task_called_done_with_nothing_passed_says_so_and_can_be_cleared():
     assert "(ms.status==='DONE'&&!ms.deliverable&&ms.steps.length&&!ms.steps.some(s=>s.state==='PASS'))" in JS
     assert "검증을 통과한 단계가 없어 적용할 결과물이 없습니다" in JS
     assert "if(ms.status!=='DONE')row.append(again)" in JS and "if(!ms.deliverable&&ms.leftover){" in JS
+
+
+def test_a_test_run_cut_off_by_the_time_limit_says_so(tmp_path):
+    """Found in a real run: three rounds that each ran out of time read "테스트 결과 없음" in the record."""
+    from core import work_log
+    assert work_log._timed_out({"exit_code": -1, "output": "Command timed out after 10.0 seconds: HARD_TIMEOUT: Exceeded 10.0s"})
+    assert not work_log._timed_out({"exit_code": 1, "output": "1 failed"}) and not work_log._timed_out({"exit_code": -1, "output": "boom"})
+    assert not work_log._timed_out(None) and not work_log._timed_out({})
+    src = "const T=(s,...a)=>s.replace(/\\{(\\d)\\}/g,(m,i)=>a[i]);\n" + JS[JS.index("function testLine(t){"):JS.index("\n", JS.index("function testLine(t){"))] \
+        + "\n" + JS[JS.index("function verifyOutcome(r){"):JS.index("function logLine(r){")]
+    out = _node(tmp_path, src + """
+console.log(JSON.stringify([verifyOutcome({known:true,ran:true,timed_out:true,passed:false,counts:{passed:0,failed:0,total:0}}),
+  verifyOutcome({known:true,ran:true,timed_out:false,passed:false,counts:{passed:1,failed:1,total:2}}), verifyOutcome({known:false})]));""")
+    assert json.loads(out) == [["시간 초과 · 제한 시간 안에 끝나지 않음", "bad"], ["테스트 2개 중 1개 실패", "bad"], ["기록 없음", "off"]]
+
+
+def test_a_step_that_is_not_finished_is_named_in_words(tmp_path):
+    """Found on a stopped task: "2단계 · DECIDING"."""
+    start = JS.index("const AT_STAGE=")
+    src = ("const T=(s,...a)=>s.replace(/\\{(\\d)\\}/g,(m,i)=>a[i]);const STATE_KO={PASS:'통과',FAIL:'실패'};const testLine=()=>'';\n"
+           + JS[start:JS.index("function orderDetails(runId){")])
+    out = _node(tmp_path, src + """
+console.log(JSON.stringify([stepNote({index:2,state:'DECIDING'},true), stepNote({index:1,state:'BUILDING'},false), stepNote({index:1,state:'PASS'},true),
+  stepNote({index:3,state:'SOMETHING_NEW'},true)]));""")
+    assert json.loads(out) == ["2단계 · 판단 중에 멈춤", "1단계 · 제작 중", "1단계 · 통과", "3단계 · SOMETHING_NEW"]

@@ -149,7 +149,7 @@ class ProposalMaker(AntigravityMaker):
                   'Implement the ORDER and real behavior tests. Preserve existing behavior. No placeholder implementations. '
                   'Return only changed files. No deletion operations. Stay within file and diff budgets. '
                   'ARCHITECT feedback and outstanding inspector findings in context must be resolved. '
-                  'Director host Python is ' + sys.version.split()[0] + '; platform is ' + sys.platform +
+                  'Tribunal host Python is ' + sys.version.split()[0] + '; platform is ' + sys.platform +
                   '. Honor any project-specific runtime requirements in the ORDER.\nORDER:\n' + order.model_dump_json() +
                   '\nREFERENCE DOCUMENTS:\n' + json.dumps(documents, ensure_ascii=False) +
                   '\nREFERENCE SOURCE FILES (read-only unless ORDER allows writes; omitted files are not necessarily absent):\n' + json.dumps(sources, ensure_ascii=False)

@@ -273,7 +273,7 @@ try:
         control_dirs = {control_dirs!r}
         control_files = {control_files!r}
         if any(p in control_dirs for p in rel_parts) or (len(rel_parts) == 1 and rel_parts[0] in control_files):
-            print(json.dumps({{"decision": "deny", "reason": "Scoped permission DENY: Director control-plane path is never writable"}}))
+            print(json.dumps({{"decision": "deny", "reason": "Scoped permission DENY: Tribunal control-plane path is never writable"}}))
             sys.exit(0)
 
     # Check shell execution tools
@@ -592,7 +592,7 @@ except Exception as e:
             "EXISTING TESTS ARE PROTECTED: never delete, rename, skip, weaken or replace an existing test file or "
             "test function unless ALLOWED DELETIONS lists that exact path. Add new tests next to the existing ones. "
             "If the goal seems to require changing or removing an existing test, do NOT do it: finish the rest, "
-            "keep the test as it is, and explain the conflict in your final summary so the Director can ask the operator. "
+            "keep the test as it is, and explain the conflict in your final summary so Tribunal can ask the operator. "
             "A result that removed or rewrote existing tests is rejected by the Inspector as an unauthorised deletion.\n\n"
             f"HARD CHANGE CAPS: at most {order.max_files_changed} changed files and at most "
             f"{order.max_diff_lines} total added/deleted lines. These are fail-closed limits; implement the "
@@ -607,7 +607,7 @@ except Exception as e:
             "DENY:\n"
             + "\n".join(f"- {p}" for p in (scoped_perms["deny_writes"] + scoped_perms["deny_commands"])) + "\n\n"
             "PRESERVATION MANDATE: Preserve all existing functions, classes, and tests verbatim without deletion or replacement!\n"
-            "Do not invoke run_command, Bash, terminal, or any sandbox bypass. The Director runs Git checks and "
+            "Do not invoke run_command, Bash, terminal, or any sandbox bypass. Tribunal runs Git checks and "
             "deterministic verification after you finish. Use only file tools to write the required code and tests "
             "directly into the allowed paths."
         )
@@ -750,7 +750,7 @@ except Exception as e:
                     status="FAILED",
                     files_modified=[],
                     commands_run=[invocation_cmd],
-                    summary="Maker modified Director control-plane files (kept in worktree for inspection)",
+                    summary="Maker modified Tribunal control-plane files (kept in worktree for inspection)",
                     error="CONTROL_PLANE_MODIFIED: " + "; ".join(f"Control plane modified: {c}" for c in changed)
                 )
 

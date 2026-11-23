@@ -147,7 +147,7 @@ def test_9_pre_write_and_hook_deny_control_plane(tmp_path):
         target = pat.replace("/**", "").replace("/*", "")
         assert f"write_file({target})" in scoped["deny_writes"]
     src = Path("agents/antigravity_maker.py").read_text(encoding="utf-8")
-    assert "SafetyPolicy.CONTROL_PLANE_PATTERNS" in src and "control_dirs" in src and "Director control-plane path is never writable" in src
+    assert "SafetyPolicy.CONTROL_PLANE_PATTERNS" in src and "control_dirs" in src and "Tribunal control-plane path is never writable" in src
     for pat in SafetyPolicy.CONTROL_PLANE_PATTERNS:
         target = pat.replace("/**", "").replace("/*", "")
         assert f"write_file({target})" in AntigravityMaker.SAFE_DEFAULT_SETTINGS["permissions"]["deny"]

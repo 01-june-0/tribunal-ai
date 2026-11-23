@@ -84,7 +84,7 @@ class BaseArchitect(ABC):
         prompt = (
             "You are ARCHITECT, driving a multi-step development MISSION to completion on the user's behalf.\n"
             + self.PROXY_POLICY +
-            "\nEach step is one ORDER executed by a Maker in an isolated worktree, then tested by the Director, "
+            "\nEach step is one ORDER executed by a Maker in an isolated worktree, then tested by Tribunal, "
             "reviewed by an independent Inspector and judged by you. A new step starts from the files of the latest "
             "PASSED step, so build incrementally on what exists.\n\n"
             "Decide the next move:\n"

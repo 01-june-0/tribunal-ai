@@ -326,7 +326,7 @@ class SafetyPolicy:
 
             # Director control plane is never writable by the Maker (hard deny, regardless of the ORDER)
             if cls.is_control_plane_path(rel_path):
-                return False, f"Forbidden: Director control-plane path is never writable: {rel_path}"
+                return False, f"Forbidden: Tribunal control-plane path is never writable: {rel_path}"
 
             # Check protected paths
             if cls.is_path_protected(rel_path, protected_paths):

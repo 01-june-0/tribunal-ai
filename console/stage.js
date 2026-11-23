@@ -257,8 +257,11 @@ function stopReason(text){
   if((m=s.match(/^ARCHITECT could not plan the next step: (.*)$/s)))return T('ARCHITECT가 다음 단계를 계획하지 못했습니다: {0}',m[1]);
   return s;
 }
-function stepNote(s){
-  const bits=[T('{0}단계 · {1}',s.index,STATE_KO[s.state]||s.state||T('진행 중'))];
+// A step that is not finished: at work, or - in a task that is not running - the place where it was stopped.
+const AT_STAGE={PLANNING:T('설계'),ORDER_READY:T('제작 준비'),BUILDING:T('제작'),VERIFYING:T('테스트'),REVIEWING:T('감리'),DECIDING:T('판단')};
+function stepNote(s,halted){
+  const at=AT_STAGE[s.state],state=STATE_KO[s.state]||(at?(halted?T('{0} 중에 멈춤',at):T('{0} 중',at)):s.state||T('진행 중'));
+  const bits=[T('{0}단계 · {1}',s.index,state)];
   if(s.tests)bits.push(testLine(s.tests));
   if(s.review)bits.push(s.review==='pass'?T('감리 통과'):T('감리 수정 요청'));
   if(s.repairs)bits.push(T('자동 수정 {0}회',s.repairs));
@@ -334,7 +337,7 @@ function paintAttention(m){
     // Rejected after the code was written: it was built, in the working copy; what did not happen is the testing and applying.
     else box.append(el('p',no&&own&&ap.rejected&&ap.stage==='POST_BUILD'?T('만든 코드를 거절했습니다. 테스트와 적용은 진행하지 않았고, 원본 프로젝트는 그대로입니다.'):no?T('마지막 단계는 거절해서 실행되지 않았습니다. 원본 프로젝트는 그대로입니다.'):ms.status==='STOPPED'?T('작업 정지로 멈췄습니다.'):ms.status==='DONE'?T('ARCHITECT는 목표를 마쳤다고 판단했지만, 검증을 통과한 단계가 없어 적용할 결과물이 없습니다.'):stopReason(ms.blocked)||T('끝내지 못하고 멈췄습니다.')));
     if(ms&&ms.steps.length&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='steps';d.append(el('summary',T('단계별 결과')));const ol=el('ol');
-      for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
+      for(const s of ms.steps){const li=el('li');li.append(el('b',stepNote(s,!ms.live)));if(s.note)li.append(el('span',' — '+s.note));ol.append(li);}
       d.append(ol);box.append(d);}
     if(ms&&ms.summary&&(own||kind==='stopped')){const d=el('details','','more');d.dataset.k='summary';d.append(el('summary',T('ARCHITECT 요약')),el('p',ms.summary));box.append(d);}
     if(kind==='stopped'&&ms.closed)box.append(el('small',T('작업 사본을 지운 작업입니다. 이어서 하려면 새로 지시해 주세요.'),'ai-sub'));
@@ -577,6 +580,7 @@ function verifyOutcome(r){
   if(!(r.known||r.found))return [T('기록 없음'),'off'];
   const ran=r.test?r.test.ran:r.ran;
   if(ran===false)return [T('실행한 테스트 없음'),'off'];
+  if(r.timed_out)return [T('시간 초과 · 제한 시간 안에 끝나지 않음'),'bad'];
   return [r.counts?testLine(r.counts):r.passed?T('통과'):T('실패'),r.passed?'ok':'bad'];
 }
 function logLine(r){                                       // {who,color,what,out:[words,class]}
@@ -656,7 +660,7 @@ function verifyFacts(d){
   const round=[T('회차'),T('{0}회차 · 전체 {1}회',d.round,d.rounds)];
   if(!d.found)return [facts(T('검증'),[round,[T('시작'),stamp(d.at)]],[el('p',T('이 회차의 검증 기록은 남아 있지 않습니다.'),'cp-hint')])];
   const t=d.test||{},b=d.baseline;
-  const out=[facts(T('검증'),[round,[T('명령'),t.command?codeEl(t.command):T('설정된 테스트 명령이 없습니다')],[T('결과'),t.ran?passFail(d.counts,t.passed):T('실행한 테스트 없음')],
+  const out=[facts(T('검증'),[round,[T('명령'),t.command?codeEl(t.command):T('설정된 테스트 명령이 없습니다')],[T('결과'),d.timed_out?T('시간 초과 · 제한 시간 안에 끝나지 않음'):t.ran?passFail(d.counts,t.passed):T('실행한 테스트 없음')],
     [T('종료 코드'),t.exit_code!=null?String(t.exit_code):null],[T('시작 전 기준'),b?passFail(b.counts,b.passed):null],[T('시작 → 끝'),stamp(d.at)+' → '+(d.ended_at?hms(utc(d.ended_at)):'—')],[T('걸린 시간'),took(d.at,d.ended_at)],
     [T('작업'),taskName(d)],[T('실행 번호'),codeEl(d.run_id)]])];
   if(t.output_tail)out.push(facts(T('출력 끝부분'),null,[el('pre',t.output_tail)]));

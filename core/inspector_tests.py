@@ -39,7 +39,7 @@ def prompt_section(verification: Optional[Dict[str, Any]]) -> str:
             "test in the diff that asserts it. For every criterion that no test asserts, write a test yourself: up to "
             f"{MAX_FILES} NEW test files, in the "
             'field "tests": [{"path": "<repo-relative path>", "content": "<full file text>"}]. Rules: you still modify '
-            "nothing yourself — the Director runs these files in a throw-away copy of the project; new files only, inside an existing test directory, named like `test_inspector_<topic>.py` "
+            "nothing yourself — Tribunal runs these files in a throw-away copy of the project; new files only, inside an existing test directory, named like `test_inspector_<topic>.py` "
             "(or `inspector_<topic>.test.js`, `inspector_<topic>_test.go`); use only what the project already uses; "
             "assert only behaviour the ORDER states, never a guess — a wrong test costs a whole correction round. "
             'Return "tests": [] only when every criterion is already asserted by a test in the diff.\n')
