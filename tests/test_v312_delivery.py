@@ -456,3 +456,27 @@ def test_the_working_copy_kept_after_a_skipped_conflict_can_be_cleared_from_the_
     assert (proj / "a.py").read_text(encoding="utf-8") == "a = 2\n" and (proj / "b.py").read_text(encoding="utf-8") == "b = 99\n"
     stage = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
     assert "if(state==='applied'&&ms.leftover){" in stage and "decideMission(ms.id,'clear')" in stage
+
+
+def test_clean_worktrees_takes_what_was_applied_discarded_or_closed_changes_and_branch_included(tmp_path, cleanup_runs):
+    """Tried for real: the command skipped every working copy that held changes - that is, every one worth removing."""
+    from click.testing import CliRunner
+    import director
+    proj = project(tmp_path)
+    gone, waits = "RUN-TEST-CLN1", "RUN-TEST-CLN2"; cleanup_runs += [gone, waits]
+    wt1 = fake_run(proj, gone, snapshot(str(proj))); (wt1 / "a.py").write_text("a = 2\n", encoding="utf-8")
+    wt2 = fake_run(proj, waits, snapshot(str(proj))); (wt2 / "a.py").write_text("a = 3\n", encoding="utf-8")
+    ResultManager()._set_state(gone, "DISCARDED", "by hand", "t")
+    dry = CliRunner().invoke(director.cli, ["clean-worktrees", "-p", str(proj), "--dry-run"])
+    assert dry.exit_code == 0 and gone in dry.output and wt1.exists()
+    out = CliRunner().invoke(director.cli, ["clean-worktrees", "-p", str(proj)])
+    assert out.exit_code == 0 and not wt1.exists() and _branches(proj) == [waits]
+    assert wt2.exists() and "Skipping " + waits in out.output              # a result still waiting for a decision stays
+    # applied with a conflicting file skipped: the AIs' version of that file is only in the copy, so it needs the flag
+    (wt2 / "b.py").write_text("b = 2\n", encoding="utf-8"); (proj / "b.py").write_text("b = 99\n", encoding="utf-8")
+    done = ResultManager(config={"verification": {"test_command": None}}).apply_tree(waits, request_id="cln", on_conflict="skip")
+    assert done["status"] == "applied" and ResultManager().result_state(waits)["skipped_conflicts"] == ["b.py"]
+    out = CliRunner().invoke(director.cli, ["clean-worktrees", "-p", str(proj)])
+    assert wt2.exists() and "Keeping " + waits in out.output
+    out = CliRunner().invoke(director.cli, ["clean-worktrees", "-p", str(proj), "--purge-reviewed"])
+    assert not wt2.exists() and _branches(proj) == []

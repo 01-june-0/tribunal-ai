@@ -7,7 +7,7 @@ const $=id=>document.getElementById(id);
 const AI={ANTHROPIC:{name:'Claude',rgb:[1,.54,.36],css:'#ff8a5c'},OPENAI:{name:'Codex',rgb:[.24,.95,.75],css:'#3df2c0'},GOOGLE:{name:'Antigravity',rgb:[.42,.65,1],css:'#6aa5ff'}};
 const ROLES=['ARCHITECT','MAKER','INSPECTOR'];
 const ROLE_KO={ARCHITECT:T('ARCHITECT · 설계'),MAKER:T('MAKER · 제작'),INSPECTOR:T('INSPECTOR · 감리')};
-const DEFAULT_ASSIGN={ARCHITECT:'ANTHROPIC',MAKER:'GOOGLE',INSPECTOR:'OPENAI'};
+const DEFAULT_ASSIGN={ARCHITECT:'ANTHROPIC',MAKER:'OPENAI',INSPECTOR:'GOOGLE'};   // config.yaml's default roles
 const PIPE=['PLANNING','BUILDING','VERIFYING','REVIEWING','DECIDING'];
 const PHASE={
   IDLE:{word:T('대기'),sub:T('세 AI가 지시를 기다립니다'),core:.18},

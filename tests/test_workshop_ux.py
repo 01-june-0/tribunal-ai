@@ -242,7 +242,13 @@ def test_phone_width_keeps_the_stop_buttons_on_screen():
     css = (ROOT / "console" / "stage.css").read_text(encoding="utf-8")
     phone = css[css.index("@media(max-width:760px){\n  #stage{"):]
     phone = phone[:phone.index("\n}")]
-    assert "#btn-broadcast,#btn-lang{order:1}" in phone and ".brand{display:none}" in phone   # stop buttons first
+    # The action row scrolls sideways from tablet width down, so the stop buttons come first from there on - found at
+    # 768px, where "시스템 중지" (and in English "Halt work" too) had slid out of view.
+    tablet = css[css.index("@media(max-width:1180px){"):]
+    tablet = tablet[:tablet.index("\n}")]
+    assert "#btn-broadcast,#btn-lang{order:1}" in tablet and "overflow-x:auto" in tablet
+    assert "#topbar{background:#04060cf2}" in tablet                          # the page scrolls under the bar there
+    assert ".brand{display:none}" in phone
     assert "overflow-x:auto" in phone and "display:none}   /*" not in phone   # nothing is taken away from a touch screen
 
 

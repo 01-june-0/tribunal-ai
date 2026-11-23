@@ -160,7 +160,7 @@ def test_demo_server_is_read_only_and_keeps_the_real_machine_out(demo_server):
         assert _http(demo_server, path, "POST", body, token)[0] == 403, path
     assert _http(demo_server, "/bridge/projects", headers=token)[0] == 403       # would list real project folders
     status, roles_seen = _http(demo_server, "/ops/roles")
-    assert status == 200 and roles_seen == {"roles": {"architect": "claude", "maker": "antigravity", "inspector": "openai"},
+    assert status == 200 and roles_seen == {"roles": {"architect": "claude", "maker": "openai", "inspector": "antigravity"},
                                             "independence": "full", "csrf": ""}
     status, ai = _http(demo_server, "/ops/ai")                                  # invented plan and limits, nothing looked up
     assert status == 200 and ai["limits"]["claude"]["plan"] == "max" and ai["settings"]["claude"]["model"] == "sonnet"

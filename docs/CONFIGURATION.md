@@ -204,11 +204,14 @@ python director.py do [-p 프로젝트] [--profile quick|standard|deep] [--no-ap
 python director.py mission -p 프로젝트 -g "목표" [--max-steps N] [--profile …] [--mission-id ID [--replan "이유"]]
 python director.py run -p 프로젝트 -g "목표" [--architect-provider claude|codex|mock]
 python director.py status [-r 실행번호]
-python director.py resume
+python director.py resume 실행번호
 python director.py clean-worktrees -p 프로젝트 [--dry-run] [--purge-reviewed]
 ```
 
 - `do`는 가장 짧은 길입니다. 콘솔이 떠 있으면 거기에 작업을 넘기고, 진행은 한눈에 탭에서 보입니다. `-p`를 생략하면 현재 폴더가
   git 저장소일 때 그 폴더를 씁니다.
 - `mission`은 작업을 직접 돌리고, `run`은 단계 하나만 돌립니다.
-- `clean-worktrees`는 끝난 작업 사본을 정리합니다. `--dry-run`으로 먼저 목록만 볼 수 있습니다.
+- `resume`은 멈춘 실행 하나를 끝까지 돌립니다(그 실행이 속한 작업은 콘솔의 **이어서 시도**로 이어 갑니다).
+- `clean-worktrees`는 더 필요 없는 작업 사본과 실행 브랜치를 정리합니다: 적용 · 폐기한 결과물, 닫힌 작업, 실패로 끝난 실행.
+  결정을 기다리는 결과물과 충돌 파일을 건너뛰어 일부러 남겨 둔 작업 사본은 `--purge-reviewed`를 줘야 지웁니다. `--dry-run`으로
+  먼저 목록만 볼 수 있습니다.

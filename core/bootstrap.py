@@ -20,8 +20,8 @@ def git(root, *args, env=None):
 
 def identity():
     env = os.environ.copy()
-    env.update(GIT_AUTHOR_NAME='AI DEV Bootstrap', GIT_AUTHOR_EMAIL='bootstrap@localhost',
-               GIT_COMMITTER_NAME='AI DEV Bootstrap', GIT_COMMITTER_EMAIL='bootstrap@localhost')
+    env.update(GIT_AUTHOR_NAME='Tribunal AI', GIT_AUTHOR_EMAIL='bootstrap@localhost',
+               GIT_COMMITTER_NAME='Tribunal AI', GIT_COMMITTER_EMAIL='bootstrap@localhost')
     return env
 
 def prepare_project(path):
@@ -34,7 +34,7 @@ def prepare_project(path):
     try: git(root, 'rev-parse', '--verify', 'HEAD')
     except ValueError:
         tree = git(root, 'mktree')
-        commit = git(root, 'commit-tree', tree, '-m', 'AI DEV empty starting point', env=identity())
+        commit = git(root, 'commit-tree', tree, '-m', 'Tribunal AI: empty starting point', env=identity())
         git(root, 'update-ref', 'HEAD', commit)
     return str(root)
 
@@ -169,7 +169,7 @@ def snapshot(root, exclude=None, report=None):
         git(root, 'add', '-u', env=env)
         for rel in safe: git(root, 'add', '--', rel, env=env)
         tree = git(root, 'write-tree', env=env)
-        commit = git(root, 'commit-tree', tree, '-p', head, '-m', 'AI DEV private working-copy snapshot', env=env)
+        commit = git(root, 'commit-tree', tree, '-p', head, '-m', 'Tribunal AI: private working-copy snapshot', env=env)
     return commit
 
 def bootstrap_tests(worktree):
@@ -192,7 +192,7 @@ def test_existing_python_source_parses():
         ast.parse(path.read_text(encoding='utf-8-sig'), filename=str(path))
 ''', encoding='utf-8')
     git(root, 'add', '--', rel)
-    git(root, '-c', 'user.name=AI DEV Bootstrap', '-c', 'user.email=bootstrap@localhost',
+    git(root, '-c', 'user.name=Tribunal AI', '-c', 'user.email=bootstrap@localhost',
         'commit', '-m', 'Initial syntax test, product tests still required')
     return rel
 

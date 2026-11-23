@@ -1707,7 +1707,7 @@ class Orchestrator:
             return stop
 
         # 4. State: ORDER_READY -> BUILDING
-        self.sm.transition_to(run_id, State.BUILDING, details="Antigravity executing in worktree")
+        self.sm.transition_to(run_id, State.BUILDING, details="Maker executing in worktree")
         logger.info("State -> BUILDING")
         maker_result, stop = self.run_maker_stage(run_id, order, worktree_path, maker_fn, logger, provenance_records)
         if stop:

@@ -310,12 +310,12 @@ def mode_sentence(mode: str, statuses: Dict[str, str]) -> str:
 
 
 def stage_sentence(state: str, roles: Dict[str, str], elapsed: str = "") -> str:
-    """'Antigravity가 코드를 작성하고 있습니다 · 42초'. roles: domain -> current_role string."""
+    """'Codex가 코드를 작성하고 있습니다 · 42초'. roles: domain -> current_role string."""
     def who(role):
         for d, r in roles.items():
             if role in [x.strip().upper() for x in str(r or "").replace("·", ",").split(",")]:
                 return PROVIDER_LABEL.get(d, (d, d, d))[2]
-        return {"ARCHITECT": "Codex", "INSPECTOR": "Codex", "MAKER": "Antigravity"}.get(role, "AI")
+        return {"ARCHITECT": "Claude", "INSPECTOR": "Antigravity", "MAKER": "Codex"}.get(role, "AI")      # config.yaml's default roles
     s = (state or "").upper()
     txt = {
         "PLANNING": f"{who('ARCHITECT')}가 요청을 분석하고 있습니다",

@@ -287,6 +287,29 @@ def clean_worktrees(project: str, dry_run: bool, purge_reviewed: bool):
     sm = StateMachine()
     runs = sm.list_runs()
 
+    # Runs whose working copy nobody is waiting for any more: the result was applied or discarded, or the task they
+    # belong to was closed (its copies cleared from the console). Those go without a flag, changes and branch included -
+    # the work is in the project, or was thrown away on purpose.
+    from core.mission import MissionStore
+    from core.result_manager import ResultManager
+    rm = ResultManager()
+    settled, kept = set(), set()
+    missions = MissionStore().all()
+    closed = {s.get("run_id") for m in missions if m.get("closed") for s in m.get("steps", [])}
+    # An apply that skipped a conflicting file keeps its copies on purpose: the AIs' version of that file is only there.
+    for m in missions:
+        if (m.get("applied") or {}).get("skipped_conflicts") and not m.get("closed"):
+            kept.update(s.get("run_id") for s in m.get("steps", []))
+    for r in runs:
+        try:
+            state = rm.result_state(r["run_id"])
+            if state.get("skipped_conflicts"):
+                kept.add(r["run_id"])
+            if r["run_id"] in closed or state.get("state") in ("APPLIED", "DISCARDED"):
+                settled.add(r["run_id"])
+        except Exception:
+            continue
+
     # Query terminal runs and active runs for this project
     terminal_worktrees = set()
     active_worktrees = set()
@@ -304,7 +327,7 @@ def clean_worktrees(project: str, dry_run: bool, purge_reviewed: bool):
             continue
         resolved_wt = str(Path(wt_path).resolve())
 
-        if r["current_state"] in TERMINAL_STATES:
+        if r["current_state"] in TERMINAL_STATES or r["run_id"] in settled:
             terminal_worktrees.add((r["run_id"], r["current_state"], resolved_wt))
         else:
             active_worktrees.add(resolved_wt)
@@ -326,6 +349,9 @@ def clean_worktrees(project: str, dry_run: bool, purge_reviewed: bool):
     except Exception as e:
         click.secho(f"Warning: git worktree list query: {e}", fg="yellow")
 
+    if not dry_run:         # entries whose folder is already gone would keep their branch "checked out" and undeletable
+        subprocess.run(["git", "worktree", "prune"], cwd=str(proj), capture_output=True)
+
     cleaned_count = 0
     for run_id, state, wt in terminal_worktrees:
         # Never remove an active run's worktree
@@ -338,6 +364,23 @@ def clean_worktrees(project: str, dry_run: bool, purge_reviewed: bool):
         wt_registered = wt in registered_wts
 
         if not wt_exists and not wt_registered:
+            if run_id in settled and run_id not in kept and not dry_run:
+                rm.release_worktrees([run_id], by="CLI", why="clean-worktrees")      # only its branch is left
+            continue
+
+        if run_id in settled and run_id in kept and not purge_reviewed:
+            click.echo(f"Keeping {run_id}: a conflicting file was skipped when it was applied, and the AIs' version of it "
+                       f"exists only in this working copy. Use --purge-reviewed to remove it anyway.")
+            continue
+        if run_id in settled:
+            if dry_run:
+                click.echo(f"[DRY-RUN] Would remove worktree and branch: {wt} (Run: {run_id}, applied / discarded / closed)")
+                cleaned_count += 1
+            elif rm.release_worktrees([run_id], by="CLI", why="clean-worktrees"):
+                click.echo(f"Removed worktree and branch: {wt} (Run: {run_id}, applied / discarded / closed)")
+                cleaned_count += 1
+            else:
+                click.secho(f"Failed to remove {wt}", fg="red")
             continue
 
         # Skip PASS and HUMAN_REQUIRED unless --purge-reviewed is True
@@ -387,7 +430,7 @@ def clean_worktrees(project: str, dry_run: bool, purge_reviewed: bool):
             pass
 
     action_label = "Identified" if dry_run else "Cleaned"
-    click.echo(f"\n{action_label} {cleaned_count} terminal worktree(s). Branches preserved for audit.")
+    click.echo(f"\n{action_label} {cleaned_count} terminal worktree(s). A run that still waits for a decision keeps its branch.")
 
 if __name__ == "__main__":
     cli()

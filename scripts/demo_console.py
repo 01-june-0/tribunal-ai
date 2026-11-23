@@ -36,13 +36,13 @@ ARCHITECT_PLAN = [("think", "", "", False), ("tool", "Read", "README.md", False)
              ("tool", "Read", "src/settings/theme.py", False), ("say", "", "설정 화면 구조를 확인했습니다. 다음 단계의 작업 지시서를 씁니다.", False)]
 ARCHITECT_DECIDE = [("think", "", "", False), ("tool", "Read", "tests/test_theme.py", False),
                ("say", "", '{"decision": "PASS", "rationale": "수용 기준 6개를 모두 충족했고 테스트 41개가 통과했습니다."}', False)]
-BUILD = [("think", "", "", False), ("tool", "read_file", "src/settings/theme.py", False), ("tool", "read_file", "src/settings/view.py", False),
-         ("think", "", "", False), ("tool", "write_file", "src/settings/theme.py", False), ("tool", "write_file", "src/settings/view.py", False),
-         ("tool", "write_file", "tests/test_theme.py", False), ("think", "", "", False)]
-REVIEW = [("say", "", "작업 지시서와 diff를 대조하고 테스트 근거를 확인하겠습니다.", False), ("tool", "exec", "git status --short", False),
-          ("tool", "exec", "git diff HEAD -- src/settings tests/test_theme.py", False), ("think", "", "", False),
-          ("tool", "exec", "rg -n 'prefers-color-scheme|set_theme' src tests", False), ("tool", "exec", "python3 -m pytest -q tests/test_theme.py", True),
-          ("tool", "exec", "git diff HEAD --check", False),
+BUILD = [("say", "", "테마 설정을 읽고 전환 스위치를 연결하겠습니다.", False), ("tool", "exec", "sed -n '1,120p' src/settings/theme.py", False),
+         ("tool", "exec", "rg -n 'set_theme|prefers-color-scheme' src", False), ("think", "", "", False),
+         ("tool", "exec", "apply_patch src/settings/theme.py", False), ("tool", "exec", "python3 -m pytest -q tests/test_theme.py", True),
+         ("tool", "exec", "apply_patch src/settings/view.py", False), ("tool", "exec", "apply_patch tests/test_theme.py", False),
+         ("tool", "exec", "python3 -m pytest -q tests/test_theme.py", False)]
+REVIEW = [("think", "", "", False), ("tool", "read_file", "src/settings/theme.py", False), ("tool", "read_file", "src/settings/view.py", False),
+          ("tool", "read_file", "tests/test_theme.py", False), ("tool", "run_command", "git diff HEAD --stat", False), ("think", "", "", False),
           ("say", "", '{"verdict": "pass", "p0": [], "p1": [], "p2": ["토글 상태 저장 키 이름을 상수로 빼면 좋습니다."]}', False)]
 
 
@@ -60,6 +60,7 @@ class Demo:
         os.environ["TRIBUNAL_DB_PATH"] = str(folder / "director.db")
         os.environ["CLAUDE_CONFIG_DIR"] = str(folder / "claude")
         os.environ["CODEX_HOME"] = str(folder / "codex")
+        os.environ["TRIBUNAL_RUNS_DIR"] = str(folder / "runs")
         os.environ.pop("DIRECTOR_TESTING", None)
         sys.path.insert(0, str(ROOT))
         from core import call_activity, usage
@@ -165,11 +166,12 @@ class Demo:
         self.move(run, "PLANNING", t)
         t = self.past_call(CLAUDE, "ARCHITECT", "CHAT" if first else "MISSION_PLANNING", t, 11 if first else 9, 11200, ARCHITECT_PLAN, mission, None if first else None)
         self.move(run, "BUILDING", t)
-        t = self.past_call(AGY, "MAKER", "BUILDING", t, 31, 6400, BUILD, mission, run, exact=False)
+        t = self.past_call(CODEX, "MAKER", "BUILDING", t, 31, 6400, BUILD, mission, run)
         self.move(run, "VERIFYING", t, f"Tests: {tests} passed")
+        self.test_record(run, tests, t + timedelta(seconds=5))
         t += timedelta(seconds=6)
         self.move(run, "REVIEWING", t)
-        t = self.past_call(CODEX, "INSPECTOR", "REVIEWING", t, 24, 9800, REVIEW, mission, run)
+        t = self.past_call(AGY, "INSPECTOR", "REVIEWING", t, 24, 9800, REVIEW, mission, run, exact=False)
         self.move(run, "DECIDING", t)
         t = self.past_call(CLAUDE, "ARCHITECT", "DECIDING", t, 8, 12100, ARCHITECT_DECIDE, mission, run)
         self.move(run, "PASS", t, "Final decision: 수용 기준을 모두 충족했습니다.")
@@ -228,8 +230,8 @@ class Demo:
 
     def live_loop(self, stop):
         """Keeps step 2 of the running mission busy: one AI at a time, with tools appearing as the call goes on."""
-        stages = [(AGY, "MAKER", "BUILDING", 26, 6400, BUILD, False), (None, None, "VERIFYING", 6, 0, [], True),
-                  (CODEX, "INSPECTOR", "REVIEWING", 20, 9800, REVIEW, True), (CLAUDE, "ARCHITECT", "DECIDING", 9, 12100, ARCHITECT_DECIDE, True),
+        stages = [(CODEX, "MAKER", "BUILDING", 26, 6400, BUILD, True), (None, None, "VERIFYING", 6, 0, [], True),
+                  (AGY, "INSPECTOR", "REVIEWING", 20, 9800, REVIEW, False), (CLAUDE, "ARCHITECT", "DECIDING", 9, 12100, ARCHITECT_DECIDE, True),
                   (CLAUDE, "ARCHITECT", "MISSION_PLANNING", 10, 11200, ARCHITECT_PLAN, True)]
         while not stop.is_set():
             try:
@@ -257,14 +259,42 @@ class Demo:
                 if self.started < modified < cutoff:     # never the seeded history
                     path.unlink(missing_ok=True)
 
+    def test_record(self, run, tests, at):
+        """What Tribunal's own test run left behind, so the record line and the core view have something to show."""
+        folder = self.dir / "runs" / run
+        folder.mkdir(parents=True, exist_ok=True)
+        output = ("=" * 28 + " test session starts " + "=" * 28 + f"\ncollected {tests} items\n\n"
+                  + f"tests/test_theme.py {'.' * min(tests, 12)}\ntests/test_settings.py {'.' * max(0, min(tests - 12, 40))}\n\n"
+                  + "=" * 30 + f" {tests} passed in 1.84s " + "=" * 30)
+        counts = {"passed": tests, "failed": 0, "total": tests}
+        record = {"passed": True, "summary": f"Test: PASS ({tests} passed)", "test_counts": counts,
+                  "git_status": " M src/settings/theme.py\n M src/settings/view.py\n?? tests/test_theme.py",
+                  "test": {"command": "python -m pytest tests/", "executed": True, "passed": True, "exit_code": 0, "output": output}}
+        for name, data in (("verification.json", record), ("baseline_verification.json", {"passed": True, "test_counts": {"passed": tests - 3, "failed": 0, "total": tests - 3}})):
+            path = folder / name
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            os.utime(path, (at.timestamp(), at.timestamp()))      # the record belongs to the round it was written in
+        return output
+
     def live_cycle(self, stages, stop):
         if True:
             for provider, role, stage, seconds, tokens, events, exact in stages:
                 began = datetime.now(timezone.utc)
                 if stage != "MISSION_PLANNING":
                     self.move(self.live["run"], stage, began)
-                if not provider:
-                    if stop.wait(seconds):
+                if not provider:                  # Tribunal runs the tests itself: output arrives while it waits
+                    folder = self.dir / "runs" / self.live["run"]
+                    folder.mkdir(parents=True, exist_ok=True)
+                    (folder / "verification.json").unlink(missing_ok=True)
+                    log = folder / "verification_live.log"
+                    log.write_text("=" * 28 + " test session starts " + "=" * 28 + "\ncollected 44 items\n\ntests/test_theme.py ", encoding="utf-8")
+                    for i in range(8):
+                        if stop.wait(seconds / 9):
+                            return
+                        with log.open("a", encoding="utf-8") as fh:
+                            fh.write("....." if i != 3 else "....\ntests/test_settings.py ")
+                    self.test_record(self.live["run"], 44, datetime.now(timezone.utc))
+                    if stop.wait(seconds / 9):
                         return
                     continue
                 call = self.start_call(provider, role, stage, began, self.live["mission"], self.live["run"])
@@ -288,7 +318,7 @@ def block_real_ai_calls():
     ProcessTreeRunner.run = classmethod(lambda cls, *a, **k: refuse())
 
 
-DEMO_ROLES = {"architect": "claude", "maker": "antigravity", "inspector": "openai"}
+DEMO_ROLES = {"architect": "claude", "maker": "openai", "inspector": "antigravity"}       # the default assignment
 READ_ONLY = {"error": "demo console: read-only (invented data)", "message": "데모 콘솔은 보기 전용입니다."}
 
 

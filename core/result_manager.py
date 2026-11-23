@@ -805,6 +805,9 @@ class ResultManager:
                         if (self.sm.get_run(earlier) or {}).get("current_state") == State.PASS \
                                 and self.result_state(earlier).get("state") not in (RESULT_APPLIED, RESULT_DISCARDED):
                             self._set_state(earlier, RESULT_APPLIED, f"applied together with {run_id}", rid)
+                    if pre["conflicts"]:               # said in the record too: this copy still holds something of its own
+                        state = self.result_state(run_id)
+                        self._save(run_id, "result_state.json", {**state, "skipped_conflicts": [c.get("path") for c in pre["conflicts"]][:50]})
                     if shown:
                         for one in [run_id] + same_task:
                             self._save(one, "applied_view.json", {**shown, "applied_with": run_id, "at": datetime.utcnow().isoformat()})
