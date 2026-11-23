@@ -45,16 +45,8 @@ def load_companion_config(root: Path = ROOT) -> dict:
 
 
 def bridge_token_path(root: Path = ROOT) -> Path:
-    """data/bridge.token — the local secret a request must carry to change anything. A token file from before the
-    rename is moved over once, so open consoles and scripts keep working across the upgrade."""
-    path = Path(root) / "data" / "bridge.token"
-    old = Path(root) / "data" / "solomon-bridge.token"
-    if old.exists() and not path.exists():
-        try:
-            old.replace(path)
-        except OSError:
-            return path if path.exists() else old       # another process moved it first, or it cannot be moved at all
-    return path
+    """data/bridge.token — the local secret a request must carry to change anything."""
+    return Path(root) / "data" / "bridge.token"
 
 
 def _valid_port(value: Any) -> int:

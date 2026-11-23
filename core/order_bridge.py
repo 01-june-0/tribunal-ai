@@ -14,22 +14,10 @@ class OrderBridge:
         self.allowed = {str(Path(p).resolve()).casefold() for p in allowed_projects}
         self.lock = threading.Lock()
         with self.connect() as db:
-            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if 'solomon_orders' in tables and 'bridge_orders' not in tables:      # a database from before the rename
-                try:
-                    db.execute('ALTER TABLE solomon_orders RENAME TO bridge_orders')
-                except sqlite3.OperationalError:                                  # another process renamed it first
-                    pass
             db.execute('''CREATE TABLE IF NOT EXISTS bridge_orders (
                 request_id TEXT PRIMARY KEY, payload_hash TEXT NOT NULL,
                 payload TEXT NOT NULL, run_id TEXT, received_at TEXT NOT NULL,
                 error TEXT)''')
-            if 'solomon_orders' in tables and 'bridge_orders' in tables:          # both exist: keep the old rows, drop the old table
-                try:
-                    db.execute('INSERT OR IGNORE INTO bridge_orders SELECT * FROM solomon_orders')
-                    db.execute('DROP TABLE solomon_orders')
-                except sqlite3.OperationalError:
-                    pass
 
     def connect(self):
         db = sqlite3.connect(str(self.d.resolve_db_path()), timeout=15)

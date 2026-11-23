@@ -40,9 +40,9 @@ def pick_folder(initial: str = "", timeout: int = 300) -> dict:
 
 
 def bridge_config(config=None) -> dict:
-    """config.yaml `bridge:` (the section was called `solomon:` before; an old file is still read)."""
+    """config.yaml `bridge:`."""
     config = config if config is not None else d.load_config()
-    return (config.get('bridge') or config.get('solomon') or {})
+    return (config.get('bridge') or {})
 
 
 def bridge_target_ok(path: str) -> tuple:

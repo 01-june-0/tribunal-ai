@@ -179,7 +179,7 @@ def do_env(tmp_path, monkeypatch):
     """`director do` with a token file of its own and the in-process fallback recorded instead of run."""
     import director
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "solomon-bridge.token").write_text(TOKEN)      # the old file name: moved over on first use
+    (tmp_path / "data" / "bridge.token").write_text(TOKEN)
     monkeypatch.setattr(director, "__file__", str(tmp_path / "director.py"))        # `do` looks for data/ next to itself
     ran = []
     monkeypatch.setattr(director.mission, "callback", lambda **kw: ran.append(kw))
@@ -258,44 +258,3 @@ def test_an_older_console_without_hello_is_named_as_such(root):
         assert (action, where) == ("blocked", port) and "older" in reason
     finally:
         server.shutdown(); server.server_close()
-
-
-# ---------------------------------------------------------------- names from before the bridge was renamed
-def test_token_file_from_before_the_rename_is_moved_once(tmp_path):
-    (tmp_path / "data").mkdir()
-    assert cc.bridge_token_path(tmp_path) == tmp_path / "data" / "bridge.token"            # nothing there yet: the new name
-    (tmp_path / "data" / "solomon-bridge.token").write_text("OLD")
-    path = cc.bridge_token_path(tmp_path)
-    assert path.name == "bridge.token" and path.read_text() == "OLD" and not (tmp_path / "data" / "solomon-bridge.token").exists()
-    (tmp_path / "data" / "solomon-bridge.token").write_text("STRAY")                       # a leftover never overwrites the live token
-    assert cc.bridge_token_path(tmp_path).read_text() == "OLD"
-
-
-def test_old_orders_table_and_old_config_section_are_still_read(tmp_path):
-    import sqlite3
-    from types import SimpleNamespace
-    import companion_server as cs
-    from core.order_bridge import OrderBridge
-    db = tmp_path / "x.db"
-    with sqlite3.connect(db) as conn:
-        conn.execute("CREATE TABLE solomon_orders (request_id TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, payload TEXT NOT NULL, "
-                     "run_id TEXT, received_at TEXT NOT NULL, error TEXT)")
-        conn.execute("INSERT INTO solomon_orders VALUES ('req-00000001', 'h', '{}', NULL, '2026-01-01', NULL)")
-    OrderBridge(SimpleNamespace(resolve_db_path=lambda: db), [])
-    with sqlite3.connect(db) as conn:
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert "bridge_orders" in tables and "solomon_orders" not in tables
-        assert conn.execute("SELECT request_id FROM bridge_orders").fetchone()[0] == "req-00000001"
-    with sqlite3.connect(db) as conn:                                              # an old console ran again and recreated its table
-        conn.execute("CREATE TABLE solomon_orders (request_id TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, payload TEXT NOT NULL, "
-                     "run_id TEXT, received_at TEXT NOT NULL, error TEXT)")
-        conn.execute("INSERT INTO solomon_orders VALUES ('req-00000002', 'h', '{}', NULL, '2026-01-02', NULL)")
-        conn.execute("INSERT INTO solomon_orders VALUES ('req-00000001', 'other', '{}', NULL, '2026-01-02', NULL)")
-    OrderBridge(SimpleNamespace(resolve_db_path=lambda: db), [])
-    with sqlite3.connect(db) as conn:
-        assert [r[0] for r in conn.execute("SELECT request_id FROM bridge_orders ORDER BY 1")] == ["req-00000001", "req-00000002"]
-        assert conn.execute("SELECT payload_hash FROM bridge_orders WHERE request_id='req-00000001'").fetchone()[0] == "h"   # the newer copy wins
-        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='solomon_orders'").fetchone()
-    assert cs.bridge_config({"solomon": {"allowed_roots": ["a"]}}) == {"allowed_roots": ["a"]}
-    assert cs.bridge_config({"bridge": {"allowed_roots": ["b"]}, "solomon": {"allowed_roots": ["a"]}}) == {"allowed_roots": ["b"]}
-    assert cs.bridge_config({}) == {}

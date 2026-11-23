@@ -227,7 +227,7 @@ def test_bridge_missions_need_the_token_and_respect_the_allowlist(http_server, m
 def test_bridge_mission_start_decide_and_duplicate_request(http_server, monkeypatch, tmp_path):
     import companion_server
     from core.mission import MissionStore
-    monkeypatch.setattr(companion_server.d, "load_config", lambda: {"solomon": {"allowed_roots": [str(tmp_path)], "denied": []}, "projects": {}})
+    monkeypatch.setattr(companion_server.d, "load_config", lambda: {"bridge": {"allowed_roots": [str(tmp_path)], "denied": []}, "projects": {}})
     target = tmp_path / "game"; target.mkdir()
     calls = []
     monkeypatch.setattr(companion_server.d, "start_goal_mission", lambda path, goal, **kw: calls.append((path, goal, kw)) or {"status": "started", "mission_id": "MSN-X"})

@@ -487,7 +487,7 @@ function paintDelivery(m){
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;      // rebuilt only when something changed: a click or the focus is never lost to a poll
   const held=box.contains(document.activeElement)?document.activeElement.dataset.act:null;
   box.replaceChildren();if(!shown)return;
-  const head=el('div','','delivery-head');head.append(el('span',(ms.source==='bridge'||ms.source==='solomon'?T('외부 지시 · '):ms.source==='cli'?T('CLI 지시 · '):'')+T('결과물'),'kicker'),el('span',label,'badge '+cls));box.append(head);
+  const head=el('div','','delivery-head');head.append(el('span',(ms.source==='bridge'?T('외부 지시 · '):ms.source==='cli'?T('CLI 지시 · '):'')+T('결과물'),'kicker'),el('span',label,'badge '+cls));box.append(head);
   if(ms.applied&&ms.applied.files)box.append(el('small',ms.applied.files.slice(0,6).join(', ')+(ms.applied.files.length>6?T(' 외 {0}개',ms.applied.files.length-6):''),'ai-sub'));
   if(state==='rolled_back')box.append(el('small',undone(ms.applied),'ai-sub'));
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',blockText(ms.applied.blocks).slice(0,220),'ai-sub'));
