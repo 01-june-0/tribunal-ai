@@ -98,3 +98,10 @@ console.log(JSON.stringify([en.lang,en.t('보내기'),en.t('도구 {0}회',3),en
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout) == ["en", "Send", "3 tool calls", "없는 문구 1", "ko", "보내기", "도구 3회",
                                       "2 of 3 steps passed · up to 6 steps", "about $& left (estimate)"]
+
+
+def test_the_icon_a_browser_asks_for_on_its_own_is_not_an_error(tmp_path):
+    """Opening the console left one 404 in the browser's log: the favicon it requests by itself."""
+    src = (CONSOLE.parent / "companion_server.py").read_text(encoding="utf-8")
+    at = src.index("if path == '/favicon.ico':")
+    assert "self.send_response(204)" in src[at:at + 200] and at < src.index("if path in STATIC_FILES:")

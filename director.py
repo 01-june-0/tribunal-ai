@@ -97,7 +97,7 @@ def resume(run_id: str):
 
 @cli.command()
 @click.argument("goal")
-@click.option("--project", "-p", default=None, help="Project folder (default: the current folder when it is a git repo)")
+@click.option("--project", "-p", default=None, help="Project folder (default: the current folder, which must be a git repo)")
 @click.option("--profile", type=click.Choice(["quick", "standard", "deep"]), default=None, help="Budget: quick / standard / deep")
 @click.option("--no-apply", is_flag=True, help="Keep the result in the worktree instead of applying it to the project")
 def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool):
@@ -111,7 +111,10 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
     tag, goal = _ap.split_profile_tag(goal)
     profile = profile or tag or "standard"
     payload = {"request_id": "cli-" + uuid.uuid4().hex[:16], "project_path": str(Path(target).resolve()), "goal": goal,
-               "profile": profile, "auto_apply": "off" if no_apply else None}
+               "profile": profile, "auto_apply": "off" if no_apply else None,
+               # A folder named with -p that is not a git project yet is made one, as a mission started here would do.
+               # Never the current folder by default, and never a folder inside someone else's repository.
+               "create_project": bool(project) and _fresh_folder(Path(target).resolve())}
     from core.companion_config import bridge_token_path
     token_path = bridge_token_path(Path(__file__).resolve().parent)
     from core.companion_config import active_port, verify, local_open, DEFAULT_PORT
@@ -119,22 +122,62 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
         port = active_port()
     except (OSError, ValueError, TypeError):          # unreadable companion*.json must not block the in-process fallback
         port = DEFAULT_PORT
+    import urllib.error
+    reachable = False
     try:
         token = token_path.read_text(encoding="utf-8").strip()
         if not verify(port, token):                    # another program on that port must never receive the token
             raise RuntimeError("no Tribunal AI console of this folder is listening there")
+        reachable = True
         req = urllib.request.Request(f"http://127.0.0.1:{port}/bridge/missions", data=json.dumps(payload).encode("utf-8"),
                                      headers={"Content-Type": "application/json", "X-Tribunal-Token": token})
         with local_open(req, 600) as r:              # never through a proxy: the request carries the token
             res = json.loads(r.read().decode("utf-8"))
         click.echo(f"[{res.get('status')}] " + (res.get("mission_id") or res.get("message") or res.get("error") or ""))
+        if res.get("reason"):
+            click.echo(str(res["reason"]))
         if res.get("mission_id"):
             click.echo(f"진행 상황: http://127.0.0.1:{port}/  (한눈에 탭에서 실시간으로 보입니다)")
+        if res.get("status") == "escalated":
+            raise SystemExit(2)                        # waits for a decision: not a started task
         return
+    except urllib.error.HTTPError as exc:
+        # The console is there and said no (a folder it does not take, a busy project, ...). Its answer stands:
+        # running the same goal here instead would go around exactly the rule that refused it.
+        try:
+            res = json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            res = {}
+        raise click.ClickException(f"콘솔이 이 요청을 받지 않았습니다: {res.get('error') or res.get('message') or exc.reason}")
+    except SystemExit:
+        raise
     except Exception as exc:
+        refused = isinstance(exc, ConnectionRefusedError) or isinstance(getattr(exc, "reason", None), ConnectionRefusedError)
+        if reachable and not refused:
+            # The request may have reached the console (it answers only after the ARCHITECT's first call): running the
+            # same goal here as well could start it twice.
+            raise click.ClickException(f"콘솔과의 연결이 응답 전에 끊겼습니다({str(exc)[:120]}). 콘솔에서 작업이 시작됐는지 "
+                                       f"확인한 뒤 다시 시도하세요.")
         click.echo(f"{port} companion unavailable ({str(exc)[:120]}); running the mission in this process instead.")
+    from companion_server import bridge_target_ok
+    ok, why = bridge_target_ok(str(Path(target).resolve()))     # the console's own folder rule holds here too
+    if not ok:
+        raise click.ClickException(f"이 폴더에는 작업을 시킬 수 없습니다: {why}")
     ctx = click.get_current_context()
-    ctx.invoke(mission, project=str(Path(target).resolve()), goal=goal, mission_id=None, max_steps=None, replan=None, profile=profile)
+    ctx.invoke(mission, project=str(Path(target).resolve()), goal=goal, mission_id=None, max_steps=None, replan=None, profile=profile,
+               no_apply=no_apply)
+
+
+def _fresh_folder(path: Path) -> bool:
+    """A folder that is not a git project and does not sit inside one: the only kind `do` asks to have prepared."""
+    import subprocess
+    if (path / ".git").exists():
+        return False
+    try:
+        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(path), capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode != 0                           # inside another repository: leave it alone
 
 
 @cli.command()
@@ -144,8 +187,9 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
 @click.option("--max-steps", type=int, help="Milestone budget for a new mission (default: autonomy.max_steps)")
 @click.option("--replan", help="With --mission-id: send the blocked step back to ARCHITECT planning, with this reason")
 @click.option("--profile", type=click.Choice(["quick", "standard", "deep"]), default=None, help="Budget profile for a new mission")
+@click.option("--no-apply", is_flag=True, help="Keep the result in the worktree instead of applying it to the project")
 def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optional[int], replan: Optional[str] = None,
-            profile: Optional[str] = None):
+            profile: Optional[str] = None, no_apply: bool = False):
     """Run a goal-driven mission: ARCHITECT plans milestones and decides on your behalf until the goal is done."""
     from core import autopilot
     from core.chat_manager import ChatManager
@@ -191,9 +235,12 @@ def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optio
         if gate["escalate"]:
             notify(f"사용자 결정 필요: {gate['escalate']}")
             return
-        mission_id = runner.create(project, goal, gate["order"], config=config, notes=gate["notes"], profile=profile, source="cli")["mission_id"]
+        mission_id = runner.create(project, goal, gate["order"], config=config, notes=gate["notes"], profile=profile, source="cli",
+                                   auto_apply="off" if no_apply else None)["mission_id"]
         notify(f"작업 시작 {mission_id}")
     else:
+        if no_apply:
+            click.echo("--no-apply는 새 작업에만 적용됩니다. 이어 가는 작업은 처음 정한 적용 방식을 따릅니다.")
         if max_steps:
             existing = runner.store.load(mission_id)
             existing["max_steps"] = max(max_steps, len(existing["steps"]) + 1)

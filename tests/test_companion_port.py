@@ -1,5 +1,6 @@
 """core.companion_config: which port the console takes, finding a running console, and proving it is ours."""
 import json
+from pathlib import Path
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -206,10 +207,47 @@ def test_director_do_never_sends_the_token_to_a_listener_that_cannot_prove_itsel
     server = _console(prove=False, posted=posted)
     try:
         monkeypatch.setattr(cc, "active_port", lambda root=None: server.server_address[1])
+        import companion_server
+        monkeypatch.setattr(companion_server, "bridge_target_ok", lambda path: (True, path))
         result = CliRunner().invoke(director.cli, ["do", "-p", str(tmp), "--no-apply", "goal"])
         assert posted == [] and len(ran) == 1 and "unavailable" in result.output
+        assert ran[0]["no_apply"] is True                       # found in a real run: the fallback applied anyway
     finally:
         server.shutdown(); server.server_close()
+
+
+def test_director_do_takes_the_consoles_no_for_an_answer(do_env, monkeypatch):
+    """Found in a real run: a request the console refused (400) was run here instead, around the very rule that
+    refused it - and applied, --no-apply notwithstanding."""
+    from click.testing import CliRunner
+    director, ran, tmp = do_env
+    posted = []
+
+    class Refusing(_Quiet):
+        def do_GET(self):
+            nonce = parse_qs(urlsplit(self.path).query).get("nonce", [""])[0]
+            self._json(cc.hello_payload(cc.ROOT, TOKEN, nonce))
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            posted.append(body)
+            self._json({"status": "rejected", "error": "이 폴더에는 지시할 수 없습니다"}, 400)
+    server = _serve(Refusing)
+    try:
+        monkeypatch.setattr(cc, "active_port", lambda root=None: server.server_address[1])
+        result = CliRunner().invoke(director.cli, ["do", "-p", str(tmp), "goal of five"])
+        assert result.exit_code != 0 and ran == [] and "이 폴더에는 지시할 수 없습니다" in result.output
+        assert posted[0]["create_project"] is True                # not a git folder: the console is asked to prepare it
+    finally:
+        server.shutdown(); server.server_close()
+
+
+def test_director_do_without_a_console_keeps_the_consoles_folder_rule(do_env, monkeypatch):
+    from click.testing import CliRunner
+    director, ran, tmp = do_env
+    monkeypatch.setattr(cc, "active_port", lambda root=None: 9)           # nothing listens there
+    result = CliRunner().invoke(director.cli, ["do", "-p", str(Path(director.__file__).resolve().parent), "goal of five"])
+    assert result.exit_code != 0 and ran == [] and "작업을 시킬 수 없습니다" in result.output
 
 
 def test_director_do_posts_to_a_verified_console_and_never_through_a_proxy(do_env, monkeypatch):
@@ -258,3 +296,48 @@ def test_an_older_console_without_hello_is_named_as_such(root):
         assert (action, where) == ("blocked", port) and "older" in reason
     finally:
         server.shutdown(); server.server_close()
+
+
+def test_director_do_never_runs_a_goal_twice_when_the_answer_is_lost(do_env, monkeypatch):
+    """From the review: the console answers only after its first ARCHITECT call, so a dropped connection after the
+    request was sent must not start the same goal here as well."""
+    from click.testing import CliRunner
+    director, ran, tmp = do_env
+
+    class Hanging(_Quiet):
+        def do_GET(self):
+            nonce = parse_qs(urlsplit(self.path).query).get("nonce", [""])[0]
+            self._json(cc.hello_payload(cc.ROOT, TOKEN, nonce))
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.connection.close()                                   # took the request, never answered
+    server = _serve(Hanging)
+    try:
+        monkeypatch.setattr(cc, "active_port", lambda root=None: server.server_address[1])
+        import companion_server
+        monkeypatch.setattr(companion_server, "bridge_target_ok", lambda path: (True, path))
+        result = CliRunner().invoke(director.cli, ["do", "-p", str(tmp), "goal of five"])
+        assert result.exit_code != 0 and ran == [] and "콘솔에서 작업이 시작됐는지" in result.output
+    finally:
+        server.shutdown(); server.server_close()
+
+
+def test_the_bridge_folder_rule_cannot_be_dodged_and_skips_the_roots_themselves(tmp_path, monkeypatch):
+    import companion_server as cs
+    root = tmp_path / "work"; (root / "proj").mkdir(parents=True); (root / "Secret").mkdir()
+    monkeypatch.setattr(cs, "bridge_config", lambda config=None: {"allowed_roots": [str(root)], "denied": [str(root / "Secret")]})
+    assert cs.bridge_target_ok(str(root / "proj"))[0] is True
+    assert cs.bridge_target_ok(str(root))[0] is False                                       # the root itself is not a project
+    assert cs.bridge_target_ok(str(root / "Secret" / "x"))[0] is False
+    assert cs.bridge_target_ok(str(root / "SECRET"))[0] is False                            # another spelling of a denied folder
+
+
+def test_do_asks_to_prepare_only_a_named_folder_outside_any_repository(tmp_path):
+    import subprocess
+    import director
+    lone = tmp_path / "lone"; lone.mkdir()
+    repo = tmp_path / "repo"; (repo / "sub").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    assert director._fresh_folder(lone) is True
+    assert director._fresh_folder(repo) is False and director._fresh_folder(repo / "sub") is False

@@ -57,8 +57,15 @@ def bridge_target_ok(path: str) -> tuple:
     denied = [Path(x).expanduser().resolve() for x in (cfg.get('denied') or [])] + [ROOT.resolve()]
     if not any(target == r or r in target.parents for r in roots):
         return False, '허용된 폴더 밖입니다 (config.yaml bridge.allowed_roots)'
-    if any(target == x or x in target.parents for x in denied):
+    # Denied folders are matched without regard to case too: on a case-insensitive disk (macOS, Windows) another
+    # spelling is the same folder. (Only for refusing: allowing more by case would be wrong on Linux.)
+    def fold(x):
+        return str(x).casefold()
+    if any(target == x or x in target.parents or fold(target) == fold(x) or fold(target).startswith(fold(x) + os.sep.casefold())
+           for x in denied):
         return False, '이 폴더에는 지시할 수 없습니다'
+    if any(target == r for r in roots):
+        return False, '허용 폴더 자체가 아니라 그 안의 프로젝트 폴더를 지정하세요'
     return True, str(target)
 
 
@@ -127,6 +134,8 @@ class CompanionHandler(d.DashboardHandler):
             return self._send_json({'settings': settings, 'options': cli_settings.options(), 'limits': limits,
                                     'accounts': cli_accounts.snapshot(limits),
                                     'alerts': cli_limits.alerts(limits, {c: settings[c]['warn_percent'] for c in cli_settings.CLIS})})
+        if path == '/favicon.ico':                    # browsers ask for it on their own; there is none: say so without an error
+            self.send_response(204); self.send_header('Cache-Control', 'max-age=86400'); self.end_headers(); return
         if path in STATIC_FILES:
             name = STATIC_FILES[path]
             body = (ROOT / 'console' / name).read_bytes()
