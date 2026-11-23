@@ -21,7 +21,7 @@ _ROLE_LIST = re.compile(r"^\s*(HEAD|BUILDER|REVIEWER|ARCHITECT|MAKER|INSPECTOR|B
                         r"(HEAD|BUILDER|REVIEWER|ARCHITECT|MAKER|INSPECTOR|BACKUP|NONE|UNKNOWN))*\s*$")
 _CODE = re.compile(r"(?<![A-Za-z])(HEAD|BUILDER|REVIEWER)(?=_[A-Z])")          # REVIEWER_FAIL_CLOSED, HEAD_EXCEPTION ...
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
-_VERBATIM = {"projects", "allowed_projects", "commands", "verify", "verification"}      # user data below these keys: paths, command lines
+_VERBATIM = {"projects", "commands", "verify", "verification"}      # user data below these keys: paths, command lines
 OLD_FILES = {"maker.json": "builder.json", "maker_attempts.json": "builder_attempts.json",
              "maker_cli.json": "builder_cli.json", "maker_cli_attempts.json": "builder_cli_attempts.json"}
 

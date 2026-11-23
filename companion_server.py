@@ -10,7 +10,6 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import dashboard_server as d
-from core.order_bridge import OrderBridge
 
 ROOT = Path(__file__).resolve().parent
 # The console is a fixed allowlist of local files: nothing outside console/ is ever served.
@@ -151,7 +150,6 @@ class CompanionHandler(d.DashboardHandler):
         elif path == '/ops/state':
             report = ROOT / 'data' / 'cli_diagnostics.json'
             return self._send_json({'csrf': self.server.bridge_token,
-                'orders': self.server.bridge.list(), 'allowed_projects': sorted(self.server.bridge.allowed),
                 'diagnostics': json.loads(report.read_text(encoding='utf-8')) if report.exists() else None,
                 'status': d.cached_status_payload()})
         elif path.startswith('/bridge/'):
@@ -159,10 +157,7 @@ class CompanionHandler(d.DashboardHandler):
                 return self._send_json({'error': 'bridge authentication required'}, 403)
             try:
                 if path == '/bridge/status':
-                    return self._send_json({'ok': True, 'version': '1.0', 'orders': self.server.bridge.list()})
-                if path == '/bridge/order':
-                    ident = parse_qs(urlsplit(self.path).query).get('id', [''])[0]
-                    return self._send_json(self.server.bridge.status(ident))
+                    return self._send_json({'ok': True, 'version': '1.0'})
                 if path == '/bridge/projects':
                     return self._send_json({'projects': project_registry()})
                 if path == '/bridge/digest':
@@ -323,23 +318,6 @@ class CompanionHandler(d.DashboardHandler):
                 return self._send_json({'error': str(exc)}, 400)
             except Exception as exc:
                 return self._send_json({'error': str(exc)[:500]}, 500)
-        if self.path == '/bridge/orders':
-            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
-                return self._send_json({'error': 'bridge authentication required'}, 403)
-            try:
-                size = int(self.headers.get('Content-Length', '0'))
-                if not 0 < size <= 32000:
-                    raise ValueError('request size rejected')
-                if self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
-                    raise ValueError('JSON required')
-                payload = json.loads(self.rfile.read(size))
-                if not isinstance(payload, dict):
-                    raise ValueError('object required')
-                return self._send_json(self.server.bridge.submit(payload), 202)
-            except (ValueError, TypeError, KeyError) as exc:
-                return self._send_json({'error': str(exc)}, 400)
-            except Exception as exc:
-                return self._send_json({'error': str(exc)[:500]}, 500)
         return super().do_POST()
 
 
@@ -370,7 +348,6 @@ def run():
     if not token_path.exists():
         token_path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
     server.bridge_token = token_path.read_text(encoding='utf-8').strip()
-    server.bridge = OrderBridge(d, config.get('allowed_projects', []))
     if (d.load_config().get('autonomy') or {}).get('resume_on_start'):
         import threading
         threading.Thread(target=d.resume_interrupted_missions, name='director-mission-resume', daemon=True).start()

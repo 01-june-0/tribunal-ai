@@ -176,7 +176,7 @@ cli_options:
 여기서(또는 환경 변수 `TRIBUNAL_PORT`로) 직접 정한 포트는 몰래 바꾸지 않습니다. 잡혀 있으면 서버가 멈추고 그렇게 말합니다.
 실제로 떠 있는 주소는 `data/companion.port`에 기록되어, 실행 스크립트와 `director do`가 그것을 보고 콘솔을 찾습니다.
 
-`companion.json`의 `allowed_projects`는 외부 주문 입구(`/bridge/orders`)가 받는 프로젝트 목록입니다. 목록에 있는 프로젝트만 받습니다.
+다른 로컬 프로그램이 작업을 넘길 수 있는 폴더는 `config.yaml`의 `bridge.allowed_roots`로 정합니다.
 
 ## 3. 콘솔 서버의 보호 장치
 

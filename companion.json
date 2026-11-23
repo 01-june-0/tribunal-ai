@@ -1,4 +1,3 @@
 {
-  "port": 8081,
-  "allowed_projects": []
+  "port": 8081
 }

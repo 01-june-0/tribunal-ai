@@ -168,7 +168,7 @@ core/
   work_log.py          통합 기록
   cli_models.py  cli_settings.py  cli_limits.py  cli_accounts.py   모델 · 한도 · 계정
   role_settings.py  role_names.py                                역할 배정과 옛 이름 호환
-  order_bridge.py  companion_config.py  chat_manager.py  db_path.py  env_utils.py  file_lock.py
+  companion_config.py  chat_manager.py  db_path.py  env_utils.py  file_lock.py
 
 schemas/               지시서 · 제작 결과 · 감리 결과 · 판단 · 출처 기록 (pydantic)
 console/               한눈에 · 자세히 두 탭의 프런트엔드 (의존성 없는 정적 파일)

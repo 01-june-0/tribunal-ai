@@ -72,7 +72,7 @@ def test_default_port_is_not_a_choice_but_local_file_and_env_are(root, monkeypat
     assert cc.configured_port(root) == (cc.DEFAULT_PORT, False)
     (root / "companion.json").write_text('{"port": 9001}')
     assert cc.configured_port(root) == (9001, False)
-    (root / "companion.local.json").write_text('{"allowed_projects": []}')          # a local file without a port
+    (root / "companion.local.json").write_text('{}')          # a local file without a port
     assert cc.configured_port(root) == (9001, False)
     (root / "companion.local.json").write_text('{"port": 9002}')
     assert cc.configured_port(root) == (9002, True) and cc.companion_port(root) == 9002
@@ -294,6 +294,19 @@ def test_an_older_console_without_hello_is_named_as_such(root):
         (root / "companion.json").write_text(json.dumps({"port": port}))
         action, where, reason = cc.choose_port(root)
         assert (action, where) == ("blocked", port) and "older" in reason
+    finally:
+        server.shutdown(); server.server_close()
+
+
+def test_a_current_console_that_misses_hello_is_not_a_stranger(root):
+    """Ours, but /ops/hello did not answer in time: its /ops/state (csrf + status, no orders) still stops a second start."""
+    class Busy(_Quiet):
+        def do_GET(self):
+            self._json({"csrf": "x", "diagnostics": None, "status": {}} if self.path.startswith("/ops/state") else {"error": "busy"},
+                       200 if self.path.startswith("/ops/state") else 500)
+    server = _serve(Busy)
+    try:
+        assert cc.probe(server.server_address[1], root) == "legacy"
     finally:
         server.shutdown(); server.server_close()
 

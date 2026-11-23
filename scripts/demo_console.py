@@ -372,7 +372,7 @@ def demo_handler():
 
         def _send_json(self, payload, code=200):
             if isinstance(payload, dict) and "diagnostics" in payload:
-                payload = {**payload, "diagnostics": None, "allowed_projects": []}   # real executable paths
+                payload = {**payload, "diagnostics": None}   # real executable paths
             return super()._send_json(payload, code)
     return DemoHandler
 
@@ -381,7 +381,6 @@ def serve(demo, port):
     import companion_server as cs
     server = cs.d.DashboardServer(("127.0.0.1", port), demo_handler())
     server.bridge_token = secrets.token_urlsafe(24)       # its own token: the real console's is never loaded here
-    server.bridge = cs.OrderBridge(cs.d, [])
     server.stopping = False
     server.install_root = demo.dir                         # /ops/hello: not this folder's real console
     return server

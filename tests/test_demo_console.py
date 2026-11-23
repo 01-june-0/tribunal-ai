@@ -168,7 +168,7 @@ def test_demo_server_is_read_only_and_keeps_the_real_machine_out(demo_server):
     assert _http(demo_server, "/ops/ai/refresh", "POST", b"{}", token)[0] == 403
     assert ai["alerts"][0]["cli"] == "openai" and ai["settings"]["usage_poll_minutes"] == 5
     status, state = _http(demo_server, "/ops/state")
-    assert status == 200 and state["diagnostics"] is None and state["allowed_projects"] == []
+    assert status == 200 and state["diagnostics"] is None
     assert (_real_data_snapshot(), (role_settings.PATH.read_bytes() if role_settings.PATH.exists() else None)) == before
     # ... and it is not mistaken for this folder's real console
     port = demo_server.server_address[1]

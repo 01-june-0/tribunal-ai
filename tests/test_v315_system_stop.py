@@ -2,7 +2,6 @@
 import http.client
 import json
 import threading
-from types import SimpleNamespace
 import pytest
 from companion_server import CompanionHandler
 from dashboard_server import DashboardServer
@@ -13,7 +12,6 @@ def http_server():
     server = DashboardServer(('127.0.0.1', 0), CompanionHandler)
     server.bridge_token = 'test-token'
     server.stopping = False
-    server.bridge = SimpleNamespace(submit=lambda p: {'status': 'submitted'}, list=lambda: [], allowed=set())
     thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     yield server, thread
     server.shutdown(); server.server_close(); thread.join(timeout=2)

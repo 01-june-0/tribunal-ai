@@ -127,8 +127,10 @@ def probe(port: int, root: Path = ROOT) -> str:
     hello = _hello(port)
     if hello:
         return "ours" if hello.get("install") == install_id(root) else "other"
-    state = _get_json(port, "/ops/state")              # an older console: it has /ops/state (csrf + orders) but no /ops/hello
-    return "legacy" if state and "csrf" in state and "orders" in state else "other"
+    # An older console has /ops/state (csrf + orders) but no /ops/hello. A current one that did not answer /ops/hello in
+    # time has csrf + status: treated the same way, so a busy console of ours is never taken for a stranger's program.
+    state = _get_json(port, "/ops/state")
+    return "legacy" if state and "csrf" in state and ("orders" in state or "status" in state) else "other"
 
 
 def verify(port: int, token: str) -> bool:

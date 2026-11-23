@@ -294,7 +294,6 @@ def console(monkeypatch, tmp_path):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))      # not this machine's Codex session records
     server = cs.d.DashboardServer(("127.0.0.1", 0), cs.CompanionHandler)
     server.bridge_token = "tok"
-    server.bridge = cs.OrderBridge(cs.d, [])
     server.stopping = False
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield server

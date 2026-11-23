@@ -15,7 +15,7 @@
 
 ### 현재 결과
 
-2026-11-23 기준 **838개 모두 통과**합니다. 새 변경은 이 상태를 유지해야 합니다.
+2026-11-23 기준 **828개 모두 통과**합니다. 새 변경은 이 상태를 유지해야 합니다.
 
 원본에서 넘어올 때는 7개가 macOS에서 실패했습니다. 하나씩 원인을 확인해 보니 여섯은 테스트가 Windows나 특정 환경을 전제로 한
 것이었고, 하나는 제품 코드에도 문제가 있었습니다.
@@ -126,7 +126,7 @@ sh start-companion.sh
 | `/providers/refresh` | AI 상태 다시 확인 (모델을 부르지 않음) |
 | `/ops/missions/stop`, `/ops/shutdown` | 작업 정지, 콘솔 끄기 |
 | `/ops/pick-folder` | 폴더 선택 창 |
-| `/bridge/missions`, `/bridge/orders` | `director do`와 다른 로컬 프로그램이 목표를 넘기는 입구 |
+| `/bridge/missions` | `director do`와 다른 로컬 프로그램이 목표를 넘기는 입구 |
 
 ## 4. 고칠 때 지키는 것
 

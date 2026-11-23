@@ -43,7 +43,6 @@ WebGL을 쓸 수 없을 때의 2D 장면 · 줌인 · 구름 속 화면, 전체 
 
 **명령줄과 도구**
 - `director run`(`mission` · `status` · `resume` · `clean-worktrees` · `do`는 확인).
-- 외부 주문 입구(`/bridge/orders`)와 `allowed_projects`.
 
 **콘솔**
 - AI 설정의 로그인 · 계정 변경 · 로그아웃 버튼(일부러 누르지 않음), 이메일 전체 보기.
@@ -57,6 +56,9 @@ WebGL을 쓸 수 없을 때의 2D 장면 · 줌인 · 구름 속 화면, 전체 
   프로젝트 파일 목록(`core/project_inventory.py`). 예전 데이터베이스에 남은 연구용 표는 그대로 두고 읽지 않습니다.
 - **다시보기** — 지난 작업을 장면으로 재생하는 기능. 통합 기록과 상세 패널로 대신합니다.
 - **원본의 마일스톤 문서** — 2026년 9월의 설계 · 안정화 기록. git 이력에 남아 있습니다.
+- **외부 주문 입구** (`/bridge/orders`, `/bridge/order`, `companion.json`의 `allowed_projects`) — 부르는 곳이 없고 목록이 비어 있어
+  모든 주문을 거절하던 옛 입구. 다른 프로그램은 `director do`와 같은 `/bridge/missions`(폴더 규칙 `bridge.allowed_roots`)를 씁니다.
+  예전 데이터베이스에 남은 `bridge_orders` 표는 그대로 두고 읽지 않습니다.
 
 ## 바꾼 것
 
