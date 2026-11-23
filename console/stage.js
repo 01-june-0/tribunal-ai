@@ -428,8 +428,12 @@ function paintResult(){
   if(lines.length>MAX)said=T('변경 내용이 길어 앞의 {0}줄만 보여 줍니다.',MAX);
   const open=state!=='applied'&&state!=='discarded';
   if(open&&moved)said=moved;
-  else if(state==='blocked'){const why=result.blocks||(live.applied&&live.applied.blocks)||[];said=T('적용 보류: ')+(blockText(why).slice(0,300)||T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'));}
+  else if(state==='blocked'){const why=result.blocks||(live.applied&&live.applied.blocks)||[],again=T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'),text=blockText(why).slice(0,300);
+    said=T('적용 보류: ')+(text?text+(clash.length?' · '+again:''):again);}     // the way on is said whenever skipping would help
   else if(state==='rolled_back')said=undone(live.applied);
+  else if(state==='applied'){        // a result outside any task has no card left afterwards: say here what the kept copy still holds
+    const left=(result.skipped||((d.result||{}).skipped_conflicts)||((live.applied||{}).skipped_conflicts)||[]).map(c=>typeof c==='string'?c:c&&c.path).filter(Boolean);
+    if(left.length&&d.worktree_exists!==false)said=T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')+' '+left.slice(0,6).join(', ');}
   // (the server's own pre-check is not repeated here: it is decided, and explained, when "원본에 적용" is pressed)
   if(note.textContent!==said)note.textContent=said;
   once(acts,JSON.stringify([state,deliveryBusy,!!moved,open]),()=>{
@@ -438,7 +442,7 @@ function paintResult(){
     apply.onclick=async()=>{const mine=result;let out=null;
       if(!loose)out=await applyMission(mine.ms,state);
       else if(confirm(state==='blocked'?T('충돌한 파일은 건너뛰고 나머지 변경만 원본 프로젝트({0})에 적용할까요?',mine.ms.project||'—'):T('이 작업의 결과물을 원본 프로젝트({0})에 적용할까요? 프로젝트의 파일이 바뀝니다.',mine.ms.project||'—')))out=await decideResult(mine.ms.id,'apply',state==='blocked'?{on_conflict:'skip'}:{});
-      if(out&&result===mine){if(out.status==='applied')mine.done='applied';else if(out.status==='blocked'){mine.done='blocked';mine.blocks=out.blocks||[];}else if(out.status==='rolled_back')mine.done='rolled_back';}
+      if(out&&result===mine){if(out.status==='applied'){mine.done='applied';mine.skipped=out.skipped_conflicts||null;}else if(out.status==='blocked'){mine.done='blocked';mine.blocks=out.blocks||[];}else if(out.status==='rolled_back')mine.done='rolled_back';}
       paintResult();if(result===mine&&mine.done==='applied')$('rp-close').focus();};
     const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=async()=>{await decideMission(result.ms.id,'extend');closeResult();};
     const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';

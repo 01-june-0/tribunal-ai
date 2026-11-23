@@ -492,3 +492,13 @@ def test_a_failed_attempt_kept_as_a_base_is_not_offered_as_a_result(monkeypatch)
     from core.mission import deliverable_run_id
     failed = {"base_worktree": "X/.director_worktrees/RUN-F", "steps": [{"run_id": "RUN-F", "result": {"final_state": "FAIL", "worktree_path": "X/.director_worktrees/RUN-F"}}]}
     assert deliverable_run_id(failed) is None
+
+
+def test_the_result_panel_says_how_to_skip_and_what_the_kept_copy_holds():
+    """Found applying a result outside any task with a conflict: the blocked note named the file but not that pressing
+    again skips it, and after the skip nothing said the AIs' version of that file is still in the kept working copy
+    (such a result has no task card to say it afterwards)."""
+    src = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "said=T('적용 보류: ')+(text?text+(clash.length?' · '+again:''):again);" in src
+    assert "mine.skipped=out.skipped_conflicts||null;" in src
+    assert "if(left.length&&d.worktree_exists!==false)said=T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')" in src
