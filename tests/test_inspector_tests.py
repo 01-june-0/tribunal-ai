@@ -73,6 +73,27 @@ def test_passing_tests_are_run_recorded_and_taken_out_again(project, tmp_path):
     assert orch.audit[-1][2] == "INSPECTOR_TESTS"
 
 
+def test_the_copy_runs_outside_tribunals_own_folder(project, tmp_path, monkeypatch):
+    """Found in a real run: the copy sat in the run record, so pytest climbed to Tribunal's own pytest.ini and used
+    its settings and import path for another project's tests."""
+    import tempfile
+    from core import verifier
+    seen = {}
+    real = verifier.Verifier.verify
+
+    def spy(**kw):
+        seen["where"] = Path(kw["worktree_path"]).resolve()
+        return real(**kw)
+    monkeypatch.setattr(verifier.Verifier, "verify", staticmethod(spy))
+    orch = FakeOrch(tmp_path, proxy=True)
+    it.run(orch, "RUN-1", review(("tests/test_inspector_sum.py", GOOD)), str(project), {"passed": True}, LOG)
+    where = seen["where"]
+    assert Path(tempfile.gettempdir()).resolve() in where.parents and orch.dir.resolve() not in where.parents
+    assert Path(it.__file__).resolve().parents[1] not in where.parents       # nothing of Tribunal above it
+    assert not where.exists() and not where.parent.exists()                 # and it is gone afterwards
+    assert orch.saved["inspector_tests.json"]["passed"] is True
+
+
 def test_whatever_an_inspector_test_does_to_files_stays_in_the_copy(project, tmp_path):
     vandal = ("from pathlib import Path\n\n\ndef test_breaks_things():\n    root = Path(__file__).resolve().parent.parent\n"
               "    (root / 'calc.py').write_text('def add(a, b):\\n    return 0\\n')\n    (root / 'tests' / 'test_calc.py').unlink()\n"

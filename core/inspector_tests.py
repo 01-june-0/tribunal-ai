@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -133,16 +134,25 @@ def run(orch, run_id: str, review, worktree_path: Optional[str], verification: O
         return
     accepted, record["rejected"] = select(tests, worktree_path)
     _, test_cmd, _ = orch._verification_cmds()
-    worktree, sandbox = Path(worktree_path).resolve(), out_dir / "sandbox"
+    worktree, holder = Path(worktree_path).resolve(), None
     skipped = ("no acceptable test file" if not accepted else "no test command is configured" if not test_cmd
                else "the project's own tests do not pass yet" if not (verification or {}).get("passed") else None)
     if not skipped and (out_dir.resolve() == worktree or worktree in out_dir.resolve().parents):
         skipped = "the run record is inside the worktree"          # a copy into itself would never end
     if not skipped:
         out_dir.mkdir(parents=True, exist_ok=True)
-        if not _copy(worktree, sandbox):
+        # The copy lives in the system's temporary folder, not in the run record: test tools look for their settings
+        # in the folders above the one they run in, and above the run record is Tribunal itself - its pytest.ini (and
+        # its import path) would be used for someone else's project.
+        holder = Path(tempfile.mkdtemp(prefix="tribunal-inspector-")).resolve()
+        sandbox = holder / "project"
+        if holder == worktree or worktree in holder.parents:
+            skipped = "the temporary folder is inside the worktree"
+        elif not _copy(worktree, sandbox):
             skipped = "the worktree is too large to copy"
     if skipped:
+        if holder:
+            shutil.rmtree(holder, ignore_errors=True)
         record["skipped"] = skipped
         orch._save_json(run_id, "inspector_tests.json", record)
         return
@@ -157,7 +167,7 @@ def run(orch, run_id: str, review, worktree_path: Optional[str], verification: O
         result = Verifier.verify(worktree_path=str(sandbox), build_cmd=None, test_cmd=test_cmd, lint_cmd=None, git_checks=False,
                                  timeout=orch._verification_timeout())
     finally:
-        shutil.rmtree(sandbox, ignore_errors=True)
+        shutil.rmtree(holder, ignore_errors=True)
     test = result.get("test") or {}
     record.update(ran=True, passed=bool(test.get("passed")), files=written, test_counts=result.get("test_counts"),
                   output_tail=str(test.get("output") or "")[-4000:])
