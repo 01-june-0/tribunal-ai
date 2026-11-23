@@ -7,8 +7,8 @@
 
    Which language: ?lang=en / ?lang=ko (remembered in this browser), else the last choice, else the browser's
    language. The language is fixed when the page loads; the language button reloads the page.
-   Not covered: the Workshop tab (the classic page, rendered by the server in Korean) and whatever the AIs
-   themselves write (chat, mission summaries). */
+   The Details tab (the classic page, rendered by the server in Korean) has its own file, i18n_classic.js.
+   Not covered: whatever people and the AIs themselves write (chat, mission summaries). */
 (function(){
 const EN={
   "TRINITY · 세 AI, 하나의 지능": "TRINITY · three AIs, one mind",

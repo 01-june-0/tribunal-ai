@@ -234,7 +234,7 @@ def test_page_regions_and_announcements(page):
         assert part in page, part
     js = (ROOT / "console" / "console.js").read_text(encoding="utf-8")
     css = (ROOT / "console" / "console.css").read_text(encoding="utf-8")
-    assert "if(nextEl.textContent!==nextText)nextEl.textContent=nextText" in js      # announced only when it changes
+    assert "if(nextEl.dataset.said!==nextText){nextEl.dataset.said=nextText;nextEl.textContent=nextText;}" in js      # announced only when it changes
     assert ".director-v2 #hdr h1{position:absolute;width:1px;height:1px" in css and "#hdr h1{display:none}" not in css
 
 

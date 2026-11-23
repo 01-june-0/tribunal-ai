@@ -15,7 +15,7 @@ from core.order_bridge import OrderBridge
 ROOT = Path(__file__).resolve().parent
 # The console is a fixed allowlist of local files: nothing outside console/ is ever served.
 STATIC_FILES = {'/': 'index.html', '/console.js': 'console.js', '/console.css': 'console.css',
-                '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js'}
+                '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js', '/i18n_classic.js': 'i18n_classic.js'}
 
 
 _PICK_LOCK = threading.Lock()

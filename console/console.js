@@ -4,8 +4,39 @@ const frame=document.getElementById('workspace');
 const labels={NONE:T('작업 대기'),IDLE:T('작업 대기'),PLANNING:T('설계 중'),ORDER_READY:T('제작 준비'),BUILDING:T('제작 중'),VERIFYING:T('테스트 실행 중'),REVIEWING:T('감리 중'),DECIDING:T('결과 판단 중'),PASS:T('검증 통과'),RECOVERED:T('복구 완료 · 검증 통과'),FAIL:T('검증 실패'),HUMAN_REQUIRED:T('확인 · 수정 필요'),REJECTED:T('거절한 작업'),TIMEOUT:T('실행 시간 초과')};
 let busy=false,doc;
 function el(tag,text,cls){const n=doc.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;}
+// The Details tab in English. The page is rendered in Korean and its own script keeps rewriting it, so its text is
+// translated where it stands (i18n_classic.js) and again whenever it changes. What people and the AIs wrote - chat
+// messages, file contents, the draft in the input box - is left alone; a text without an entry stays Korean.
+function english(d){
+ const C=window.I18N_CLASSIC;if(!C||!(window.I18N&&window.I18N.lang==='en')||d.__english)return;d.__english=true;
+ const ATTRS=['title','placeholder','aria-label'],KEEP_PRE=new Set(['mission-details','confirm-body']);
+ // Names and words that are somebody's own: a project folder, the goal in a result's header, a system line's original.
+ const THEIRS='#project-name,#project-label,.pname,#rd-head,.evraw';
+ const theirs=node=>{for(let e=node.nodeType===1?node:node.parentElement;e;e=e.parentElement){const t=e.tagName;
+   if(t==='SCRIPT'||t==='STYLE'||t==='TEXTAREA'||t==='CODE'||(t==='PRE'&&!KEEP_PRE.has(e.id))||e.matches(THEIRS))return true;}return false;};
+ const text=node=>{if(theirs(node))return;const was=node.nodeValue,now=C.tr(was);if(now!==was)node.nodeValue=now;};
+ const attrs=e=>{if(theirs(e))return;for(const a of ATTRS){if(a==='title'&&e.matches('.evt'))continue;   // that tooltip is the original line
+   const was=e.getAttribute(a);if(was){const now=C.tr(was);if(now!==was)e.setAttribute(a,now);}}
+   if(e.tagName==='INPUT'&&/^(button|submit)$/.test(e.type)){const now=C.tr(e.value);if(now!==e.value)e.value=now;}};
+ const all=root=>{if(root.nodeType===3){text(root);return;}if(root.nodeType!==1)return;
+   const walk=d.createTreeWalker(root,NodeFilter.SHOW_TEXT);for(let n=walk.nextNode();n;n=walk.nextNode())text(n);
+   attrs(root);for(const e of root.querySelectorAll('[title],[placeholder],[aria-label],input'))attrs(e);};
+ // A live region is announced whenever its text is written. The page's script writes only when the text differs
+ // from what it reads back, so these keep answering with the Korean they were given: nothing is written, and read
+ // out, again and again for a text that did not change.
+ const write=Object.getOwnPropertyDescriptor(d.defaultView.Node.prototype,'textContent').set;
+ for(const region of d.querySelectorAll('[role=status],[role=alert],[aria-live]')){let given=region.textContent;
+   Object.defineProperty(region,'textContent',{configurable:true,get:()=>given,set(v){v=String(v);if(v===given)return;given=v;write.call(region,C.tr(v));}});}
+ all(d.body);d.documentElement.lang='en';
+ // A write that is already English changes nothing here, so the observer settles after one pass.
+ new (d.defaultView.MutationObserver)(records=>{for(const r of records){
+   if(r.type==='characterData')text(r.target);else if(r.type==='attributes')attrs(r.target);else for(const n of r.addedNodes)all(n);}})
+   .observe(d.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:ATTRS});
+ const w=d.defaultView;for(const name of ['confirm','alert']){const ask=w[name].bind(w);w[name]=message=>ask(C.tr(String(message)));}
+}
 function setup(){
  doc=frame.contentDocument;if(!doc?.getElementById('main'))return;
+ english(doc);
  if(doc.getElementById('mission-control'))return;
  doc.body.classList.add('director-v2');
  const css=doc.createElement('link');css.rel='stylesheet';css.href='/console.css';doc.head.append(css);
@@ -33,7 +64,7 @@ async function refresh(){if(busy||!doc||!doc.getElementById('mission-control'))r
  if(!s.next_step&&(s.pending_result_count||0)>0&&state!=='HUMAN_REQUIRED')next=T('결과물 {0}건이 적용을 기다립니다. 확인하고 적용할지 결정하세요.',s.pending_result_count);
  if(state==='HUMAN_REQUIRED'&&run.details){next=run.details.includes('PERMISSION_SETUP_FAILED')?T('실행 준비 오류로 중단됐습니다. 작업 경로와 권한 규칙을 수정한 뒤 다시 검증해야 합니다.'):run.details.includes('BASELINE_FAILED')?T('구현 전 검사에서 중단됐습니다. 상세 원인에서 실패한 테스트와 환경을 확인하세요.'):run.details.includes('P1')?T('감리에서 수정할 결함이 발견됐습니다. 수정 후 테스트와 감리를 다시 진행해야 합니다.'):next;}
  const nextText=next,nextEl=doc.getElementById('mission-next');
- if(nextEl.textContent!==nextText)nextEl.textContent=nextText;   // announced (aria-live) only when it really changes
+ if(nextEl.dataset.said!==nextText){nextEl.dataset.said=nextText;nextEl.textContent=nextText;}   // announced (aria-live) only when it really changes - compared with what was asked for, not with what the English screen shows
  doc.getElementById('mission-project').textContent=T('프로젝트 · ')+(s.project_name||T('미선택'));
  const timestamp=run.updated_at?new Date(run.updated_at+(/Z|[+]\d\d:\d\d$/.test(run.updated_at)?'':'Z')):null;
  const elapsed=timestamp?Math.max(0,Math.floor((Date.now()-timestamp.getTime())/1000)):null;
