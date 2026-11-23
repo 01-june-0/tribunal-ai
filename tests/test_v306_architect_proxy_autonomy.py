@@ -1314,3 +1314,20 @@ def test_continuing_does_not_reopen_a_security_stop(tmp_path, monkeypatch):
     runner.store.save(m)
     runner.reopen(m["mission_id"])
     assert factory().sm.get_run(rid)["current_state"] == State.HUMAN_REQUIRED
+
+
+def test_director_run_summary_says_why_it_stopped(capsys):
+    """Found in a real run (both ARCHITECTs over a short time limit): the summary read "ARCHITECT PASS" and
+    "SCOPE VIOLATION 1" with no reason. Planning that never produced an ORDER is not a pass, and the stop reason shows."""
+    import director
+    from core.state_machine import State
+    from core.provider_manager import FailoverMode
+    director._print_summary({"run_id": "RUN-T", "final_state": State.HUMAN_REQUIRED, "order": None, "scope_violations": 1,
+                             "failover_mode": FailoverMode.DEGRADED,
+                             "stop_detail": "PROVIDER_FAILURE: PLANNING_BACKUP failed on OPENAI (TIMEOUT)."})
+    out = capsys.readouterr().out
+    assert "ARCHITECT        N/A" in out and "REASON: PROVIDER_FAILURE: PLANNING_BACKUP" in out
+    assert "RUN-T [DEGRADED]" in out
+    director._print_summary({"run_id": "RUN-P", "final_state": State.PASS, "order": {"goal": "g"}, "stop_detail": "ok"})
+    out = capsys.readouterr().out
+    assert "ARCHITECT        PASS" in out and "REASON" not in out

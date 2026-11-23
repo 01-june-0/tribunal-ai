@@ -2145,9 +2145,15 @@ class Orchestrator:
             except Exception:
                 pass
 
+        try:
+            trans = self.sm.get_transitions(run_id)
+        except Exception:
+            trans = []
         return {
             "run_id": run_id,
             "final_state": current_state,
+            # why the run ended where it did (the last transition's note), so `director run` can say it, not only a count
+            "stop_detail": ((trans[-1].get("details") if trans else "") or "")[:600],
             "files_changed": files_changed,
             "scope_violations": len(scope_violations or []),
             "failover_mode": getattr(self, "current_failover_mode", "NORMAL"),

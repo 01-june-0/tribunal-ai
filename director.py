@@ -298,12 +298,12 @@ def _print_summary(summary: dict):
 
     architect_label = summary.get("architect_label") or "ARCHITECT"
     inspector_label = summary.get("inspector_label") or "CODEX"
-    failover_mode = summary.get("failover_mode", "NORMAL")
+    failover_mode = getattr(summary.get("failover_mode", "NORMAL"), "value", summary.get("failover_mode", "NORMAL"))
     mode_tag = f" [{failover_mode}]" if failover_mode != "NORMAL" else ""
 
     click.echo("\n" + "=" * 36)
     click.echo(f"{run_id}{mode_tag}\n")
-    click.echo(f"ARCHITECT             PASS")
+    click.echo(f"ARCHITECT        {'PASS' if summary.get('order') else 'N/A'}")      # no ORDER: planning never finished
     click.echo(f"BASELINE TEST    {base_test_info}")
     click.echo(f"MAKER            {maker_status}")          # the role: which AI holds it is a setting, and may have moved
     click.echo(f"BUILD            {build_info}")
@@ -320,6 +320,8 @@ def _print_summary(summary: dict):
         click.secho("HUMAN_REQUIRED", fg="yellow", bold=True)
     else:
         click.secho(f"FAIL ({final_state})", fg="red", bold=True)
+    if final_state != State.PASS and summary.get("stop_detail"):
+        click.echo(f"REASON: {summary['stop_detail']}")
     click.echo("=" * 36 + "\n")
 
 @cli.command("clean-worktrees")
