@@ -13,14 +13,14 @@ Tribunal AI는 [AI DEV DIRECTOR](https://github.com/digilogd-cmd/ai-dev-director
 아래는 코드와 테스트는 있지만 **실제 작업이나 실제 화면으로 확인한 적이 없는 것**입니다. 실제로 확인한 것은 macOS에서
 `director do`와 콘솔로 돌린 작업들입니다(통과, 자동 수정, 마침 검사에서 멈춤, 시작 전 · 제작 후 승인, 거절, 손으로 적용,
 충돌 건너뛰기, 폐기, 두 단계로 이어지는 `standard` 작업과 그 결과물의 적용, 작업 사본의 제외 목록, 작업 정지 버튼, 콘솔을 껐다
-켠 뒤 이어 하기).
+켠 뒤 이어 하기, 자동 적용과 그 뒤의 작업 사본 · 브랜치 정리, 정지한 작업의 작업 사본 지우기).
 
 **플랫폼**
 - Windows · Linux 전체. `start-companion.ps1`, `stop-companion.ps1` 포함.
 
 **흐름**
 - `deep` 프로필, 세 단계 이상으로 이어지는 작업.
-- 통과한 결과물의 자동 적용(`autonomy.auto_apply`의 `on_pass` · `on_done`).
+- 통과한 결과물의 자동 적용 중 `on_done`(`on_pass`는 확인).
 - 감리 AI의 독립 테스트가 실제 작업에서 도는 모습. `standard` 작업에서 단계는 거쳤지만 감리 AI가 테스트를 제안하지 않아
   실행된 것은 없었음(`quick` 프로필은 이것을 끔).
 - 제작 재시도(`maker_attempts`), 출력 한도에 걸렸을 때의 압축 재시도, 마지막 시도에서 다른 AI로 넘기기.
