@@ -1517,12 +1517,8 @@ class Orchestrator:
             else:
                 assigned = self.pm.resolve_roles(req_architect, req_maker, req_inspector)
             
-            new_architect_prov = assigned["architect_provider"]
-            if not self._proxy() and req_architect.lower() == "openai" and new_architect_prov == "ANTHROPIC":
-                self.architect = self._init_architect("claude")
-                self.inspector = self._init_inspector("claude")
-                self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER", "Both ARCHITECT and INSPECTOR switched to Claude Code due to OPENAI unavailable")
-
+            # (A branch for the old layout - a Codex ARCHITECT moved to Claude - stood here. It compared an alias with a
+            # domain and never ran; the DEGRADED block below rebuilds whichever agent the provider manager moved.)
             self.current_failover_mode = assigned["mode"]
             self.current_architect_name = assigned["architect_provider"].upper()
             self.current_inspector_name = assigned["inspector_provider"].upper()
