@@ -84,6 +84,9 @@ def is_serious_text(text: str) -> bool:
 USER_STOP_MARKERS = (
     "USER_DECISION", "Live money code", "Control plane modified", "Path escapes worktree", "Protected path modified",
     "File modified outside allowed_paths", "PROVIDER_FAILURE", "No usable provider",
+    # Roles chosen by the user and no ARCHITECT proxy: the user decides what replaces the AI that is out. Re-planning
+    # would only send the next milestone to the same AI.
+    "MANUAL_ROLE_UNAVAILABLE",
 )
 
 

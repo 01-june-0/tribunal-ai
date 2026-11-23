@@ -939,7 +939,9 @@ def start_goal_mission(project_path: str, goal: str, profile: Optional[str] = No
             project_context["note"] = "Continuing from the latest mission deliverable (isolated worktree) of this project; the listed files already exist there."
         from core import usage
         usage.set_context(stage="CHAT", run_id=None, mission_id=None)
-        resp = orch.architect.chat(goal, project_context, [])
+        resp, swaps = orch.architect_chat(goal, project_context, [])
+        for note in swaps:
+            cm.add_message(sid, "SYSTEM", "ARCHITECT 교체: " + note)
     except Exception as e:
         cm.add_message(sid, "SYSTEM", f"ARCHITECT Error: {str(e)[:500]}")
         return {"status": "rejected", "error": "ARCHITECT unavailable: " + str(e)[:300]}
@@ -1209,15 +1211,12 @@ def handle_chat_message(msg: str):
             project_context = {"project_path": None, "existing_files": [], "note": "NO PROJECT SELECTED"}
         from core import usage
         usage.set_context(stage="CHAT", run_id=None, mission_id=None)
-        resp = orch.architect.chat(msg, project_context, hist)
+        resp, swaps = orch.architect_chat(msg, project_context, hist, health=False)    # checked above
+        for note in swaps:
+            cm.add_message(sid, "SYSTEM", "ARCHITECT 교체: " + note)
     except Exception as e:
-        # real call failed: record the real provider state (quota/auth/timeout) or leave it (config/unknown)
+        # the provider state of a failed ARCHITECT call is already recorded by Orchestrator.architect_chat
         architect_domain = orch._get_agent_domain(orch.architect)
-        if architect_domain not in ("MOCK", "UNKNOWN"):
-            try:
-                pm.parse_cli_error(architect_domain, str(e))
-            except Exception:
-                pass
         # provenance + audit of the failed ARCHITECT call before terminating this request
         try:
             failed_prov = _architect_provenance_record(orch.architect)

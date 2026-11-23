@@ -286,7 +286,8 @@ class StateMachine:
             retryable = any(code in reason for code in (
                 'GOOGLE_STREAM_EMPTY_RESPONSE', 'GOOGLE_STREAM_RESULT_MISSING',
                 'GOOGLE_STREAM_FAILED: Your previous response was cut off',
-                'PROVIDER_FAILURE: Manually selected CLI unavailable:', 'MANUAL_ROLE_UNAVAILABLE:'))
+                'PROVIDER_FAILURE: Manually selected CLI unavailable:', 'MANUAL_ROLE_UNAVAILABLE:',
+                'PROVIDER_FAILURE: No usable provider for'))
             if not run or run['current_state'] not in {State.FAIL, State.HUMAN_REQUIRED, State.TIMEOUT} or not retryable:
                 return False
             target = State.BUILDING if run['worktree_path'] else State.IDLE

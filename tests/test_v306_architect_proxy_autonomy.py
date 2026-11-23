@@ -1098,3 +1098,219 @@ def test_a_free_red_round_does_not_cost_the_review_its_repair_round(tmp_path, mo
 def test_without_the_proxy_nothing_is_skipped(tmp_path):
     orch = _mock_orch(autonomy={"enabled": True, "max_repairs": 2})
     assert orch._straight_to_repair("RUN-x", {"passed": False}) is False
+
+
+# ------------------------------------------------------------------ an AI that is out (checked with fake CLIs, 2026-11-23)
+
+def _maker_agents(*specs):
+    """Makers in turn: (provider, outcome) where outcome is 'ok' or the error text the CLI call raises."""
+    made = []
+    for provider, outcome in specs:
+        class Agent:
+            pass
+        a = Agent()
+        a.provider = provider
+        if outcome == "ok":
+            a.run = good_build([])
+        else:
+            def run(order, worktree_path, maker_fn=None, _e=outcome):
+                raise RuntimeError(_e)
+            a.run = run
+        made.append(a)
+    return made
+
+
+def _rotate(monkeypatch, orch, agents):
+    queue = list(agents[1:])
+    orch.maker = agents[0]
+
+    def swap(role, run_id, logger, tried, stage, why):
+        if not queue:
+            return False
+        orch.maker = queue.pop(0)
+        tried.add(orch._get_agent_domain(orch.maker))
+        return True
+    monkeypatch.setattr(orch, "_swap_agent", swap)
+    marked = []
+    monkeypatch.setattr(orch.pm, "parse_cli_error", lambda d, e: marked.append(d))
+    return marked
+
+
+QUOTA = "OPENAI CLI exit 1: Error: usage limit reached"
+
+
+def test_an_ai_that_is_out_does_not_use_up_maker_attempts(tmp_path, monkeypatch):
+    import logging
+    orch = proxy_orch(maker_attempts=2)
+    quiet(monkeypatch, orch)
+    orch.sm.create_run("RUN-OUT", str(tmp_path), "g")
+    marked = _rotate(monkeypatch, orch, _maker_agents(("openai", QUOTA), ("anthropic", "Error: Not logged in"), ("google", "ok")))
+    (tmp_path / "tests").mkdir()
+    res, stop = orch._run_maker_autonomous("RUN-OUT", OrderSchema(**ORDER), str(tmp_path), logging.getLogger("t"), [])
+    assert stop is None and res.status == "COMPLETED"                     # two AIs out, the third still gets its turn
+    assert marked == ["OPENAI", "ANTHROPIC"]
+
+
+def test_maker_stops_for_the_user_when_every_ai_is_out(tmp_path, monkeypatch):
+    import logging
+    orch = proxy_orch(maker_attempts=3)
+    quiet(monkeypatch, orch)
+    orch.sm.create_run("RUN-NONE", str(tmp_path), "g")
+    marked = _rotate(monkeypatch, orch, _maker_agents(("openai", QUOTA), ("anthropic", QUOTA)))
+    (tmp_path / "tests").mkdir()
+    res, stop = orch._run_maker_autonomous("RUN-NONE", OrderSchema(**ORDER), str(tmp_path), logging.getLogger("t"), [])
+    assert res.status == "FAILED" and stop is not None
+    assert orch.sm.get_run("RUN-NONE")["current_state"] == State.HUMAN_REQUIRED
+    detail = MissionRunner(lambda: orch, MissionStore(), lambda *a, **k: None)._evidence(orch, "RUN-NONE")["stop_detail"]
+    assert detail.startswith("PROVIDER_FAILURE: No usable provider for MAKER")
+    assert marked == ["OPENAI", "ANTHROPIC"]                                 # the last one is recorded as out too
+    assert autopilot.run_stop_needs_user("PROVIDER_FAILURE: No usable provider for MAKER")
+
+
+def test_a_maker_that_keeps_failing_still_ends_after_its_attempts(tmp_path, monkeypatch):
+    import logging
+    orch = proxy_orch(maker_attempts=2)
+    quiet(monkeypatch, orch)
+    orch.sm.create_run("RUN-BAD", str(tmp_path), "g")
+    marked = _rotate(monkeypatch, orch, _maker_agents(("openai", "Expecting value: line 1 column 1"),
+                                                      ("anthropic", "Expecting value: line 1 column 1"), ("google", "ok")))
+    (tmp_path / "tests").mkdir()
+    res, stop = orch._run_maker_autonomous("RUN-BAD", OrderSchema(**ORDER), str(tmp_path), logging.getLogger("t"), [])
+    assert res.status == "FAILED" and orch.sm.get_run("RUN-BAD")["current_state"] == State.FAIL
+    assert len(orch._load_json("RUN-BAD", "maker_attempts.json")) == 2 and marked == []
+
+
+def test_manual_roles_without_the_proxy_block_the_mission():
+    assert autopilot.run_stop_needs_user("MANUAL_ROLE_UNAVAILABLE: OPENAI at BUILDING: usage limit reached")
+
+
+class _ChatArchitect:
+    def __init__(self, provider, outcome):
+        self.provider, self.outcome, self.calls = provider, outcome, 0
+
+    def chat(self, message, context, history):
+        self.calls += 1
+        if self.outcome != "ok":
+            raise RuntimeError(self.outcome)
+        return {"type": "QUESTION", "message": self.provider}
+
+
+def _chat_orch(monkeypatch, proxy, first, others, status=None):
+    from core.provider_manager import ProviderStatus
+    orch = proxy_orch() if proxy else _mock_orch(autonomy={"architect_proxy": False})
+    orch.architect = first
+    made = {}
+    monkeypatch.setattr(orch, "_init_architect", lambda alias: made.setdefault(alias, others[alias]))
+    monkeypatch.setattr(orch, "_record_provider_success", lambda *a: None)
+    monkeypatch.setattr(orch.pm, "check_health", lambda *a, **k: {})
+    monkeypatch.setattr(orch.pm, "usable_domains", lambda *a: ["OPENAI", "GOOGLE"])
+    monkeypatch.setattr(orch.pm, "get_status", lambda d: (status or {}).get(d, ProviderStatus.HEALTHY))
+    marked = []
+    monkeypatch.setattr(orch.pm, "parse_cli_error", lambda d, e: marked.append(d))
+    return orch, marked
+
+
+def test_first_architect_call_moves_to_another_ai_when_its_ai_is_out(monkeypatch):
+    claude = _ChatArchitect("anthropic", "Claude Code CLI execution failed (exit 1): Error: usage limit reached")
+    orch, marked = _chat_orch(monkeypatch, True, claude, {"openai": _ChatArchitect("openai", "ok")})
+    resp, notes = orch.architect_chat("goal", {}, [])
+    assert resp["message"] == "openai" and marked == ["ANTHROPIC"]
+    assert len(notes) == 1 and notes[0].startswith("ANTHROPIC -> OPENAI (QUOTA")
+
+
+def test_first_architect_call_skips_an_ai_known_to_be_out(monkeypatch):
+    from core.provider_manager import ProviderStatus
+    claude = _ChatArchitect("anthropic", "ok")
+    orch, _ = _chat_orch(monkeypatch, True, claude, {"openai": _ChatArchitect("openai", "ok")},
+                         status={"ANTHROPIC": ProviderStatus.AUTH_FAILED})
+    resp, notes = orch.architect_chat("goal", {}, [])
+    assert resp["message"] == "openai" and claude.calls == 0 and notes == ["ANTHROPIC -> OPENAI (AUTH_FAILED)"]
+
+
+def test_first_architect_call_keeps_a_recovering_ai_for_its_trial(monkeypatch):
+    from core.provider_manager import ProviderStatus
+    claude = _ChatArchitect("anthropic", "ok")
+    orch, _ = _chat_orch(monkeypatch, True, claude, {}, status={"ANTHROPIC": ProviderStatus.RECOVERING})
+    resp, notes = orch.architect_chat("goal", {}, [])
+    assert resp["message"] == "anthropic" and notes == []
+
+
+def test_first_architect_call_without_the_proxy_keeps_the_chosen_ai(monkeypatch):
+    claude = _ChatArchitect("anthropic", "Claude Code CLI execution failed (exit 1): Error: usage limit reached")
+    orch, marked = _chat_orch(monkeypatch, False, claude, {"openai": _ChatArchitect("openai", "ok")})
+    with pytest.raises(RuntimeError):
+        orch.architect_chat("goal", {}, [])
+    assert marked == ["ANTHROPIC"]                                           # recorded, but not moved
+
+
+def test_first_architect_call_does_not_move_on_a_bad_answer(monkeypatch):
+    claude = _ChatArchitect("anthropic", "Could not parse JSON from ARCHITECT output")
+    orch, marked = _chat_orch(monkeypatch, True, claude, {"openai": _ChatArchitect("openai", "ok")})
+    with pytest.raises(RuntimeError):
+        orch.architect_chat("goal", {}, [])
+    assert marked == []
+
+
+def test_an_ai_that_failed_on_its_answer_takes_the_attempt_left_when_the_others_are_out(tmp_path, monkeypatch):
+    import logging
+    orch = proxy_orch(maker_attempts=3)
+    quiet(monkeypatch, orch)
+    orch.config["maker"] = {"mode": "proposal"}
+    health = {"OPENAI": True, "ANTHROPIC": True, "GOOGLE": True}
+    calls = []
+
+    def agent(alias, outcomes):
+        class A:
+            provider = alias
+
+            def run(self, order, worktree_path, maker_fn=None):
+                calls.append(alias)
+                out = outcomes.pop(0) if len(outcomes) > 1 else outcomes[0]
+                if out == "ok":
+                    return good_build([])(order, worktree_path)
+                raise RuntimeError(out)
+        return A()
+    agents = {"openai": agent("openai", ["Expecting value: line 1 column 1", "Expecting value: line 1 column 1", "ok"]),
+              "claude": agent("anthropic", [QUOTA]), "antigravity": agent("google", [QUOTA])}
+    orch.maker = agents["openai"]
+    monkeypatch.setattr(orch, "_init_maker", lambda alias: agents[alias])
+    monkeypatch.setattr(orch.pm, "usable_domains", lambda *a: [d for d, ok in health.items() if ok])
+    monkeypatch.setattr(orch.pm, "parse_cli_error", lambda d, e: health.__setitem__(d, False))
+    orch.sm.create_run("RUN-BACK", str(tmp_path), "g")
+    (tmp_path / "tests").mkdir()
+    res, stop = orch._run_maker_autonomous("RUN-BACK", OrderSchema(**ORDER), str(tmp_path), logging.getLogger("t"), [])
+    assert stop is None and res.status == "COMPLETED"
+    assert calls == ["openai", "openai", "anthropic", "google", "openai"]   # bad answer x2, two AIs out, last attempt
+
+
+def test_continuing_a_task_blocked_on_an_ai_that_was_out_retries_that_step(tmp_path, monkeypatch):
+    builds = []
+    plans = [{"status": "DONE", "summary": "ok", "reason": "", "order": None}]
+    factory = mission_factory(monkeypatch, plans, builds)
+    runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
+    m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
+    orch = factory()
+    rid = orch._create_run_with_retry(None, str(tmp_path / "proj"), "double")
+    orch.sm.transition_to(rid, State.HUMAN_REQUIRED, details="PROVIDER_FAILURE: No usable provider for MAKER (tried OPENAI)")
+    m["steps"][0]["run_id"] = rid
+    m["steps"][0]["result"] = runner._evidence(orch, rid)
+    runner.store.save(m)
+    assert runner.run(m["mission_id"])["status"] == "BLOCKED"            # the user decides
+    runner.reopen(m["mission_id"])                                          # ... and continues once the AI is back
+    assert factory().sm.get_run(rid)["current_state"] not in (State.HUMAN_REQUIRED,)
+    done = runner.run(m["mission_id"])
+    assert done["status"] == "DONE" and done["steps"][0]["result"]["final_state"] == "PASS"
+
+
+def test_continuing_does_not_reopen_a_security_stop(tmp_path, monkeypatch):
+    factory = mission_factory(monkeypatch, [], [])
+    runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
+    m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
+    orch = factory()
+    rid = orch._create_run_with_retry(None, str(tmp_path / "proj"), "double")
+    orch.sm.transition_to(rid, State.HUMAN_REQUIRED, details="Protected path modified: x")
+    m["steps"][0]["run_id"] = rid
+    m["steps"][0]["result"] = runner._evidence(orch, rid)
+    runner.store.save(m)
+    runner.reopen(m["mission_id"])
+    assert factory().sm.get_run(rid)["current_state"] == State.HUMAN_REQUIRED

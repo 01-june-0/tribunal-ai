@@ -184,6 +184,16 @@ class MissionRunner:
         mission["status"], mission["blocked_reason"] = "RUNNING", None
         mission["stopped_at"] = None
         self.store.save(mission, force=True)
+        # A step that stopped because its AI was out (no usable AI, or a role the user chose without the proxy) is
+        # tried again from where it stopped once the user continues: by then the AI may be back. A still-missing AI
+        # simply stops it again. Any other stop keeps its result (a security stop is never reopened here).
+        last = (mission.get("steps") or [None])[-1]
+        detail = ((last or {}).get("result") or {}).get("stop_detail") or ""
+        if last and last.get("run_id") and detail.startswith(("PROVIDER_FAILURE: No usable provider for", "MANUAL_ROLE_UNAVAILABLE:")):
+            try:
+                self.factory().sm.reopen_transport_failure(last["run_id"])
+            except Exception:
+                pass
         return mission
 
     # ------------------------------------------------------------------ one step

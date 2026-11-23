@@ -68,7 +68,7 @@ autonomy:
   # ARCHITECT proxy: ARCHITECT decides on the operator's behalf. Only money (payments, paid services, live-account orders),
   # real credentials/accounts and irreversible external actions stop for a human decision.
   architect_proxy: true
-  maker_attempts: 3          # retry with feedback; the last attempt moves to another provider
+  maker_attempts: 3          # retry with feedback; the last attempt moves to another provider (an AI that is out - quota, login - does not count)
   # The inspector may propose new test files; Tribunal runs them and removes them again (evidence only,
   # never part of the deliverable). A failure is a P1 finding. See core/inspector_tests.py.
   inspector_tests: true

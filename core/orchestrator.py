@@ -329,6 +329,58 @@ class Orchestrator:
                 "inspector_provider": roles["inspector"], "can_proceed": True,
                 "reason": "; ".join(notes) or "All selected providers usable."}
 
+    OUT = (ProviderStatus.QUOTA_EXHAUSTED, ProviderStatus.AUTH_FAILED, ProviderStatus.UNAVAILABLE, ProviderStatus.TIMEOUT)
+
+    def architect_chat(self, message: str, context: Dict[str, Any], history: list, health: bool = True):
+        """The first ARCHITECT call of a request (console chat, the bridge, `director mission`), before any run exists.
+        Under the ARCHITECT proxy it gets the same failover as a run: an ARCHITECT whose provider is known to be out
+        (quota, login, missing, timed out - not a RECOVERING one, whose single trial call the caller may own) is
+        replaced before the call, and a call that fails for a provider reason is recorded and tried again on another
+        usable provider. Without the proxy the chosen ARCHITECT is kept and its error is raised, as before.
+        Returns (response, notes); every note names one visible swap ("ANTHROPIC -> OPENAI (why)")."""
+        notes = []
+        proxy = autopilot.enabled(self.config)
+        if health:
+            try:
+                self.pm.check_health()
+            except Exception:
+                pass
+        dom = self._get_agent_domain(self.architect)
+        tried = {dom}
+        if proxy and dom not in ("MOCK", "UNKNOWN") and self.pm.get_status(dom) in self.OUT:
+            alt = autopilot.pick_alternative(self.pm, exclude=tried)
+            if alt is not None:
+                self.architect = self._init_architect(alt)
+                self.current_architect_name = self._domain_of(alt)
+                tried.add(self._domain_of(alt))
+                notes.append(f"{dom} -> {self._domain_of(alt)} ({self.pm.get_status(dom).value})")
+        while True:
+            try:
+                resp = self.architect.chat(message, context, history)
+                self._record_provider_success(self.architect)
+                return resp, notes
+            except Exception as exc:
+                dom = self._get_agent_domain(self.architect)
+                if dom in ("MOCK", "UNKNOWN"):
+                    raise
+                cat = self.pm.classify_error(str(exc))
+                if cat in (ErrorCategory.QUOTA, ErrorCategory.AUTH, ErrorCategory.PROVIDER_UNAVAILABLE, ErrorCategory.TIMEOUT):
+                    try:
+                        self.pm.parse_cli_error(dom, str(exc))
+                    except Exception:
+                        pass
+                # A configuration error is the operator's to fix (the run would stop on it anyway): no paid call elsewhere.
+                if not proxy or cat not in (ErrorCategory.QUOTA, ErrorCategory.AUTH, ErrorCategory.PROVIDER_UNAVAILABLE,
+                                            ErrorCategory.TIMEOUT):
+                    raise
+                alt = autopilot.pick_alternative(self.pm, exclude=tried)
+                if alt is None:
+                    raise
+                self.architect = self._init_architect(alt)
+                self.current_architect_name = self._domain_of(alt)
+                tried.add(self._domain_of(alt))
+                notes.append(f"{dom} -> {self._domain_of(alt)} ({cat.value}: {str(exc)[:120]})")
+
     def _swap_agent(self, role: str, run_id: str, logger: logging.Logger, tried: set, stage: str, why: str) -> bool:
         """Replace ARCHITECT/MAKER/INSPECTOR with another usable provider. Returns False when none is left."""
         others = {self._get_agent_domain(a) for r, a in (("architect", self.architect), ("maker", self.maker),
@@ -579,7 +631,13 @@ class Orchestrator:
             self._swap_agent("maker", run_id, logger, tried, "BUILDING", "failed repeatedly earlier in this run")
         round_start = len(history)
         maker_result = None
-        for attempt in range(1, attempts + 1):
+        # An AI that is out (quota, login, unreachable) is not the proposal's fault: such a failure does not use up an
+        # attempt while another usable AI is left to take over. The swaps are bounded by the AIs there are.
+        attempt = spent = 0
+        no_ai_left = False
+        cap = attempts + len(autopilot.DOMAIN_PREFERENCE)       # free swaps are bounded even when no status changes
+        while spent < attempts and attempt < cap:
+            attempt += 1
             attempt_order = order
             if len(history) > round_start:
                 attempt_order = order.model_copy(deep=True)
@@ -622,16 +680,29 @@ class Orchestrator:
             history.append({"attempt": attempt, "provider": domain, "category": cat.value, "error": err[:800]})
             self._save_json(run_id, "maker_attempts.json", history)
             self.sm.log_audit(run_id, "ORCHESTRATOR", "MAKER_RETRY", json.dumps(history[-1], ensure_ascii=False))
-            logger.warning(f"[ARCHITECT proxy] Maker attempt {attempt}/{attempts} on {domain} failed ({cat.value}): {err[:200]}")
-            if attempt == attempts:
-                break
-            if cat in self.PROVIDER_DOWN:
-                try:
+            logger.warning(f"[ARCHITECT proxy] Maker attempt {attempt} on {domain} failed ({cat.value}): {err[:200]}")
+            # "PROVIDER_UNAVAILABLE: ... recovering, no trial" is an AI that is out too, but its status is not rewritten:
+            # the trial may belong to another process.
+            not_ready = err.startswith("PROVIDER_UNAVAILABLE:")
+            down = cat in self.PROVIDER_DOWN or not_ready
+            if down and not not_ready:
+                try:                                      # recorded even on the last attempt: the next run must know
                     self.pm.parse_cli_error(domain, err)
                 except Exception:
                     pass
-            if cat in self.PROVIDER_DOWN or attempt == attempts - 1 or "PROVIDER_UNAVAILABLE" in err:
-                if not self._swap_agent("maker", run_id, logger, tried, "BUILDING", err) and cat in self.PROVIDER_DOWN:
+            else:
+                spent += 1
+                if spent >= attempts:
+                    break
+            if down or spent == attempts - 1 or "PROVIDER_UNAVAILABLE" in err:
+                if not self._swap_agent("maker", run_id, logger, tried, "BUILDING", err) and down:
+                    # Every untried AI is out, but one that failed earlier for another reason (a malformed answer) may
+                    # still be usable: it gets the attempts that are left. Only no usable AI at all stops the run.
+                    again = {domain}
+                    if spent < attempts and self._swap_agent("maker", run_id, logger, again, "BUILDING", err):
+                        tried |= again
+                        continue
+                    no_ai_left = True
                     break
 
         self._save_json(run_id, "maker.json", maker_result)
@@ -644,6 +715,10 @@ class Orchestrator:
             return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, err, logger, provenance_records, action)
         if err.startswith("MAKER_BUSY"):
             return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, f"MAKER_BUSY: {err}", logger, provenance_records, "MAKER_BUSY")
+        if no_ai_left:
+            # Every AI that could build is out: re-planning cannot help, the user decides (same as at a run's start).
+            return maker_result, self._stop(run_id, State.HUMAN_REQUIRED, f"PROVIDER_FAILURE: No usable provider for MAKER "
+                                            f"(tried {', '.join(sorted(tried))}): {err}", logger, provenance_records)
         state = State.TIMEOUT if "TIMEOUT" in err else State.FAIL
         return maker_result, self._stop(run_id, state, f"Maker failed after {len(history) - round_start} attempt(s) across "
                                           f"{', '.join(sorted(tried))}: {err}", logger, provenance_records)

@@ -113,7 +113,7 @@ autonomy:
   architect_proxy: true        # ARCHITECT가 사용자를 대신해 결정. 돈 · 자격증명 · 비가역 행동만 사람에게
   max_repairs: 3               # 한 단계의 자동 수정 횟수
   fast_repair: true            # 테스트가 실패하면 감리 · 판단을 건너뛰고 바로 수정
-  maker_attempts: 3            # 제작 재시도. 마지막 시도는 다른 AI로
+  maker_attempts: 3            # 제작 재시도. 마지막 시도는 다른 AI로. 한도 소진 같은 AI 쪽 실패는 횟수에 넣지 않음
   inspector_tests: true        # 감리 AI가 테스트를 제안하고 Tribunal이 실행
   max_steps: 6                 # 한 작업의 단계 수
   max_consecutive_failures: 3

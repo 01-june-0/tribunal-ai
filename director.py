@@ -224,7 +224,12 @@ def mission(project: str, goal: str, mission_id: Optional[str], max_steps: Optio
             context["note"] = "Continuing from the latest mission deliverable; the listed files already exist there."
         from core import usage
         usage.set_context(stage="CHAT", run_id=None, mission_id=None)   # the ledger shows what this first ARCHITECT call is
-        resp = orch.architect.chat(goal, context, [])
+        try:
+            resp, swaps = orch.architect_chat(goal, context, [])
+        except Exception as exc:
+            raise click.ClickException(f"ARCHITECT를 부르지 못했습니다: {str(exc)[:400]}")
+        for note in swaps:
+            notify("ARCHITECT 교체: " + note)
         if resp.get("type") != "DEV_TASK":
             click.echo(resp.get("message", ""))
             return
