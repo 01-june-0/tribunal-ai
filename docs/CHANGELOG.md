@@ -185,6 +185,11 @@ Codex 로그아웃 → 로그인, 계정 변경, 작업 중 로그아웃 거절.
   (전에는 설계가 시간 초과로 멈춰도 "ARCHITECT PASS"와 "SCOPE VIOLATION 1"만 나왔음). 넘기기 모드도 `[DEGRADED]`처럼 보임.
 - 변경 내용 창: 충돌로 보류되면 충돌 파일 이름 뒤에 "다시 누르면 충돌 파일만 건너뛰고 적용" 안내를 붙임(전에는 파일 이름만).
   작업 기록 없는 결과물을 건너뛰기로 적용한 뒤에는 "건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다"를 보임(작업 카드가 없어 전에는 어디에도 없었음).
+- 배포 1단계: GitHub Actions로 macOS · Windows · Linux 자동 시험. 첫 Windows 실행에서 40개가 실패했고 모두 고침.
+  제품 문제였던 것: SQLite 연결이 `with` 끝에서 닫히지 않아 Windows에서 파일을 지울 수 없음(`core/db_path.connect`로 닫음),
+  "호출 안에서 한 일"이 Windows 경로를 줄이지 못함, Windows Python에 시간대 정보가 없어 Claude 한도 초기화 시각을 못 읽음
+  (`tzdata` 추가), 실행 중 테스트 출력에서 두 갈래 출력이 한 줄로 붙음, `tribunal doctor` · `director.py` 출력이 cp1252에서 멈춤.
+  나머지는 시험의 운영체제별 기대값(python 이름, 경로, 파일 권한, 인코딩).
 - 배포 0단계(설치본의 기반): 데이터 위치를 `core/paths.py` 한 곳에서 정함(저장소에서 돌리면 그대로, 설치본은 사용자 데이터 폴더,
   `TRIBUNAL_HOME`), Tribunal 자신의 Python과 프로젝트의 Python을 나눔(`core/pythons.py`: 테스트는 원래 프로젝트의 가상환경에
   pytest가 있으면 그것으로, 작업 사본 · 감리 사본 · 적용 검증이 모두 같은 Python, 제작 AI에게는 그 Python의 버전을 알림),

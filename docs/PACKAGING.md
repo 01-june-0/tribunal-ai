@@ -8,7 +8,7 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | 단계 | 상태 |
 |---|---|
 | 0. 기반 정리 | **끝남 (2026-11-24)** — `core/paths.py`, `core/pythons.py`, `pyproject.toml`, `tribunal` 명령. uv로 설치한 설치본(Python 3.9)이 저장소 없이 콘솔을 켜고 작업 하나를 끝까지 통과 |
-| 1. 세 운영체제 자동 시험 | 설정 준비됨(`.github/workflows/tests.yml`: macOS · Windows · Linux의 Python 3.13, Linux의 3.9, 패키지 설치 확인). GitHub에 올리면 처음 돎 |
+| 1. 세 운영체제 자동 시험 | **끝남 (2026-11-24)** — `.github/workflows/tests.yml`: macOS · Windows · Linux(3.13)와 Linux(3.9)에서 테스트 모음 통과, 패키지를 만들어 설치하고 `tribunal doctor` 실행. 첫 Windows 실행의 실패 40개를 고침(제품 문제: SQLite 연결이 닫히지 않음, 경로 줄이기, 시간대 정보, 출력 인코딩) |
 | 2~5 | 아직 |
 
 ## 1. 정한 것 (2026-11-24)

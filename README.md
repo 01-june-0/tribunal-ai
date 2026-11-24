@@ -6,7 +6,7 @@
 > **In English** — Tribunal AI is a local supervisor that runs three subscription AI coding CLIs (Claude Code, OpenAI Codex,
 > Google Antigravity) as **architect, maker and inspector**, and turns a one-line goal into code that has passed tests and an
 > independent review. Changes are made in an isolated git worktree and reach your project only when you apply them; the tests
-> are run by the program itself, not by an AI; no metered API is used. Verified on macOS (Linux checked headless in Docker). The console has an English
+> are run by the program itself, not by an AI; no metered API is used. Verified on macOS; the test suite passes on macOS, Windows and Linux in CI. The console has an English
 > mode (the **EN** button); the documentation is in Korean.
 
 > **출처** — 이 프로젝트는 MIT 라이선스 오픈소스 [AI DEV DIRECTOR](https://github.com/digilogd-cmd/ai-dev-director) v3.1.8을
@@ -57,7 +57,8 @@
 - **macOS** — 이 프로젝트를 실제로 돌리고 검증한 환경입니다.
 - Linux — Docker(화면 없음)에서 테스트 모음, 콘솔 켜고 끄기, 작업 흐름을 확인했습니다. 데스크톱 화면(폴더 선택 창 등)은 확인 전이고,
   터미널 창을 여는 기능은 대신 실행할 명령을 보여 줍니다.
-- Windows — 원본에서 물려받은 코드가 있지만 이 프로젝트에서는 **검증하지 않았습니다**.
+- Windows — 테스트 모음과 설치가 GitHub Actions에서 통과합니다. 사람이 화면을 직접 써 본 적은 아직 없습니다.
+- 세 운영체제 모두 커밋마다 자동으로 시험합니다(`.github/workflows/tests.yml`).
 - Python 3.9 이상, Git (테스트 모음은 3.9와 3.13에서 모두 통과)
 - 로그인된 CLI 중 최소 두 개: `claude`, `codex`, `agy`. 구독 로그인 세션을 그대로 씁니다. API 키는 필요 없고, 있어도 무시됩니다.
 
