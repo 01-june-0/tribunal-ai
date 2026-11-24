@@ -184,11 +184,11 @@ def test_a_tkinter_app_gets_a_python_that_has_tkinter(tmp_path, monkeypatch):
     assert rp._with_tk("python3 main.py", plain) == ("python3 main.py", None)       # no tkinter in the project
     # Found running it: the only Python with tkinter was 3.9, the app was written for Tribunal's 3.13 (`float | None`
     # in a class body) and stopped at start. An older one is still offered, but with the reason and the fix.
-    monkeypatch.setattr(rp, "_version", lambda python: (3, 9))
+    monkeypatch.setattr(rp, "_version", lambda python: (3, 0))       # older than any Python these tests run on
     monkeypatch.setattr(rp, "_tk_fix", lambda wanted: "brew install python-tk@%d.%d" % wanted)
     cmd, note = rp._with_tk("python3 app.py", app)
     want = "%d.%d" % tuple(rp.sys.version_info[:2])
-    assert cmd == "/usr/bin/python3 app.py" and note == {"tk": "old", "from": "python3", "to": "/usr/bin/python3", "version": "3.9",
+    assert cmd == "/usr/bin/python3 app.py" and note == {"tk": "old", "from": "python3", "to": "/usr/bin/python3", "version": "3.0",
                                                          "wants": want, "fix": "brew install python-tk@" + want}
     monkeypatch.setattr(rp, "_has_tk", lambda python: False)
     assert rp._with_tk("python3 app.py", app) == ("python3 app.py", {"tk": "missing", "from": "python3", "fix": "brew install python-tk@" + want})

@@ -280,6 +280,9 @@ class ProcessTreeRunner:
             except Exception:
                 pass
 
+        live = {"who": None, "open": False}        # the live view: which stream spoke last, and whether its line is unfinished
+        live_lock = threading.Lock()
+
         def _piece_reader(pipe, chunk_list, on_text):
             """For a watched command: whatever has arrived is passed on at once, so a progress line that is still
             being written (pytest's dots) is seen before its newline. What is COLLECTED for the result is exactly what
@@ -309,10 +312,16 @@ class ProcessTreeRunner:
                         else:
                             pending += text
                     if shown and on_text:
-                        try:
-                            on_text(shown)
-                        except Exception:
-                            on_text = None          # an observer must never disturb the run
+                        with live_lock:
+                            # stdout and stderr are read apart: when the other one's line is still unfinished, this
+                            # piece starts on a line of its own instead of being glued onto it (seen on Windows)
+                            if live["open"] and live["who"] is not chunk_list:
+                                shown = "\n" + shown
+                            live["who"], live["open"] = chunk_list, not shown.endswith("\n")
+                            try:
+                                on_text(shown)
+                            except Exception:
+                                on_text = None      # an observer must never disturb the run
                     if not data:
                         if pending:
                             chunk_list.append(pending)

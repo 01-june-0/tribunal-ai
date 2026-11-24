@@ -348,3 +348,22 @@ def test_a_windows_line_end_split_across_two_pieces_never_glues_lines_together(t
     shown = "".join(seen)
     assert out["passed"] and "twothree" not in shown and sorted(shown.split()) == ["three", "two"]
     assert shown.count("\n") == 2                                       # the held line end is shown once, not twice
+
+
+def test_the_other_streams_output_starts_a_line_of_its_own_in_the_live_view(tmp_path):
+    """Found on Windows: stdout's "three" arrived before its line end, stderr's "two" came in between, and the live view
+    read "threetwo". The collected result never mixed them; the live view now breaks the line instead."""
+    import sys
+    from core.verifier import Verifier
+    seen = []
+    script = tmp_path / "t.py"
+    script.write_text(
+        "import sys, time\n"
+        "sys.stdout.buffer.write(b'three'); sys.stdout.flush(); time.sleep(0.4)\n"
+        "sys.stderr.buffer.write(b'two\\n'); sys.stderr.flush(); time.sleep(0.4)\n"
+        "sys.stdout.buffer.write(b'\\n'); sys.stdout.flush()\n", encoding="utf-8")
+    out = Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(script)], git_checks=False,
+                          on_line=lambda phase, text: seen.append(text))
+    shown = "".join(seen)
+    assert out["passed"] and "threetwo" not in shown and sorted(shown.split()) == ["three", "two"]
+    assert "three\n" in out["test"]["output"] or "three" in out["test"]["output"]          # the result itself is unchanged
