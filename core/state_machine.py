@@ -374,6 +374,18 @@ class StateMachine:
             row = conn.execute("SELECT * FROM result_state WHERE run_id=?", (run_id,)).fetchone()
             return dict(row) if row else None
 
+    def list_recent_applied(self, since: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Results applied since `since` (ISO time), newest first: so an applied result can still be looked at."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT r.run_id, r.project_path, r.worktree_path, s.updated_at, s.changed_count
+                FROM result_state s JOIN runs r ON r.run_id = s.run_id
+                WHERE s.state = 'APPLIED' AND s.updated_at >= ?
+                ORDER BY s.updated_at DESC LIMIT ?
+                """, (since, int(limit))).fetchall()
+            return [dict(r) for r in rows]
+
     def list_pending_results(self) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:
             rows = conn.execute(

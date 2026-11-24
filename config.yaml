@@ -31,6 +31,7 @@ timeouts:
   inspector: 300
   no_progress: 180
   heartbeat: 30
+  # ai: {codex: {maker: 900}}   # one AI in one role only (10-7200 s); see docs/CONFIGURATION.md
 
 safety:
   max_files_changed: 15

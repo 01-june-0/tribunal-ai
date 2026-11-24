@@ -1331,3 +1331,139 @@ def test_director_run_summary_says_why_it_stopped(capsys):
     director._print_summary({"run_id": "RUN-P", "final_state": State.PASS, "order": {"goal": "g"}, "stop_detail": "ok"})
     out = capsys.readouterr().out
     assert "ARCHITECT        PASS" in out and "REASON" not in out
+
+
+def test_goal_met_after_steps_that_all_failed_ends_unfinished(tmp_path, monkeypatch):
+    """Found with the fake CLIs: ARCHITECT answered "goal met" after a step that failed, and the task ended DONE with
+    no passed step. Nothing verified stands behind that, so the task now ends INCOMPLETE (it can be continued)."""
+    plans = [{"status": "DONE", "summary": "all good", "reason": "goal met", "order": None}]
+    factory = mission_factory(monkeypatch, plans, [])
+    runner = MissionRunner(factory, MissionStore(tmp_path / "missions"))
+    m = runner.create(str(tmp_path / "proj"), "g", OrderSchema(**ORDER), config={})
+    orch = factory()
+    rid = orch._create_run_with_retry(None, str(tmp_path / "proj"), "double")
+    orch.sm.transition_to(rid, State.FAIL, details="tests failed")
+    m["steps"][0]["run_id"] = rid
+    m["steps"][0]["result"] = runner._evidence(orch, rid)
+    runner.store.save(m)
+    done = runner.run(m["mission_id"])
+    assert done["status"] == "INCOMPLETE" and "no step passed" in done["blocked_reason"]
+    js = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "/^ARCHITECT declared the goal done, but no step passed/.test(s)" in js          # said in words, not raw
+    assert "[T('끝내지 못함'),'warn']" in js                                                # not "step budget reached"
+
+
+def test_a_resumed_run_settles_its_roles_first(monkeypatch):
+    """Continuing a task stopped because every MAKER was out: an AI still out is replaced before its first call."""
+    orch = proxy_orch()
+    agents = {alias: type("A", (), {"provider": alias})() for alias in ("openai", "anthropic", "google")}
+    orch.config.setdefault("maker", {}).update(provider="codex", mode="proposal")
+    orch.maker = agents["openai"]
+    monkeypatch.setattr(orch, "_init_maker", lambda alias: agents[{"codex": "openai", "claude": "anthropic", "antigravity": "google"}.get(alias, alias)])
+    monkeypatch.setattr(orch.pm, "usable_domains", lambda *a: ["GOOGLE"])
+    monkeypatch.setattr(orch, "_get_agent_domain", lambda a: {"openai": "OPENAI", "anthropic": "ANTHROPIC", "google": "GOOGLE"}.get(getattr(a, "provider", ""), "MOCK"))
+    orch.sm.create_run("RUN-RES", "/nowhere", "g")
+    orch._reassign_for_resume("RUN-RES", __import__("logging").getLogger("t"))
+    assert orch.maker is agents["google"]                                   # not called once on Codex to find out
+    monkeypatch.setattr(orch.pm, "usable_domains", lambda *a: [])
+    orch.maker = agents["openai"]
+    orch._reassign_for_resume("RUN-RES", __import__("logging").getLogger("t"))
+    assert orch.maker is agents["openai"]                                   # nothing usable: left for the first call to stop
+
+
+def test_a_time_limit_can_be_set_for_one_ai_in_one_role():
+    orch = proxy_orch()
+    orch.timeouts = {"architect": 8, "maker": 600, "ai": {"codex": {"architect": 120}, "claude": {"maker": 5}}}
+    assert orch._role_timeout("architect", "claude", 300) == 8
+    assert orch._role_timeout("architect", "openai", 300) == 120            # the AI that takes the role over
+    assert orch._role_timeout("maker", "anthropic", 600) == 10              # clamped to 10..7200
+    assert orch._role_timeout("inspector", "codex", 300) == 300
+    orch.timeouts = {"architect": 8, "ai": "nonsense"}
+    assert orch._role_timeout("architect", "codex", 300) == 8
+
+
+def test_a_role_that_moves_is_recorded_for_the_screens(monkeypatch):
+    orch = proxy_orch()
+    seen = []
+    monkeypatch.setattr(orch.pm, "record_roles", lambda *a: seen.append(a))
+    orch.config.setdefault("maker", {})["mode"] = "proposal"
+    monkeypatch.setattr(autopilot, "pick_alternative", lambda pm, exclude, avoid=None: "antigravity")
+    monkeypatch.setattr(orch, "_init_inspector", lambda alias: type("A", (), {"provider": "google"})())
+    orch.sm.create_run("RUN-ROLE", "/nowhere", "g")
+    assert orch._swap_agent("inspector", "RUN-ROLE", __import__("logging").getLogger("t"), set(), "REVIEWING", "quota")
+    assert seen and seen[-1][2] == "GOOGLE"                                  # architect, maker, inspector domains
+
+
+def test_director_run_planning_asks_every_ai_that_is_left(monkeypatch):
+    """It used to try one backup only: with two AIs failing, a third working one was never asked."""
+    orch = proxy_orch()
+    asked = []
+
+    class Arch:
+        def __init__(self, alias, ok): self.provider, self.ok = alias, ok
+        def create_order(self, goal, ctx):
+            asked.append(self.provider)
+            if not self.ok:
+                raise RuntimeError("Error: usage limit reached. Try again at 11:13 PM.")
+            return OrderSchema(**ORDER)
+    pool = {"openai": Arch("openai", False), "antigravity": Arch("google", True), "claude": Arch("anthropic", False)}
+    health = {"ANTHROPIC": True, "OPENAI": True, "GOOGLE": True}
+    monkeypatch.setattr(orch, "_init_architect", lambda alias: pool[alias])
+    monkeypatch.setattr(orch, "_get_agent_domain", lambda a: {"openai": "OPENAI", "anthropic": "ANTHROPIC", "google": "GOOGLE"}.get(getattr(a, "provider", ""), "MOCK"))
+    monkeypatch.setattr(orch.pm, "usable_domains", lambda *a: [d for d, ok in health.items() if ok])
+    monkeypatch.setattr(orch.pm, "parse_cli_error", lambda d, e: health.__setitem__(d, False))
+    monkeypatch.setattr(orch, "_claim_trial_for", lambda *a: None)
+    orch.architect = pool["claude"]
+    orch.sm.create_run("RUN-PLAN", "/nowhere", "g")
+    order, stop = orch._plan_with_backups("g", {}, "RUN-PLAN", __import__("logging").getLogger("t"), [], "ANTHROPIC",
+                                          "Error: usage limit reached. Try again at 11:13 PM.", False)
+    assert stop is None and order is not None and asked == ["openai", "google"]
+    pool["antigravity"].ok, asked[:] = False, []
+    health.update(ANTHROPIC=True, OPENAI=True, GOOGLE=True)
+    orch.architect = pool["claude"]
+    orch.sm.create_run("RUN-PLAN2", "/nowhere", "g")
+    order, stop = orch._plan_with_backups("g", {}, "RUN-PLAN2", __import__("logging").getLogger("t"), [], "ANTHROPIC", "usage limit reached", False)
+    assert order is None and "No usable provider for ARCHITECT" in orch.sm.get_transitions("RUN-PLAN2")[-1]["details"]
+
+
+def test_backup_planning_moves_an_inspector_on_the_ai_that_was_out_and_bad_answers_are_not_an_ai_out(monkeypatch):
+    orch = proxy_orch()
+
+    class Arch:
+        def __init__(self, alias, err=None): self.provider, self.err = alias, err
+        def create_order(self, goal, ctx):
+            if self.err:
+                raise RuntimeError(self.err)
+            return OrderSchema(**ORDER)
+    pool = {"openai": Arch("openai"), "claude": Arch("anthropic", "usage limit reached"), "antigravity": Arch("google")}
+    health = {"ANTHROPIC": True, "OPENAI": True, "GOOGLE": True}
+    dom = {"openai": "OPENAI", "anthropic": "ANTHROPIC", "google": "GOOGLE"}
+    monkeypatch.setattr(orch, "_init_architect", lambda alias: pool[alias])
+    monkeypatch.setattr(orch, "_init_inspector", lambda alias: type("I", (), {"provider": {"claude": "anthropic", "openai": "openai", "antigravity": "google"}[alias]})())
+    monkeypatch.setattr(orch, "_get_agent_domain", lambda a: dom.get(getattr(a, "provider", ""), "MOCK"))
+    monkeypatch.setattr(orch.pm, "usable_domains", lambda *a: [d for d, ok in health.items() if ok])
+    monkeypatch.setattr(orch.pm, "parse_cli_error", lambda d, e: health.__setitem__(d, False))
+    monkeypatch.setattr(orch, "_claim_trial_for", lambda *a: None)
+    orch.architect, orch.inspector = pool["claude"], type("I", (), {"provider": "anthropic"})()
+    orch.sm.create_run("RUN-INS", "/nowhere", "g")
+    order, stop = orch._plan_with_backups("g", {}, "RUN-INS", __import__("logging").getLogger("t"), [], "ANTHROPIC", "usage limit reached", False)
+    assert order is not None and orch._get_agent_domain(orch.inspector) != "ANTHROPIC"      # not called again in review
+    # answers that cannot be read from every AI: no AI is out, so it is a planning error, not "no usable provider"
+    for a in pool.values():
+        a.err = "ARCHITECT returned no JSON object"
+    health.update(ANTHROPIC=True, OPENAI=True, GOOGLE=True)
+    orch.architect = pool["claude"]
+    orch.sm.create_run("RUN-BAD", "/nowhere", "g")
+    order, stop = orch._plan_with_backups("g", {}, "RUN-BAD", __import__("logging").getLogger("t"), [], "ANTHROPIC", "ARCHITECT returned no JSON object", False)
+    last = orch.sm.get_transitions("RUN-BAD")[-1]
+    assert order is None and last["to_state"] == State.FAIL and "Planning error" in last["details"] and all(health.values())
+
+
+def test_roles_are_not_recorded_while_a_stand_in_holds_one(tmp_path):
+    from core.provider_manager import ProviderManager
+    pm = ProviderManager(db_path=str(tmp_path / "pm.db"))
+    pm.record_roles("claude", "codex", "antigravity")
+    roles = lambda: dict(pm._get_conn().execute("SELECT provider, current_role FROM provider_health").fetchall())
+    before = roles()
+    pm.record_roles("mock", "codex", "antigravity")
+    assert roles() == before and before.get("OPENAI") == "MAKER"

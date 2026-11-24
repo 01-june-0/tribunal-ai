@@ -1502,6 +1502,8 @@ def build_status_payload() -> dict:
         "results": [dict(r, in_mission=_run_in_mission(r.get("run_id"))) for r in _result_manager().pending_results()],
         # refused once (a conflict, mostly) and still undecided; only those no mission card can show
         "blocked_results": [dict(r, in_mission=False) for r in _result_manager().blocked_results() if not _run_in_mission(r.get("run_id"))],
+        # applied results outside any task: no card shows them afterwards, so the stage lists the latest few
+        "applied_results": [dict(r, in_mission=False) for r in _result_manager().applied_results(keep=lambda rid: not _run_in_mission(rid))],
     }
     payload = payload if isinstance(payload, dict) else {}
     payload["human_required_count"] = len(payload["pending"])
@@ -3128,7 +3130,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 result = {"status": "error", "error": str(e)[:300]}
             self._send_json(result, 200 if result.get("status") not in ("error",) else 400)
-        elif self.path in ('/result/apply', '/result/discard', '/result/open_worktree', '/result/open_project'):
+        elif self.path in ('/result/apply', '/result/discard', '/result/open_worktree', '/result/open_project', '/result/clear'):
             params = self._read_form()
             run_id = params.get('run_id', [''])[0]
             request_id = params.get('request_id', [''])[0]
@@ -3145,6 +3147,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                   (rm.apply_tree if snapshot_based else rm.apply)(run_id, request_id=request_id, applied_by="HUMAN"))
                     elif self.path == '/result/discard':
                         result = rm.discard(run_id, request_id=request_id, by="HUMAN")
+                    elif self.path == '/result/clear':
+                        # the working copy an apply kept (a skipped conflict), for a result outside any task
+                        # (a task card clears its own through /ops/mission/decide)
+                        if rm.result_state(run_id).get("state") != "APPLIED" or _run_in_mission(run_id):
+                            result = {"status": "refused", "reason": "only the kept copy of an applied result outside a task"}
+                        else:
+                            result = {"status": "cleared", "released": rm.release_worktrees([run_id], by="HUMAN", why="cleared after apply")}
                     elif self.path == '/result/open_worktree':
                         result = rm.open_worktree(run_id)
                     else:
@@ -3157,7 +3166,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         cm.add_message(active_session_id(), "SYSTEM", f"RESULT_{result['status'].upper()}: run {run_id} " + (result.get("reason") or "; ".join(result.get("blocks", [])) or ", ".join(result.get("files", []))), run_id=run_id)
                 except Exception:
                     pass
-            code = 200 if result.get("status") in ("applied", "discarded", "ok", "duplicate") else (409 if result.get("status") == "busy" else 400)
+            code = 200 if result.get("status") in ("applied", "discarded", "ok", "duplicate", "cleared") else (409 if result.get("status") == "busy" else 400)
             if wants_json:
                 self._send_json(result, code)
             else:

@@ -308,6 +308,22 @@ class ResultManager:
                         "changed_count": r.get("changed_count"), "result_state": r.get("state"), "created_at": r.get("created_at")})
         return out
 
+    def applied_results(self, days: int = 7, limit: int = 3, keep=None) -> List[Dict[str, Any]]:
+        """Recently applied results (those `keep` accepts, newest first), with whether their working copy is still
+        there (kept when a conflicting file was skipped: the AIs' version of it lives only in there)."""
+        from datetime import timedelta
+        out = []
+        for r in self.sm.list_recent_applied((datetime.utcnow() - timedelta(days=days)).isoformat(), 30):
+            rid = str(r.get("run_id", ""))
+            if rid.startswith("RUN-TEST-") or (keep is not None and not keep(rid)):
+                continue
+            proj, wt = r.get("project_path") or "", r.get("worktree_path") or ""
+            out.append({"run_id": rid, "project_name": Path(proj).name if proj else "", "project_path": proj,
+                        "changed_count": r.get("changed_count"), "leftover": bool(wt) and Path(wt).is_dir()})
+            if len(out) >= limit:
+                break
+        return out
+
     def pending_results(self) -> List[Dict[str, Any]]:
         """READY results from the persisted result_state table only (no run scan, no git)."""
         out = []

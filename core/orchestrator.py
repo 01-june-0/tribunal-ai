@@ -59,12 +59,25 @@ class Orchestrator:
         self.maker = maker_agent or self._init_maker()
         self.inspector = inspector_agent or self._init_inspector()
 
+    def _role_timeout(self, role: str, provider: str, default: int) -> int:
+        """A role's time limit, or the one set for this AI in that role (`timeouts.ai`, e.g. {codex: {maker: 900}}),
+        so a short limit meant for one AI does not also cut off the AI that takes the role over."""
+        base = self.timeouts.get(role, default)
+        try:
+            want = ProviderManager.domain_for_provider(str(provider))
+            for name, limits in ((self.timeouts.get("ai") or {}) if isinstance(self.timeouts.get("ai"), dict) else {}).items():
+                if isinstance(limits, dict) and role in limits and ProviderManager.domain_for_provider(str(name)) == want:
+                    return max(10, min(int(limits[role]), 7200))
+        except (TypeError, ValueError):
+            pass
+        return base
+
     def _init_architect(self, provider_override: Optional[str] = None) -> BaseArchitect:
         architect_cfg = self.config.get("architect", {})
         provider = (provider_override or architect_cfg.get("provider", "claude")).lower()
         model = architect_cfg.get("model", "cli-default")
         executable = architect_cfg.get("executable")
-        timeout = self.timeouts.get("architect", 300)
+        timeout = self._role_timeout("architect", provider, 300)
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
 
@@ -85,7 +98,7 @@ class Orchestrator:
         model = b_cfg.get("model", "antigravity-cli")
         executable = b_cfg.get("executable")
         approved = self.config.get("safety", {}).get("approved_commands")
-        timeout = self.timeouts.get("maker", 600)
+        timeout = self._role_timeout("maker", provider_override or b_cfg.get('provider', 'google'), 600)
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
         cls = AntigravityMaker
@@ -101,7 +114,7 @@ class Orchestrator:
         provider = (provider_override or rev_cfg.get("provider", "antigravity")).lower()
         model = rev_cfg.get("model", "codex-cli")
         executable = rev_cfg.get("executable")
-        timeout = self.timeouts.get("inspector", 300)
+        timeout = self._role_timeout("inspector", provider, 300)
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
 
@@ -400,7 +413,93 @@ class Orchestrator:
         msg = f"{stage}: {role.upper()} {old} -> {self._domain_of(alt)} ({why[:200]})"
         logger.warning(f"[FAILOVER] {msg}")
         self.sm.log_audit(run_id, "ORCHESTRATOR", f"FAILOVER_{role.upper()}", msg)
+        self._record_roles()
         return True
+
+    def _reassign_for_resume(self, run_id: str, logger: logging.Logger) -> None:
+        """A run picked up again (e.g. a task continued after every AI was out) settles its roles as a fresh run does:
+        an AI that is still out is replaced before its first call instead of being called once to find out. When no
+        AI is usable the agents stay as they are and the run stops at its first call, as before."""
+        try:
+            assigned = self._autonomous_role_assignment(self.config.get("architect", {}).get("provider", "claude"),
+                                                        self.config.get("maker", {}).get("provider", "codex"),
+                                                        self.config.get("inspector", {}).get("provider", "antigravity"),
+                                                        run_id, logger)
+        except Exception as exc:
+            logger.warning(f"role check during resume failed: {exc}")
+            return
+        if not assigned.get("can_proceed"):
+            return
+        init = {"architect": self._init_architect, "maker": self._init_maker, "inspector": self._init_inspector}
+        for role in ("architect", "maker", "inspector"):
+            want = assigned[f"{role}_provider"]
+            if self._domain_of(want) != self._get_agent_domain(getattr(self, role)):
+                if role == "maker" and self.config.get("maker", {}).get("mode") != "proposal":
+                    continue
+                setattr(self, role, init[role](want))
+        self.current_failover_mode = assigned["mode"]
+        self.current_architect_name = assigned["architect_provider"].upper()
+        self.current_inspector_name = assigned["inspector_provider"].upper()
+
+    def _record_roles(self) -> None:
+        """The roles as they stand now, into the provider record the screens read."""
+        try:
+            self.pm.record_roles(*(self._get_agent_domain(a) for a in (self.architect, self.maker, self.inspector)))
+        except Exception:
+            pass
+
+    def _plan_with_backups(self, goal: str, project_context: Dict[str, Any], run_id: str, logger: logging.Logger,
+                           provenance_records: list, failed_domain: str, err: str, timed_out: bool):
+        """`director run` planning with the proxy on, after the ARCHITECT failed: each AI that is still usable gets the
+        same request in turn. Returns (order, None) or (None, stop summary). A configuration error is not an AI being
+        out, so it stops at once, as before."""
+        out = set()                                  # AIs found out (quota, sign-in, unreachable, timed out)
+
+        def note(domain: str, text: str) -> bool:
+            cat = self.pm.classify_error(text)
+            if cat == ErrorCategory.CONFIG_ERROR:
+                return False
+            if cat not in (ErrorCategory.EXECUTION_ERROR, ErrorCategory.UNKNOWN):
+                self.pm.parse_cli_error(domain, text)
+                out.add(domain)
+            return True                              # a bad answer is not an AI being out, but another AI may do better
+        if not note(failed_domain, err):
+            return None, self._handle_provider_failure(failed_domain, err, run_id, "PLANNING", logger, provenance_records)
+        tried = {failed_domain}
+        while self._swap_agent("architect", run_id, logger, tried, "PLANNING", err):
+            stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING_BACKUP", logger)
+            if stop_trial:
+                return None, stop_trial
+            domain = self._get_agent_domain(self.architect)
+            try:
+                order = self.architect.create_order(goal, project_context)
+            except Exception as exc:
+                err, timed_out = str(exc), timed_out or "timeout" in str(exc).lower() or isinstance(exc, TimeoutError)
+                logger.error(f"Backup planning failed on {domain}: {err}")
+                if hasattr(self.architect, "get_provenance"):
+                    provenance_records.append(self.architect.get_provenance(exit_code=1).model_dump())
+                if not note(domain, err):
+                    return None, self._handle_provider_failure(domain, err, run_id, "PLANNING_BACKUP", logger, provenance_records)
+                continue
+            self._record_provider_success(self.architect)
+            self._save_json(run_id, "order.json", order)
+            self.sm.log_audit(run_id, "ARCHITECT", "CREATED_ORDER", json.dumps(order.model_dump()))
+            if hasattr(self.architect, "get_provenance"):
+                prov = self.architect.get_provenance(exit_code=0)
+                provenance_records.append(prov.model_dump())
+                if getattr(prov, "duration_sec", None) is not None:
+                    self.pm.update_latency(getattr(self.architect, "provider", domain), prov.duration_sec)
+            # An INSPECTOR on an AI that just turned out to be out moves too (as the one-backup path always did).
+            if self._get_agent_domain(self.inspector) in out:
+                self._swap_agent("inspector", run_id, logger, set(out), "PLANNING_BACKUP", err)
+            self.current_failover_mode = FailoverMode.DEGRADED
+            return order, None
+        if not out:                                  # nobody was out: the answers were the problem, not the AIs
+            state = State.TIMEOUT if timed_out else State.FAIL
+            return None, self._stop(run_id, state, f"Planning {'timeout' if timed_out else 'error'}: {err[:300]}", logger, provenance_records)
+        stop_msg = f"PROVIDER_FAILURE: No usable provider for ARCHITECT (tried {', '.join(sorted(tried))}): {err[:300]}"
+        logger.error(stop_msg)
+        return None, self._stop(run_id, State.HUMAN_REQUIRED, stop_msg, logger, provenance_records)
 
     def apply_safety_caps(self, order: OrderSchema) -> list:
         """Clamps ORDER limits to the global config safety caps: effective = min(order, global).
@@ -1683,73 +1782,82 @@ class Orchestrator:
                     if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
                         self.pm.update_latency(architect_prov, prov.duration_sec)
     
-                stop_summary = self._handle_provider_failure(architect_domain, err_str, run_id, "PLANNING", logger, provenance_records)
-                if stop_summary:
-                    return stop_summary
-    
-                # Whichever AI is the ARCHITECT, another working one takes over; an INSPECTOR that was the same AI moves
-                # too (preferably not onto the maker's). This used to assume the old default, Codex backed by Claude.
-                backup = autopilot.pick_alternative(self.pm, exclude={architect_domain}) if architect_domain in autopilot.ALIAS_BY_DOMAIN else None
-                if backup:
-                    maker_domain = self._get_agent_domain(self.maker)
-                    inspector_now = getattr(self.inspector, "provider", "claude")
-                    moved = self._get_agent_domain(self.inspector) == architect_domain
-                    inspector_next = (autopilot.pick_alternative(self.pm, exclude={architect_domain}, avoid={maker_domain}) or backup) if moved else inspector_now
-                    logger.warning(f"[FAILOVER TRIGGERED] Primary ARCHITECT failed. Switching to backup provider ({backup.capitalize()})...")
-                    assigned = self.pm.resolve_roles(requested_architect=backup,
-                                                     requested_maker=autopilot.ALIAS_BY_DOMAIN.get(maker_domain, "antigravity"),
-                                                     requested_inspector=inspector_next)
-                    if assigned["can_proceed"]:
-                        # Built from what the provider manager settled on, so the name on screen is the AI that works.
-                        self.current_failover_mode = assigned["mode"]
-                        self.current_architect_name = assigned["architect_provider"].upper()
-                        self.current_inspector_name = assigned["inspector_provider"].upper()
-                        self.architect = self._init_architect(assigned["architect_provider"])
-                        if assigned["inspector_provider"] != inspector_now:
-                            self.inspector = self._init_inspector(assigned["inspector_provider"])
-                        self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_ARCHITECT", f"Switched to {backup.capitalize()} ARCHITECT due to {err_str}")
-                        stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING_BACKUP", logger)
-                        if stop_trial:
-                            return stop_trial
-                        try:
-                            order = self.architect.create_order(goal, project_context)
-                            self._record_provider_success(self.architect)
-                            self._save_json(run_id, "order.json", order)
-                            self.sm.log_audit(run_id, "ARCHITECT", "CREATED_ORDER", json.dumps(order.model_dump()))
-                            if hasattr(self.architect, "get_provenance"):
-                                architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
-                                prov = self.architect.get_provenance(exit_code=0)
-                                provenance_records.append(prov.model_dump())
-                                if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
-                                    self.pm.update_latency(architect_prov, prov.duration_sec)
-                        except Exception as e2:
-                            err_str2 = str(e2)
-                            logger.error(f"Backup Planning failed on {backup.capitalize()}: {err_str2}")
-                            if hasattr(self.architect, "get_provenance"):
-                                architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
-                                prov = self.architect.get_provenance(exit_code=1)
-                                provenance_records.append(prov.model_dump())
-                                if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
-                                    self.pm.update_latency(architect_prov, prov.duration_sec)
-                            stop2 = self._handle_provider_failure(self._get_agent_domain(self.architect), err_str2, run_id, "PLANNING_BACKUP", logger, provenance_records)
-                            if stop2:
-                                return stop2
-                            self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
-                            self.sm.transition_to(run_id, State.FAIL, details=f"Planning error: {err_str2}")
-                            return self._build_run_summary(run_id)
-                    else:
-                        stop_msg = f"PROVIDER_FAILURE: {assigned['reason']}"
-                        logger.error(stop_msg)
-                        self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
-                        self.sm.transition_to(run_id, State.HUMAN_REQUIRED, details=stop_msg)
-                        return self._build_run_summary(run_id, scope_violations=[stop_msg])
+                if self._proxy() and architect_domain in autopilot.ALIAS_BY_DOMAIN:
+                    # Every AI that can still plan is tried in turn (it used to be one backup only, so a third,
+                    # working AI was never asked once two had failed).
+                    order, stop_summary = self._plan_with_backups(goal, project_context, run_id, logger, provenance_records,
+                                                                  architect_domain, err_str, is_timeout)
+                    if stop_summary:
+                        return stop_summary
                 else:
-                    self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
-                    if is_timeout:
-                        self.sm.transition_to(run_id, State.TIMEOUT, details=f"Planning timeout: {err_str}")
+                    stop_summary = self._handle_provider_failure(architect_domain, err_str, run_id, "PLANNING", logger, provenance_records)
+                    if stop_summary:
+                        return stop_summary
+    
+                if order is None:            # (the proxy path above has an ORDER or has stopped)
+                    # Whichever AI is the ARCHITECT, another working one takes over; an INSPECTOR that was the same AI moves
+                    # too (preferably not onto the maker's). This used to assume the old default, Codex backed by Claude.
+                    backup = autopilot.pick_alternative(self.pm, exclude={architect_domain}) if architect_domain in autopilot.ALIAS_BY_DOMAIN else None
+                    if backup:
+                        maker_domain = self._get_agent_domain(self.maker)
+                        inspector_now = getattr(self.inspector, "provider", "claude")
+                        moved = self._get_agent_domain(self.inspector) == architect_domain
+                        inspector_next = (autopilot.pick_alternative(self.pm, exclude={architect_domain}, avoid={maker_domain}) or backup) if moved else inspector_now
+                        logger.warning(f"[FAILOVER TRIGGERED] Primary ARCHITECT failed. Switching to backup provider ({backup.capitalize()})...")
+                        assigned = self.pm.resolve_roles(requested_architect=backup,
+                                                         requested_maker=autopilot.ALIAS_BY_DOMAIN.get(maker_domain, "antigravity"),
+                                                         requested_inspector=inspector_next)
+                        if assigned["can_proceed"]:
+                            # Built from what the provider manager settled on, so the name on screen is the AI that works.
+                            self.current_failover_mode = assigned["mode"]
+                            self.current_architect_name = assigned["architect_provider"].upper()
+                            self.current_inspector_name = assigned["inspector_provider"].upper()
+                            self.architect = self._init_architect(assigned["architect_provider"])
+                            if assigned["inspector_provider"] != inspector_now:
+                                self.inspector = self._init_inspector(assigned["inspector_provider"])
+                            self.sm.log_audit(run_id, "ORCHESTRATOR", "FAILOVER_ARCHITECT", f"Switched to {backup.capitalize()} ARCHITECT due to {err_str}")
+                            stop_trial = self._claim_trial_for(self.architect, run_id, "PLANNING_BACKUP", logger)
+                            if stop_trial:
+                                return stop_trial
+                            try:
+                                order = self.architect.create_order(goal, project_context)
+                                self._record_provider_success(self.architect)
+                                self._save_json(run_id, "order.json", order)
+                                self.sm.log_audit(run_id, "ARCHITECT", "CREATED_ORDER", json.dumps(order.model_dump()))
+                                if hasattr(self.architect, "get_provenance"):
+                                    architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
+                                    prov = self.architect.get_provenance(exit_code=0)
+                                    provenance_records.append(prov.model_dump())
+                                    if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
+                                        self.pm.update_latency(architect_prov, prov.duration_sec)
+                            except Exception as e2:
+                                err_str2 = str(e2)
+                                logger.error(f"Backup Planning failed on {backup.capitalize()}: {err_str2}")
+                                if hasattr(self.architect, "get_provenance"):
+                                    architect_prov = getattr(self.architect, "provider", "ANTHROPIC")
+                                    prov = self.architect.get_provenance(exit_code=1)
+                                    provenance_records.append(prov.model_dump())
+                                    if hasattr(prov, "duration_sec") and prov.duration_sec is not None:
+                                        self.pm.update_latency(architect_prov, prov.duration_sec)
+                                stop2 = self._handle_provider_failure(self._get_agent_domain(self.architect), err_str2, run_id, "PLANNING_BACKUP", logger, provenance_records)
+                                if stop2:
+                                    return stop2
+                                self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
+                                self.sm.transition_to(run_id, State.FAIL, details=f"Planning error: {err_str2}")
+                                return self._build_run_summary(run_id)
+                        else:
+                            stop_msg = f"PROVIDER_FAILURE: {assigned['reason']}"
+                            logger.error(stop_msg)
+                            self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
+                            self.sm.transition_to(run_id, State.HUMAN_REQUIRED, details=stop_msg)
+                            return self._build_run_summary(run_id, scope_violations=[stop_msg])
                     else:
-                        self.sm.transition_to(run_id, State.FAIL, details=f"Planning error: {err_str}")
-                    return self._build_run_summary(run_id)
+                        self._save_json(run_id, "provenance.json", {"run_id": run_id, "records": provenance_records})
+                        if is_timeout:
+                            self.sm.transition_to(run_id, State.TIMEOUT, details=f"Planning timeout: {err_str}")
+                        else:
+                            self.sm.transition_to(run_id, State.FAIL, details=f"Planning error: {err_str}")
+                        return self._build_run_summary(run_id)
 
         # 1.1 / 1.2  Global safety caps + fail-closed path validation (shared with resume)
         stop = self.prepare_order_for_execution(run_id, order, logger, provenance_records)
@@ -1974,6 +2082,8 @@ class Orchestrator:
                 self.pm.mark_trial_candidates()
             except Exception as e:
                 logger.warning(f"health check during resume failed: {e}")
+            if self._proxy():
+                self._reassign_for_resume(run_id, logger)
 
         order_data = self._load_json(run_id, "order.json")
         order = OrderSchema.model_validate(order_data) if order_data else None

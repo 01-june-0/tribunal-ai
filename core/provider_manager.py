@@ -659,33 +659,28 @@ class ProviderManager:
             assigned["reason"] = (f"{gone} unavailable. Degraded mode active: "
                                   + (", ".join(f"{r} -> {assigned[r.lower() + '_provider']}" for r in moved) or "no role was on it") + ".")
 
-        # Update roles in DB
+        self.record_roles(assigned["architect_provider"], assigned["maker_provider"], assigned["inspector_provider"])
+        return assigned
+
+    def record_roles(self, architect: str, maker: str, inspector: str) -> None:
+        """Which AI holds which role, for the screens (provider_health.current_role). Called when roles are settled
+        and again whenever a role moves to another AI during a run, so the record never lags behind a swap."""
         try:
+            role_map = {"OPENAI": [], "ANTHROPIC": [], "GOOGLE": []}
+            for role, who in (("architect", architect), ("maker", maker), ("inspector", inspector)):
+                domain = self.domain_for_provider(str(who))
+                if domain not in role_map:
+                    return                           # a stand-in (mock) holds a role: leave the record as it is
+                role_map[domain].append(role.upper())
             with self._get_conn() as conn:
                 cursor = conn.cursor()
-                # Reset roles
                 cursor.execute("UPDATE provider_health SET current_role = 'NONE'")
-                
-                # Assign roles based on `assigned`
-                # Map providers
-                role_map = {
-                    "OPENAI": [],
-                    "ANTHROPIC": [],
-                    "GOOGLE": []
-                }
-                
-                from core.role_settings import ALIASES, DOMAINS
-                for role in ('architect', 'maker', 'inspector'):
-                    role_map[DOMAINS[ALIASES[assigned[role + '_provider'].lower()]]].append(role.upper())
-                    
                 for prov, roles in role_map.items():
                     role_str = ", ".join(roles) if roles else "BACKUP" if prov == "ANTHROPIC" else "NONE"
                     cursor.execute("UPDATE provider_health SET current_role = ? WHERE provider = ?", (role_str, prov))
                 conn.commit()
         except Exception:
             pass
-
-        return assigned
 
     def update_latency(self, provider: str, latency_sec: float):
         try:

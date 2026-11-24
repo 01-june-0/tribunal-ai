@@ -267,6 +267,12 @@ class MissionRunner:
         plan = self._plan(orch, mission)
         status = str(plan.get("status", "")).upper()
         if status == "DONE":
+            if not any((s.get("result") or {}).get("final_state") == State.PASS for s in mission["steps"]):
+                # "goal met" after steps of which none passed: nothing verified exists to stand behind that, so the
+                # task ends unfinished (it can be continued) rather than done.
+                return self._finish(mission, "INCOMPLETE", summary=plan.get("summary") or plan.get("reason", ""),
+                                    blocked="ARCHITECT declared the goal done, but no step passed: "
+                                            + str(plan.get("reason") or plan.get("summary") or "")[:300])
             return self._finish(mission, "DONE", summary=plan.get("summary") or plan.get("reason", ""))
         if status == "BLOCKED":
             return self._finish(mission, "BLOCKED", summary=plan.get("summary", ""), blocked=plan.get("reason", ""))
@@ -468,6 +474,8 @@ class MissionRunner:
         where = mission.get("base_worktree") or "(아직 통과한 단계 없음)"
         head_line = {"DONE": "작업 완료", "BLOCKED": "작업 보류 - 사용자 결정 필요",
                      "INCOMPLETE": "작업 중단 - 단계 한도 도달 또는 계획 불가", "FAILED": "작업 실패"}[status]
+        if status == "INCOMPLETE" and str(blocked).startswith("ARCHITECT declared the goal done"):
+            head_line = "작업 중단 - 통과한 단계 없음"
         text = (f"{head_line} ({passed}/{len(mission['steps'])} 단계 통과)\n"
                 f"목표: {mission['goal'][:300]}\n{mission['summary'][:1500]}\n결과물 위치(작업본): {where}")
         if blocked:

@@ -27,7 +27,7 @@ const STEP_CLASS={PASS:'ok',RECOVERED:'ok',FAIL:'bad',TIMEOUT:'bad',HUMAN_REQUIR
 const MISSION_BADGE={RUNNING:[T('진행 중'),''],STOPPED:[T('정지함'),'warn'],DONE:[T('완료'),'ok'],INCOMPLETE:[T('단계 한도 도달'),'warn'],BLOCKED:[T('확인 필요'),'warn'],FAILED:[T('실패'),'bad']};
 // A task whose last step the user rejected is closed by their own decision: nothing waits, nothing failed.
 function turnedDown(ms){const last=ms&&ms.steps[ms.steps.length-1];return !!(last&&last.state==='REJECTED'&&ms.status==='BLOCKED'&&!ms.live);}
-function missionBadge(ms){return turnedDown(ms)?[T('거절함'),'']:(MISSION_BADGE[ms.status]||[ms.status,'']);}
+function missionBadge(ms){return turnedDown(ms)?[T('거절함'),'']:ms.status==='INCOMPLETE'&&/^ARCHITECT declared the goal done/.test(ms.blocked||'')?[T('끝내지 못함'),'warn']:(MISSION_BADGE[ms.status]||[ms.status,'']);}   // not a step budget: nothing passed
 // The inspector's own tests in one step (server: inspector_tests.summary) → what to show, or null when there is no record.
 const ITEST_REASON={'no acceptable test file':T('받아들일 수 있는 테스트 파일이 없습니다'),'no test command is configured':T('테스트 명령이 설정되어 있지 않습니다'),"the project's own tests do not pass yet":T('프로젝트 자체 테스트가 아직 통과하지 못했습니다'),'the worktree is too large to copy':T('작업 폴더가 너무 커서 복사하지 않았습니다'),'the run record is inside the worktree':T('실행 기록이 작업 폴더 안에 있습니다'),'the work folder is missing':T('작업 폴더를 찾지 못했습니다'),'could not be run':T('실행하는 중에 오류가 났습니다'),
   'path and content must be text':T('경로와 내용이 글자가 아닙니다'),'must be a repo-relative path with forward slashes':T('프로젝트 기준 상대 경로가 아닙니다'),'must be a plain relative path inside a test directory':T('테스트 폴더 안의 단순한 상대 경로가 아닙니다'),'file name must mark it as an inspector test (e.g. test_inspector_<topic>.py)':T('파일 이름이 감리 테스트 형식이 아닙니다'),'must be inside a test directory (tests/, test/, __tests__/, spec/)':T('테스트 폴더 안이 아닙니다'),'protected path':T('보호된 경로입니다'),'its directory does not exist in the project':T('프로젝트에 없는 폴더입니다'),'a file with this name already exists':T('같은 이름의 파일이 이미 있습니다'),'outside the worktree':T('작업 폴더 밖입니다'),'listed twice':T('두 번 적혀 있습니다'),'contains code that could move real money':T('실제 돈을 움직일 수 있는 코드가 들어 있습니다')};
@@ -255,6 +255,7 @@ function stopReason(text){
   if((m=s.match(/^(\d+) consecutive milestones failed/)))return T('{0}단계 연속으로 통과하지 못해 멈췄습니다.',m[1]);
   if((m=s.match(/^step budget \((\d+)\) used; next step was: (.*)$/s)))return T('최대 {0}단계를 모두 썼습니다. 다음에 하려던 일: {1}',m[1],m[2]);
   if((m=s.match(/^ARCHITECT could not plan the next step: (.*)$/s)))return T('ARCHITECT가 다음 단계를 계획하지 못했습니다: {0}',m[1]);
+  if(/^ARCHITECT declared the goal done, but no step passed/.test(s))return T('ARCHITECT는 목표를 마쳤다고 판단했지만, 검증을 통과한 단계가 없어 적용할 결과물이 없습니다.');
   return s;
 }
 // A step that is not finished: at work, or - in a task that is not running - the place where it was stopped.
@@ -494,15 +495,33 @@ async function decideResult(runId,kind,extra){
 function paintLoose(m){
   let box=$('loose-results');
   if(!box){box=el('div','','delivery');box.id='loose-results';$('mission-card').append(box);}
-  const list=looseResults(),sig=JSON.stringify([list.map(r=>[r.run_id,r.changed_count,r.project_name,r.result_state]),deliveryBusy]);
+  const list=looseResults(),done=((status||{}).applied_results||[]).filter(r=>r.run_id&&r.in_mission===false);
+  const sig=JSON.stringify([list.map(r=>[r.run_id,r.changed_count,r.project_name,r.result_state]),done.map(r=>[r.run_id,r.leftover]),deliveryBusy]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;
   const held=box.contains(document.activeElement)?document.activeElement.dataset.run:null;
-  box.replaceChildren();box.hidden=!list.length;if(!list.length)return;
-  const head=el('div','','delivery-head');head.append(el('span',T('작업 기록 없이 끝난 결과물'),'kicker'),el('span',T('적용 대기 {0}건',list.length),'badge warn'));box.append(head);
-  for(const r of list.slice(0,4)){const row=el('div','','delivery-actions'),b=el('button',T('변경 내용 보기'));b.type='button';b.dataset.run=r.run_id;b.disabled=deliveryBusy;
-    b.onclick=()=>openResult({loose:true,id:r.run_id,deliverableRun:r.run_id,goal:'',project:r.project_name});
-    row.append(b,el('small',(r.project_name||'—')+' · '+T('파일 {0}개',r.changed_count||0)+(r.result_state==='APPLY_BLOCKED'?' · '+APPLY_KO.blocked[0]:''),'ai-sub'));box.append(row);
-    if(held===r.run_id)b.focus();}
+  box.replaceChildren();box.hidden=!list.length&&!done.length;if(box.hidden)return;
+  const see=r=>{const b=el('button',T('변경 내용 보기'));b.type='button';b.dataset.run=r.run_id;b.disabled=deliveryBusy;
+    b.onclick=()=>openResult({loose:true,id:r.run_id,deliverableRun:r.run_id,goal:'',project:r.project_name});if(held===r.run_id)setTimeout(()=>b.focus());return b;};
+  if(list.length){
+    const head=el('div','','delivery-head');head.append(el('span',T('작업 기록 없이 끝난 결과물'),'kicker'),el('span',T('적용 대기 {0}건',list.length),'badge warn'));box.append(head);
+    for(const r of list.slice(0,4)){const row=el('div','','delivery-actions');
+      row.append(see(r),el('small',(r.project_name||'—')+' · '+T('파일 {0}개',r.changed_count||0)+(r.result_state==='APPLY_BLOCKED'?' · '+APPLY_KO.blocked[0]:''),'ai-sub'));box.append(row);}
+  }
+  if(done.length){                              // applied: still readable, and a kept working copy can be removed here
+    const head=el('div','','delivery-head');head.append(el('span',T('최근 적용한 결과물 (작업 기록 없음)'),'kicker'));box.append(head);
+    for(const r of done){const row=el('div','','delivery-actions');
+      row.append(see(r),el('small',(r.project_name||'—')+' · '+T('원본에 적용됨')+(r.leftover?' · '+T('작업 사본 남음'):''),'ai-sub'));
+      if(r.leftover){const clear=el('button',T('작업 사본 지우기'));clear.type='button';clear.className='ghost';clear.disabled=deliveryBusy;
+        clear.onclick=()=>{if(confirm(T('이 결과물의 작업 사본을 지울까요? 건너뛴 파일의 AI 버전도 함께 사라집니다. 원본 프로젝트는 바뀌지 않습니다.')))clearLoose(r.run_id);};row.append(clear);}
+      box.append(row);}
+  }
+}
+async function clearLoose(runId){
+  if(deliveryBusy)return;deliveryBusy=true;
+  try{const res=await fetch('/result/clear',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json','X-Requested-With':'fetch'},body:new URLSearchParams({run_id:runId})});
+    const out=await res.json().catch(()=>({}));notice(out.status==='cleared'?T('작업 사본을 지웠습니다.'):T('지우지 못했습니다 · ')+(out.reason||out.error||res.status));}
+  catch(e){notice(T('요청 실패 · ')+e.message);}
+  finally{deliveryBusy=false;await pollStatus();}
 }
 
 function paintDelivery(m){

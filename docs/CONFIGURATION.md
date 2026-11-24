@@ -39,6 +39,17 @@ timeouts: {architect: 300, maker: 600, inspector: 300, no_progress: 180, heartbe
 `no_progress`는 출력이 없는 채로 기다리는 최대 시간입니다. Claude의 설계 · 감리 호출은 답을 한 번에 내놓는 방식이라 이 감시를
 적용하지 않고, 전체 시간 제한만 적용합니다.
 
+시간 제한은 역할마다 하나라서, 한 AI에 맞춰 짧게 잡으면 그 역할을 이어받은 다른 AI도 같은 제한에 걸립니다. 특정 AI가 특정 역할을
+맡을 때만 다르게 하려면 `ai`에 적습니다(10~7200초). 적지 않은 AI와 역할은 위의 값을 씁니다.
+
+```yaml
+timeouts:
+  maker: 600
+  ai:
+    codex: {maker: 900}          # Codex가 제작할 때만 900초
+    claude: {architect: 400}
+```
+
 ### 안전 상한
 
 ```yaml

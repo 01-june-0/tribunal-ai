@@ -560,3 +560,25 @@ def test_a_result_applied_outside_its_card_shows_as_applied_and_stays_readable(m
     assert "if(d&&d.worktree_path&&d.worktree_exists!==false){" in js          # a copy removed on applying is not pointed at
     src = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
     assert "['READY', 'APPLIED'].indexOf((j.result.result || {}).state || 'READY') >= 0" in src
+
+
+def test_an_applied_result_outside_a_task_stays_listed_and_its_kept_copy_can_go(tmp_path):
+    """Found by hand: a result outside any task vanished from the stage once applied - nothing showed it again, and
+    the working copy kept for a skipped conflict could only be removed from the command line."""
+    from types import SimpleNamespace as NS
+    from core.result_manager import ResultManager
+    kept = tmp_path / "wt"; kept.mkdir()
+    rm = ResultManager.__new__(ResultManager)
+    rows = [{"run_id": "RUN-M", "project_path": "/p/proj", "worktree_path": "", "updated_at": "t", "changed_count": 1},
+            {"run_id": "RUN-A", "project_path": "/p/proj", "worktree_path": str(kept), "updated_at": "t", "changed_count": 2},
+            {"run_id": "RUN-B", "project_path": "/p/proj", "worktree_path": str(tmp_path / "gone"), "updated_at": "t", "changed_count": 1},
+            {"run_id": "RUN-TEST-X", "project_path": "/p", "worktree_path": "", "updated_at": "t", "changed_count": 1}]
+    rm.sm = NS(list_recent_applied=lambda since, limit: rows)
+    out = rm.applied_results(keep=lambda rid: rid != "RUN-M")                      # a task's own result is left out first
+    assert [(r["run_id"], r["leftover"], r["project_name"]) for r in out] == [("RUN-A", True, "proj"), ("RUN-B", False, "proj")]
+    assert len(rm.applied_results(limit=1)) == 1
+    src = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
+    assert "if rm.result_state(run_id).get(\"state\") != \"APPLIED\" or _run_in_mission(run_id):" in src     # nothing else is cleared there
+    assert '"applied_results": [dict(r, in_mission=False) for r in _result_manager().applied_results(keep=lambda rid: not _run_in_mission(rid))],' in src
+    js = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "fetch('/result/clear',{method:'POST'" in js and "T('최근 적용한 결과물 (작업 기록 없음)')" in js

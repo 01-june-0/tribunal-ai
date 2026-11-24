@@ -57,8 +57,9 @@ def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
     assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/record", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
                       "/ops/open",                      # /ops/open-project (the pattern stops at "-"): opens the folder, changes nothing
+                      "/result/clear",                  # the kept working copy of an applied result outside a task
                       "/result", "/run/inspect"}                       # read-only: what changed, and the ORDER of a run awaiting approval
-    assert js.count("method:'POST'") == 11                            # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission, open the project folder, try a result (plan + start)
+    assert js.count("method:'POST'") == 12                            # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission, open the project folder, try a result (plan + start), clear the kept copy of an applied result outside a task
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST'" in js
     assert "fetch(kind==='apply'?'/result/apply':'/result/discard',{method:'POST'" in js
     assert set(re.findall(r"accountPost\('(/[a-z/_]+)", js)) == {"/ops/ai/account", "/ops/ai/account/reveal"}     # both go through the one token-carrying helper
