@@ -1182,6 +1182,11 @@ function start(){
   Trinity.init($('trinity-canvas'),introOn?{onFrame,bootDelay:2.1,bootTime:1.7}:{onFrame});
   if(params.get('broadcast')==='1'){document.body.classList.add('broadcast');$('btn-broadcast').textContent=T('전체 화면 끝내기');$('btn-broadcast').setAttribute('aria-pressed','true');}
   $('tab-stage').onclick=()=>setView('stage');$('tab-workshop').onclick=()=>setView('workshop');$('attention-go').onclick=()=>{const b=$('attention-go').dataset.here&&document.querySelector('#mission-attention [data-act="approve"]');if(b){b.scrollIntoView({block:'center'});b.focus();}else setView('workshop');};$('rp-close').onclick=closeResult;
+  $('top-open').onclick=async()=>{          // the server opens the project it already has: the page sends no path
+    try{if(!roleToken)await pollRoles();       // the first read of the roles brings the local token
+      const res=await fetch('/ops/open-project',{method:'POST',headers:{'X-Tribunal-Token':roleToken||''}}),out=await res.json().catch(()=>({}));
+      notice(res.ok&&out.path?T('폴더를 열었습니다 · ')+out.path:res.status===403?T('잠시 뒤 다시 눌러 주세요.'):(out.error?T(out.error):T('파일 관리자를 열지 못했습니다.')));}
+    catch(e){notice(T('폴더를 열지 못했습니다 · ')+e.message);}};
   $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');
     try{const r=await chooseProjectFolder();if(r)notice(r.ok?T('작업 폴더를 바꿨습니다 · ')+r.path:T('선택할 수 없는 폴더입니다 · ')+r.message);}
     catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (자세히 탭에서 경로를 직접 입력할 수 있습니다)'));}

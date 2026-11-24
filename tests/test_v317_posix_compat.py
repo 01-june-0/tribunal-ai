@@ -40,18 +40,28 @@ def test_kill_process_tree_uses_taskkill_on_windows(monkeypatch):
 
 
 @pytest.mark.parametrize("os_name,platform,expected", [
-    ("nt", "win32", "explorer.exe"),
-    ("posix", "darwin", "open"),
-    ("posix", "linux", "xdg-open"),
+    ("nt", "win32", ["explorer.exe"]),
+    ("posix", "darwin", ["open", "-a", "Finder"]),          # Finder by name: a plain `open` would RUN a folder named *.app
+    ("posix", "linux", ["xdg-open"]),
 ])
 def test_open_folder_picks_platform_file_manager(monkeypatch, tmp_path, os_name, platform, expected):
+    import subprocess
     argv_seen = []
     monkeypatch.setattr(rm.os, "name", os_name)
     monkeypatch.setattr(rm.sys, "platform", platform)
     monkeypatch.setattr(rm.subprocess, "Popen", lambda argv, *a, **k: argv_seen.append(argv))
+    monkeypatch.setattr(rm.subprocess, "run", lambda argv, *a, **k: argv_seen.append(argv) or subprocess.CompletedProcess(argv, 0))
     out = rm.ResultManager._open(str(tmp_path))
     assert out["status"] == "ok"
-    assert argv_seen == [[expected, str(tmp_path)]]
+    assert argv_seen == [expected + [str(tmp_path)]]
+
+
+def test_open_folder_on_macos_says_when_finder_failed(monkeypatch, tmp_path):
+    import subprocess
+    monkeypatch.setattr(rm.os, "name", "posix")
+    monkeypatch.setattr(rm.sys, "platform", "darwin")
+    monkeypatch.setattr(rm.subprocess, "run", lambda argv, *a, **k: subprocess.CompletedProcess(argv, 1))
+    assert rm.ResultManager._open(str(tmp_path))["status"] == "refused"
 
 
 def test_open_folder_refuses_when_file_manager_missing(monkeypatch, tmp_path):

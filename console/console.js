@@ -99,12 +99,19 @@ async function chooseProjectFolder(){
  const res=await fetch('/project',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8','Accept':'application/json'},body:new URLSearchParams({path:picked.path}).toString()}).then(r=>r.json());
  return {path:picked.path,ok:res.status==='ok',message:res.text||res.message||''};       // text: the line in words, no internal code
 }
+async function openProjectFolder(){        // the server opens the project it already has: the page sends no path
+ try{const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
+  return await fetch('/ops/open-project',{method:'POST',headers:{'X-Tribunal-Token':roles.csrf}}).then(r=>r.json());}
+ catch(e){return {error:T('폴더를 열지 못했습니다 · ')+e.message};}
+}
 function setupFolderPicker(){
  const old=doc.getElementById('project-change'),form=doc.getElementById('project-form');if(!old||!form)return;
  const button=old.cloneNode(true);old.replaceWith(button);button.textContent=T('폴더 선택…');
  const manual=el('button',T('경로 직접 입력'),'ghost');manual.type='button';manual.onclick=()=>{form.style.display=form.style.display==='none'?'':'none';if(form.style.display!=='none')doc.getElementById('project-input').focus();};
- button.after(' ',manual);
+ const opener=el('button',T('폴더 열기'),'ghost');opener.type='button';opener.title=T('지금 프로젝트 폴더를 Finder(Windows는 탐색기)로 엽니다');
+ button.after(' ',manual,' ',opener);
  const note=doc.getElementById('project-result');
+ opener.onclick=async()=>{const out=await openProjectFolder();if(note)note.textContent=out.path?T('폴더를 열었습니다 · ')+out.path:(out.error?T(out.error):T('파일 관리자를 열지 못했습니다.'));};
  button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const label=button.textContent;button.textContent=T('폴더 선택 창 열림…');
   try{const r=await chooseProjectFolder();if(r){form.style.display='';if(note)note.textContent=r.message;if(r.ok){form.style.display='none';doc.getElementById('project-name').textContent=r.path.split(/[\/]/).filter(Boolean).pop();doc.getElementById('project-path').textContent=r.path;}}}
   catch(e){form.style.display='';if(note)note.textContent=T('폴더 선택 창을 열지 못했습니다. 경로를 직접 입력해 주세요. (')+e.message+')';}

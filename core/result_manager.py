@@ -347,7 +347,17 @@ class ResultManager:
 
     @staticmethod
     def _open(path: str) -> Dict[str, Any]:
-        argv = ["explorer.exe", path] if os.name == "nt" else (["open", path] if sys.platform == "darwin" else ["xdg-open", path])
+        if os.name != "nt" and sys.platform == "darwin":
+            # Finder by name: a plain `open` RUNS a folder whose name ends in .app (a cloned repository carries no
+            # quarantine flag, so nothing would ask first). `open` returns at once, so its exit code is the answer.
+            try:
+                done = subprocess.run(["open", "-a", "Finder", path], capture_output=True, timeout=15, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return {"status": "refused", "reason": f"file manager unavailable: {exc}"}
+            if done.returncode != 0:
+                return {"status": "refused", "reason": "Finder could not open the folder"}
+            return {"status": "ok", "path": path}
+        argv = ["explorer.exe", path] if os.name == "nt" else ["xdg-open", path]
         try:
             subprocess.Popen(argv)                                   # argv, shell=False
         except OSError as exc:

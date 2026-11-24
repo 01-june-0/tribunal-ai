@@ -85,20 +85,22 @@ def test_d_open_worktree_canonical_only(rm, monkeypatch):
     with make_git_project() as proj:
         run_id, orch = _pass_run(proj)
         calls = []
+        import subprocess as _sp
         monkeypatch.setattr("core.result_manager.subprocess.Popen", lambda argv, **k: calls.append(argv))
+        monkeypatch.setattr("core.result_manager.subprocess.run", lambda argv, **k: calls.append(argv) or _sp.CompletedProcess(argv, 0))   # never a real Finder
         # The file manager of the machine the test runs on. (This once pretended to be Windows by setting os.name,
         # which on macOS/Linux makes pathlib refuse to build any path, so the containment check itself failed and the
         # test said "refused" for a reason that has nothing to do with the feature. Which program each platform uses
         # is covered in test_v317_posix_compat.)
         import sys
-        opener = "explorer.exe" if os.name == "nt" else ("open" if sys.platform == "darwin" else "xdg-open")
+        opener = ["explorer.exe"] if os.name == "nt" else (["open", "-a", "Finder"] if sys.platform == "darwin" else ["xdg-open"])
         assert rm.open_worktree(run_id)["status"] == "ok"
-        assert calls == [[opener, str(Path(orch.sm.get_run(run_id)["worktree_path"]).resolve())]]
+        assert calls == [opener + [str(Path(orch.sm.get_run(run_id)["worktree_path"]).resolve())]]
         # tampered worktree path outside .director_worktrees -> refused, explorer not called
         with orch.sm._get_conn() as c:
             c.execute("UPDATE runs SET worktree_path=? WHERE run_id=?", (str(Path(proj).resolve()), run_id)); c.commit()
         assert rm.open_worktree(run_id)["status"] == "refused" and len(calls) == 1
-        assert rm.open_project(run_id)["status"] == "ok" and calls[-1] == [opener, str(Path(proj).resolve())]
+        assert rm.open_project(run_id)["status"] == "ok" and calls[-1] == opener + [str(Path(proj).resolve())]
 
 
 # ------------------------------------------------------------------ E/N: clean main + same HEAD -> apply, verify, no commit

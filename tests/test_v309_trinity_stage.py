@@ -56,8 +56,9 @@ def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     js = (CONSOLE / "stage.js").read_text(encoding="utf-8")
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
     assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/record", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
+                      "/ops/open",                      # /ops/open-project (the pattern stops at "-"): opens the folder, changes nothing
                       "/result", "/run/inspect"}                       # read-only: what changed, and the ORDER of a run awaiting approval
-    assert js.count("method:'POST'") == 9                             # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission
+    assert js.count("method:'POST'") == 10                            # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission, open the project folder
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST'" in js
     assert "fetch(kind==='apply'?'/result/apply':'/result/discard',{method:'POST'" in js
     assert set(re.findall(r"accountPost\('(/[a-z/_]+)", js)) == {"/ops/ai/account", "/ops/ai/account/reveal"}     # both go through the one token-carrying helper
@@ -115,3 +116,25 @@ def test_the_macos_folder_dialog_is_shown_by_system_events(monkeypatch):
     import companion_server
     monkeypatch.setattr(companion_server.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 3, b"", b""))
     assert "자동화" in companion_server.pick_folder("")["error"]
+
+
+def test_the_project_folder_opens_only_with_the_token_and_only_the_current_project(http_server, monkeypatch, tmp_path):
+    """"폴더 열기" (Details tab) and the folder icon (top bar): the page sends no path, the server opens its own project."""
+    import json
+    import companion_server
+    import dashboard_server
+    from core.result_manager import ResultManager
+    opened = []
+    monkeypatch.setattr(ResultManager, "_open", staticmethod(lambda path: opened.append(path) or {"status": "ok", "path": path}))
+    proj = tmp_path / "proj"; (proj / ".git").mkdir(parents=True)
+    monkeypatch.setattr(dashboard_server, "cached_status_payload", lambda: {"project_path": str(proj)})
+    assert request(http_server, "POST", "/ops/open-project")[0] == 403 and opened == []        # no token: nothing opens
+    code, body = request(http_server, "POST", "/ops/open-project", headers={"X-Tribunal-Token": "test-token"}, body='{"path": "/etc"}')
+    assert code == 200 and opened == [str(proj.resolve())] and json.loads(body)["path"] == str(proj.resolve())   # a sent path is ignored
+    monkeypatch.setattr(dashboard_server, "cached_status_payload", lambda: {"project_path": str(tmp_path / "gone")})
+    code, body = request(http_server, "POST", "/ops/open-project", headers={"X-Tribunal-Token": "test-token"})
+    assert code == 409 and "프로젝트로 쓸 수 없습니다" in json.loads(body)["error"] and len(opened) == 1
+    monkeypatch.setattr(dashboard_server, "cached_status_payload", lambda: {})
+    assert request(http_server, "POST", "/ops/open-project", headers={"X-Tribunal-Token": "test-token"})[0] == 409
+    html = (Path(__file__).resolve().parents[1] / "console" / "index.html").read_text(encoding="utf-8")
+    assert 'id="top-open"' in html and 'aria-label="프로젝트 폴더 열기"' in html

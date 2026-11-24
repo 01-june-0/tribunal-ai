@@ -40,6 +40,23 @@ def pick_folder(initial: str = "", timeout: int = 300) -> dict:
         _PICK_LOCK.release()
 
 
+def open_current_project():
+    """(body, status) for /ops/open-project: the console's project folder in the file manager."""
+    try:
+        current = (d.cached_status_payload() or {}).get('project_path') or ''
+    except Exception:
+        current = ''
+    # fixed sentences: the page shows them through its dictionary (console/i18n.js)
+    if not current:
+        return {"error": "선택된 프로젝트가 없습니다."}, 409
+    ok, info = d.validate_project_path(current)
+    if not ok:
+        return {"error": "프로젝트 폴더가 없거나 프로젝트로 쓸 수 없습니다."}, 409
+    from core.result_manager import ResultManager
+    out = ResultManager._open(info)
+    return (out, 200) if out.get("status") == "ok" else ({"error": "파일 관리자를 열지 못했습니다."}, 409)
+
+
 def bridge_config(config=None) -> dict:
     """config.yaml `bridge:`."""
     config = config if config is not None else d.load_config()
@@ -284,6 +301,16 @@ class CompanionHandler(d.DashboardHandler):
                 current = ''
             result = pick_folder(current)
             return self._send_json(result, 409 if 'error' in result else 200)
+        if self.path == '/ops/open-project':
+            # Opens the project the console works on in Finder / Explorer. The page sends no path: only the folder the
+            # server already has as the project, and only while it is still a valid project, is ever opened.
+            try:                                     # nothing in a body is used; read it so the reply is not cut off
+                self.rfile.read(min(int(self.headers.get('Content-Length') or 0), 4096))
+            except (ValueError, OSError):
+                pass
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            return self._send_json(*open_current_project())
         if self.path == '/bridge/missions' or (self.path.startswith('/bridge/missions/') and self.path.endswith('/decide')):
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'bridge authentication required'}, 403)
