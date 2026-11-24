@@ -1838,8 +1838,7 @@ DASHBOARD_JS = r"""
     }).catch(function () {});
   }
   var rbind = function (id, fn) { var b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
-  rbind('result-view-btn', function () { showResultDetail('changes'); });
-  rbind('result-tests-btn', function () { showResultDetail('tests'); });
+  rbind('result-view-btn', function () { showResultDetail('changes'); });     // one way in: the tabs inside the panel switch to the tests
   rbind('rd-tab-changes', function () { showResultDetail('changes'); });
   rbind('rd-tab-tests', function () { showResultDetail('tests'); });
   rbind('rd-close', function () { document.getElementById('result-detail').style.display = 'none'; });
@@ -2854,12 +2853,11 @@ def render_html():
                 <div id="result-files" data-raw="{r_files}">{r_files_ko}</div>
                 <div id="result-tests" data-raw="{r_tests}">{r_tests_ko}</div>
                 <div class="abtns">
-                    <button type="button" id="result-view-btn" class="ghost">{I18N.t("view_changes")}</button>
-                    <button type="button" id="result-tests-btn" class="ghost">{I18N.t("test_results")}</button>
-                    <button type="button" id="result-open-btn" class="ghost">{I18N.t("open_worktree")}</button>
+                    <button type="button" id="result-view-btn" class="ghost">{I18N.t("view_changes_tests")}</button>
+                    <button type="button" id="result-open-btn">{I18N.t("open_worktree")}</button>
                     <button type="button" id="result-apply-btn" class="apply"{r_apply_attr}>{I18N.t("apply_verify")}</button>
                     <button type="button" id="result-discard-btn" class="discard"{r_act_attr}>{I18N.t("discard")}</button>
-                    <button type="button" id="result-openproj-btn" class="ghost" style="display:none;">{I18N.t("open_project")}</button>
+                    <button type="button" id="result-openproj-btn" style="display:none;">{I18N.t("open_project")}</button>
                     <button type="button" id="result-close-btn" class="ghost">{I18N.t("close")}</button>
                 </div>
                 <div id="result-confirm" style="display:none;">

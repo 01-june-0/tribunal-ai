@@ -71,8 +71,10 @@ def test_abc_result_ready_view_and_tests(rm, server):
         assert st["result"]["is_pass"] and st["result"]["changed_count"] == 3 and st["results"][0]["run_id"] == run_id
         html = render_html()
         assert "RESULT READY" in html and "Changed files: 3" in html and "RESULTS (1)" in html and "RUN PASS" in html
-        for bid in ("result-view-btn", "result-tests-btn", "result-open-btn", "result-apply-btn", "result-discard-btn", "chat-view-result-btn"):
+        for bid in ("result-view-btn", "result-open-btn", "result-apply-btn", "result-discard-btn", "chat-view-result-btn"):
             assert f'id="{bid}"' in html
+        assert 'id="result-tests-btn"' not in html and "변경사항 및 테스트 결과" in html     # one button for both
+        assert '<button type="button" id="result-open-btn">' in html          # filled (blue), not a ghost button
         detail = _get_json(server, f"/result?run_id={run_id}")[1]
         assert detail["file_diffs"] and detail["preconditions"]["ok"] is True and "manifest" not in detail["preconditions"]
 

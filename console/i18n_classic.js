@@ -365,6 +365,7 @@ const EXACT={
  "폴더가 아닙니다": "Not a folder",
  "git 저장소가 아닙니다": "Not a git repository",
  "Tribunal AI 자체 폴더는 고를 수 없습니다": "Tribunal AI's own folder cannot be chosen",
+ "변경사항 및 테스트 결과": "Changes and test results",
  "선택됨": "Selected",
  "선택할 수 없습니다": "Cannot be chosen",
  "프로젝트 경로가 필요합니다": "A project path is needed",
