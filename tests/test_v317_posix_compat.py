@@ -95,3 +95,17 @@ def test_shell_launchers_ship_and_parse():
         text = (root / name).read_text(encoding="utf-8")
         assert text.startswith("#!/usr/bin/env sh")
         assert "companion_server.py" in text
+
+
+def test_the_stop_script_reads_proc_when_there_is_no_ps():
+    """Found on Linux (a container without procps): stop-companion.sh asked `ps` whether the recorded PID was the
+    console, got nothing, and left the console running. /proc is read first; `ps` is the macOS way."""
+    src = (Path(__file__).resolve().parents[1] / "stop-companion.sh").read_text(encoding="utf-8")
+    assert 'if [ -r "/proc/$1/cmdline" ]; then tr' in src and 'ps -p "$1" -o command=' in src
+    assert 'if command_of "$PID" | grep -q companion_server.py; then' in src
+
+
+def test_tests_run_without_a_bytecode_cache(monkeypatch, tmp_path):
+    """Found on Linux: a fix written within the same second as a same-size bug was tested from the stale cache."""
+    src = (Path(__file__).resolve().parents[1] / "core" / "verifier.py").read_text(encoding="utf-8")
+    assert 'env["PYTHONDONTWRITEBYTECODE"] = "1"' in src

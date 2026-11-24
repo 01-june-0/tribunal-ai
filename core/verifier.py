@@ -28,6 +28,10 @@ class Verifier:
             # Always, watched or not: every verification of a run (baseline, the round itself, apply) must see the
             # same environment. A Python test runner then writes each line as it happens, as it would in a terminal.
             env["PYTHONUNBUFFERED"] = "1"
+            # No bytecode cache: Python reuses a cached module when the source has the same size and the same mtime
+            # second, so a fix written quickly over a same-size bug was not what got tested (seen on Linux). It also
+            # keeps __pycache__ out of the worktree, whose files applying writes into the project.
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
 
             if isinstance(cmd_str, list):
                 argv = list(cmd_str)

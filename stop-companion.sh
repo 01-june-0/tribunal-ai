@@ -7,7 +7,11 @@ if [ ! -f data/companion.pid ]; then
   exit 0
 fi
 PID="$(cat data/companion.pid)"
-if ps -p "$PID" -o command= 2>/dev/null | grep -q companion_server.py; then
+# The command line of a process: /proc on Linux (a minimal system or container may have no `ps`), else `ps` (macOS).
+command_of() {
+  if [ -r "/proc/$1/cmdline" ]; then tr '\000' ' ' <"/proc/$1/cmdline"; else ps -p "$1" -o command= 2>/dev/null; fi
+}
+if command_of "$PID" | grep -q companion_server.py; then
   kill "$PID"
   # Wait until the process is gone, so an immediate start-companion.sh finds the port free.
   i=0
