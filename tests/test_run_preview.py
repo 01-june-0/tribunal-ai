@@ -162,3 +162,19 @@ def test_the_windows_script_shows_the_command_without_running_it_twice():
     assert lines[1] == 'cd /d "C:/w/100%% p"'
     assert lines[2] == "echo [Tribunal AI] npm install ^&^& npm run dev ^> log.txt"       # shown, not run
     assert "npm install && npm run dev > log.txt" in lines and not any(l.startswith('start ""') for l in lines)
+
+
+def test_a_tkinter_app_gets_a_python_that_has_tkinter(tmp_path, monkeypatch):
+    """Found on this Mac: Homebrew's python3 has no tkinter, so a windowed app only showed an import error. The plan
+    names a Python that can open the window, and says so; nothing else is changed."""
+    app = _write(tmp_path / "app", {"app.py": "import tkinter\nif __name__ == '__main__':\n    tkinter.Tk().mainloop()\n"})
+    monkeypatch.setattr(rp, "_has_tk", lambda python: python == "/usr/bin/python3")
+    monkeypatch.setattr(rp.shutil, "which", lambda name: None)
+    monkeypatch.setattr(rp.Path, "is_file", lambda self: True if str(self) == "/usr/bin/python3" else Path.exists(self) and not Path.is_dir(self))
+    assert rp._with_tk("python3 app.py", app) == ("/usr/bin/python3 app.py", {"tk": "switched", "from": "python3", "to": "/usr/bin/python3"})
+    assert rp._with_tk("npm start", app) == ("npm start", None)                     # not a bare python
+    assert rp._with_tk(".venv/bin/python app.py", app) == (".venv/bin/python app.py", None)
+    plain = _write(tmp_path / "cli", {"main.py": "if __name__ == '__main__':\n    print(1)\n"})
+    assert rp._with_tk("python3 main.py", plain) == ("python3 main.py", None)       # no tkinter in the project
+    monkeypatch.setattr(rp, "_has_tk", lambda python: False)
+    assert rp._with_tk("python3 app.py", app) == ("python3 app.py", {"tk": "missing", "from": "python3"})

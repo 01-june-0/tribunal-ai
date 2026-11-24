@@ -45,6 +45,8 @@ const EN={
   "실행해 보기": "Try it",
   "최근 적용한 결과물 (작업 기록 없음)": "Recently applied results (no task)",
   "끝내지 못함": "Not finished",
+  "이 컴퓨터의 {0}에는 tkinter가 없어, tkinter가 있는 Python으로 바꿨습니다: {1}": "{0} on this computer has no tkinter, so a Python that has it is used: {1}",
+  "이 컴퓨터의 {0}에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.": "{0} on this computer has no tkinter, and no Python with tkinter was found. The window may not open and an error may show.",
   "작업 사본 남음": "working copy kept",
   "이 결과물의 작업 사본을 지울까요? 건너뛴 파일의 AI 버전도 함께 사라집니다. 원본 프로젝트는 바뀌지 않습니다.": "Remove the working copy of this result? The AIs' version of the skipped files goes with it. The project does not change.",
   "작업 사본을 지웠습니다.": "Working copy removed.",

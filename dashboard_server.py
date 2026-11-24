@@ -1821,7 +1821,9 @@ DASHBOARD_JS = r"""
       var where = p.where === 'copy' ? '적용 전 결과물의 임시 복사본' : '원본 프로젝트';
       var ask = '이 명령을 새 터미널 창에서 실행할까요?\n\n폴더: ' + where + '\n' + p.folder + '\n명령: ' + p.command
         + (p.command.indexOf('<port>') >= 0 ? '\n(<port>는 빈 포트로 바뀝니다)' : '')
-        + (p.source === 'guess' ? '\n\n실행 방법은 파일을 보고 짐작한 것입니다.' : '');
+        + (p.source === 'guess' ? '\n\n실행 방법은 파일을 보고 짐작한 것입니다.' : '')
+        + (p.note && p.note.tk === 'switched' ? '\n\n이 컴퓨터의 ' + p.note.from + '에는 tkinter가 없어, tkinter가 있는 Python으로 바꿨습니다: ' + p.note.to
+           : p.note && p.note.tk === 'missing' ? '\n\n이 컴퓨터의 ' + p.note.from + '에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.' : '');
       if (!window.confirm(ask)) return;
       return post('/ops/run-result', { run_id: runId, command: p.command, place: p.where + ':' + p.folder }).then(function (out) {
         if (out.status === 'started') setText('result-status', '터미널 창에서 실행했습니다.');

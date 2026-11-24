@@ -199,8 +199,47 @@ def plan(run_id: str, rm=None) -> Dict[str, Any]:
     if not spec:
         return {"found": False, "reason": "nothing to start", "where": where, "folder": str(root)}
     command = spec["command"] or f"{_python(root)} -m http.server --bind 127.0.0.1 {PORT}"
+    command, note = _with_tk(command, root)
     return {"found": True, "command": command, "kind": spec["kind"], "url": spec["url"], "open": spec["open"],
-            "where": where, "folder": str(root), "source": source}
+            "where": where, "folder": str(root), "source": source, "note": note}
+
+
+_TK: Dict[str, bool] = {}
+
+
+def _has_tk(python: str) -> bool:
+    """Whether this Python can import tkinter (Homebrew's python3 ships without it). Remembered per process."""
+    if python not in _TK:
+        import subprocess
+        try:
+            _TK[python] = subprocess.run([python, "-c", "import tkinter"], capture_output=True, timeout=15,
+                                         stdin=subprocess.DEVNULL).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            _TK[python] = False
+    return _TK[python]
+
+
+def _uses_tk(root: Path) -> bool:
+    for path in _python_files(root) + [root / n for n in PY_ENTRY if (root / n).is_file()]:
+        try:
+            if _imports(path.read_text(encoding="utf-8", errors="replace")[:200_000], ("tkinter",)):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _with_tk(command: str, root: Path):
+    """A windowed tkinter app started with a bare `python3` / `python` that cannot import tkinter gets a Python on
+    this machine that can (the macOS system one, for example). The change is said in the plan, so it is shown before
+    anything runs. Anything else is left exactly as it was."""
+    first, _, rest = command.partition(" ")
+    if first not in ("python3", "python") or not rest or _has_tk(first) or not _uses_tk(root):
+        return command, None
+    for other in [shutil.which(f"python3.{minor}") for minor in range(14, 8, -1)] + ["/usr/bin/python3"]:
+        if other and Path(other).is_file() and _has_tk(other):
+            return f"{shlex.quote(other)} {rest}", {"tk": "switched", "from": first, "to": other}
+    return command, {"tk": "missing", "from": first}
 
 
 # ------------------------------------------------------------------ starting it

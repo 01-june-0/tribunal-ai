@@ -464,7 +464,7 @@ async function tryRun(runId){
     if(!p.found){notice(T('실행 방법을 찾지 못했습니다.'));return;}
     const where=p.where==='copy'?T('적용 전 결과물의 임시 복사본'):T('원본 프로젝트');
     const ask=T('이 명령을 새 터미널 창에서 실행할까요?')+'\n\n'+T('폴더: ')+where+'\n'+p.folder+'\n'+T('명령: ')+p.command
-      +(p.command.includes('<port>')?'\n'+T('(<port>는 빈 포트로 바뀝니다)'):'')+(p.source==='guess'?'\n\n'+T('실행 방법은 파일을 보고 짐작한 것입니다.'):'');
+      +(p.command.includes('<port>')?'\n'+T('(<port>는 빈 포트로 바뀝니다)'):'')+(p.source==='guess'?'\n\n'+T('실행 방법은 파일을 보고 짐작한 것입니다.'):'')+(p.note&&p.note.tk==='switched'?'\n\n'+T('이 컴퓨터의 {0}에는 tkinter가 없어, tkinter가 있는 Python으로 바꿨습니다: {1}',p.note.from,p.note.to):p.note&&p.note.tk==='missing'?'\n\n'+T('이 컴퓨터의 {0}에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.',p.note.from):'');
     if(!confirm(ask))return;
     const [r2,out]=await post('/ops/run-result',{run_id:runId,command:p.command,place:p.where+':'+p.folder});
     if(out.status==='started')notice(T('터미널 창에서 실행했습니다.'));

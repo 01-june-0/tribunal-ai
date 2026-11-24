@@ -207,6 +207,8 @@ Codex 로그아웃 → 로그인, 계정 변경, 작업 중 로그아웃 거절.
     로컬 토큰 필요. 창은 끝나도 닫히지 않아 오류를 읽을 수 있음. Linux는 명령을 보여 주고 직접 실행하게 함.
   - 실제 작업으로 확인함(2026-11-24): 웹 페이지(할 일 목록) 작업에서 제작 AI가 `run`(web, `web/index.html`)을 적었고,
     적용 전 결과물을 실행해 보기로 열어 브라우저에서 동작하는 것을 사용자가 확인함. 창이 뜨는 앱과 Windows · Linux는 아직.
+  - 창이 뜨는 tkinter 앱을 그냥 `python3` · `python`으로 시작하는데 그 Python에 tkinter가 없으면(Homebrew Python),
+    tkinter가 있는 Python(예: macOS의 `/usr/bin/python3`)으로 바꾼 명령을 보여 주고, 바꾼 사실을 확인 창에 적음.
 
 ### 이름
 
