@@ -171,7 +171,8 @@ class AntigravityMaker:
         import sys
         if shutil.which("python"):
             return "python"
-        exe = sys.executable or shutil.which("python3") or "python3"
+        from core.pythons import tribunal_python
+        exe = tribunal_python() or shutil.which("python3") or "python3"
         return subprocess.list2cmdline([exe]) if os.name == "nt" else shlex.quote(exe)
 
     def _setup_scoped_permissions(self, worktree_path: Path, order: OrderSchema) -> Dict[str, List[str]]:

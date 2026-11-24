@@ -83,6 +83,13 @@ class ProposalMaker(AntigravityMaker):
         return super().get_provenance(exit_code).model_copy(update={
             'provider': self.provider, 'runtime': self.agent_family + '-cli'})
 
+    @staticmethod
+    def _project_python_version(root) -> str:
+        """The version the project's tests and programs will run with (its own environment, else Tribunal's), so
+        the Maker does not write for a newer Python than the one that runs the code."""
+        from core.pythons import project_python, version_of
+        return version_of(project_python(root)) or sys.version.split()[0]
+
     def run(self, order, worktree_path, maker_fn=None):
         if maker_fn is not None:
             return super().run(order, worktree_path, maker_fn)
@@ -197,7 +204,7 @@ class ProposalMaker(AntigravityMaker):
                   'Implement the ORDER and real behavior tests. Preserve existing behavior. No placeholder implementations. '
                   'Return only changed files. No deletion operations. Stay within file and diff budgets. '
                   'ARCHITECT feedback and outstanding inspector findings in context must be resolved. '
-                  'Tribunal host Python is ' + sys.version.split()[0] + '; platform is ' + sys.platform +
+                  "The project's Python is " + self._project_python_version(root) + '; platform is ' + sys.platform +
                   '. Honor any project-specific runtime requirements in the ORDER.\nORDER:\n' + order.model_dump_json() +
                   '\nREFERENCE DOCUMENTS:\n' + json.dumps(documents, ensure_ascii=False) +
                   '\nREFERENCE SOURCE FILES (read-only unless ORDER allows writes; omitted files are not necessarily absent):\n' + json.dumps(sources, ensure_ascii=False)

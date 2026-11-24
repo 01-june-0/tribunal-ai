@@ -47,9 +47,12 @@ class Verifier:
             if not argv:
                 return {"command": cmd_str, "executed": False, "passed": True, "output": "Empty command"}
 
-            # Resolve python to current interpreter if invoked as python/python3
+            # `python` / `python3`: the project's own environment when it has one that can run this (its packages are
+            # there), else Tribunal's interpreter as before (core/pythons.py)
             if argv[0] in ("python", "python3"):
-                argv[0] = sys.executable
+                from core.pythons import project_python
+                needs = argv[2] if len(argv) > 2 and argv[1] == "-m" else None
+                argv[0] = project_python(Path(cwd_str), needs=needs)
             else:
                 resolved = shutil.which(argv[0])
                 if resolved:

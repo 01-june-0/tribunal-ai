@@ -26,7 +26,8 @@ def pick_folder(initial: str = "", timeout: int = 300) -> dict:
     if not _PICK_LOCK.acquire(blocking=False):
         return {"error": "폴더 선택 창이 이미 열려 있습니다."}
     try:
-        out = subprocess.run([sys.executable, str(ROOT / "scripts" / "pick_folder.py"), initial or ""],
+        from core.pythons import tribunal_python
+        out = subprocess.run([tribunal_python(), str(ROOT / "scripts" / "pick_folder.py"), initial or ""],
                              capture_output=True, timeout=timeout)
         if out.returncode == 3:
             return {"error": "macOS가 System Events 제어를 막았습니다. 시스템 설정 → 개인정보 보호 및 보안 → 자동화에서 허용해 주세요."}

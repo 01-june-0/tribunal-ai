@@ -38,7 +38,8 @@ def run_added_code(folder: Path, timeout: Optional[float] = None) -> Optional[st
     on the path). None when add(2, 3) == 5, else what went wrong."""
     probe = "import sys; sys.path.insert(0, sys.argv[1]); from src.add import add; assert add(2, 3) == 5, add(2, 3)"
     # Its own process group, so a cut-off also ends whatever the written code started.
-    proc = subprocess.Popen([sys.executable, "-I", "-c", probe, str(folder)], cwd=str(folder), stdout=subprocess.PIPE,
+    from core.pythons import tribunal_python
+    proc = subprocess.Popen([tribunal_python(), "-I", "-c", probe, str(folder)], cwd=str(folder), stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, start_new_session=True)
     try:
         out, err = proc.communicate(timeout=timeout or CODE_TIMEOUT)
