@@ -1279,6 +1279,6 @@ function start(){
   pollAI();every(pollAI,20000);every(()=>{if(ai&&Object.values(ai.accounts||{}).some(a=>a.pending||a.loading))pollAI();},5000);   // a sign-in under way is watched more closely
      // cheap: the server answers from memory and asks the CLIs itself, at the interval chosen in the panel
 }
-window.TrinityStage={model:()=>lastModel};
+window.TrinityStage={model:()=>lastModel,send:text=>send(text)};   // send: the first-run helper (setup.js) starts its first task the way the composer does
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();

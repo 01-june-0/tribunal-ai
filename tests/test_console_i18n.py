@@ -24,7 +24,7 @@ def _js_keys(name):
 
 def test_every_string_in_the_scripts_has_an_english_entry():
     en = _dictionary()
-    for name in ("stage.js", "console.js"):
+    for name in ("stage.js", "console.js", "setup.js"):
         missing = sorted(k for k in _js_keys(name) if k not in en)
         assert missing == [], f"{name}: add these to console/i18n.js: {missing}"
 
@@ -42,7 +42,7 @@ def test_no_korean_literal_escapes_the_lookup():
     """A Korean string outside T(...) would stay Korean in the English console. Allowed: number units used only in
     Korean mode, and the halt reason that is sent to the server rather than shown."""
     allowed = {"'억'", "'만'", "'console 작업 정지 버튼'"}
-    for name in ("stage.js", "console.js"):
+    for name in ("stage.js", "console.js", "setup.js"):
         stray = [m for m in _stray_korean((CONSOLE / name).read_text(encoding="utf-8")) if m not in allowed]
         assert stray == [], f"{name}: wrap in T(...): {stray}"
 

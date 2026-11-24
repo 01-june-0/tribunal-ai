@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent            # the code: console pages, hel
 from core.paths import home as tribunal_home, data_dir   # noqa: E402 - this machine's runtime files and records
 # The console is a fixed allowlist of local files: nothing outside console/ is ever served.
 STATIC_FILES = {'/': 'index.html', '/console.js': 'console.js', '/console.css': 'console.css',
-                '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js', '/i18n_classic.js': 'i18n_classic.js'}
+                '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js', '/i18n_classic.js': 'i18n_classic.js',
+                '/setup.js': 'setup.js'}
 
 
 _PICK_LOCK = threading.Lock()
@@ -154,6 +155,9 @@ class CompanionHandler(d.DashboardHandler):
             return self._send_json({'settings': settings, 'options': cli_settings.options(), 'limits': limits,
                                     'accounts': cli_accounts.snapshot(limits),
                                     'alerts': cli_limits.alerts(limits, {c: settings[c]['warn_percent'] for c in cli_settings.CLIS})})
+        if path == '/ops/setup':                # first-run helper: what this machine still needs (core/setup.py)
+            from core import setup
+            return self._send_json(setup.status())
         if path == '/favicon.ico':                    # browsers ask for it on their own; there is none: say so without an error
             self.send_response(204); self.send_header('Cache-Control', 'max-age=86400'); self.end_headers(); return
         if path in STATIC_FILES:
@@ -226,6 +230,35 @@ class CompanionHandler(d.DashboardHandler):
                 if self.path.endswith('/reveal'):           # the full address, only on request and never stored by us
                     return self._send_json({'email': cli_accounts.reveal(cli)})
                 return self._send_json(cli_accounts.start(cli, action))
+            except (ValueError, TypeError) as exc:
+                return self._send_json({'error': str(exc)[:300]}, 400)
+            except Exception as exc:
+                return self._send_json({'error': type(exc).__name__ + ': ' + str(exc)[:200]}, 500)
+        if self.path in ('/ops/setup/run', '/ops/setup/ack', '/ops/setup/practice', '/ops/setup/refresh'):
+            # First-run helper. The page names an item; the command comes from core/setup.py's fixed list and runs only
+            # when it is the one the page showed. Same checks as the account actions.
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            try:
+                from core import setup
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 2048 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                    raise ValueError('Invalid setup request')
+                body = json.loads(self.rfile.read(size))
+                if not isinstance(body, dict):
+                    raise ValueError('Invalid setup request')
+                if self.path == '/ops/setup/refresh':     # "look again": versions and sign-ins read anew
+                    setup.refresh()
+                    return self._send_json(setup.status())
+                if self.path == '/ops/setup/ack':
+                    return self._send_json({'acknowledged': setup.acknowledge(str(body.get('what') or ''))})
+                if self.path == '/ops/setup/practice':
+                    out = setup.make_practice('en' if body.get('lang') == 'en' else 'ko')
+                    if out.get('status') == 'ready':
+                        d.invalidate_status_cache()
+                    return self._send_json(out, 200 if out.get('status') == 'ready' else 409)
+                out = setup.run(str(body.get('item') or ''), str(body.get('command') or ''))
+                return self._send_json(out, 200 if out.get('status') in ('started', 'manual') else 409)
             except (ValueError, TypeError) as exc:
                 return self._send_json({'error': str(exc)[:300]}, 400)
             except Exception as exc:

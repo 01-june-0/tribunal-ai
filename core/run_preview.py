@@ -335,7 +335,7 @@ def _cmd_text(text: str) -> str:
 
 
 def windows_script(folder: Path, command: str, page: str) -> str:
-    body = ["@echo off", 'cd /d "' + str(folder).replace("%", "%%") + '"', "echo [Tribunal AI] " + _cmd_text(command), "echo."]
+    body = ["@echo off", "chcp 65001 >nul", 'cd /d "' + str(folder).replace("%", "%%") + '"', "echo [Tribunal AI] " + _cmd_text(command), "echo."]
     if page:                                         # no reliable delayed open in cmd: the address is shown instead
         body.append("echo [Tribunal AI] " + _cmd_text("open in a browser: " + page))
     body += [command, "echo.", "pause"]

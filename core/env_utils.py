@@ -88,12 +88,14 @@ def resolve_cli(name: str) -> Optional[str]:
 
     known = {
         "claude": [
+            home / ".local" / "bin" / "claude.exe",          # Windows native installer (core/setup.py)
             app_data / "npm" / "claude.cmd",
             app_data / "npm" / "claude",
             *[d / "claude" for d in posix_dirs],
             home / ".claude" / "local" / "claude",
         ],
         "codex": [
+            local_app_data / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe",   # Windows native installer
             app_data / "npm" / "codex.cmd",
             app_data / "npm" / "codex",
             *[d / "codex" for d in posix_dirs],

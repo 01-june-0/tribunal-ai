@@ -164,8 +164,9 @@ def test_a_plan_that_moved_to_another_place_is_not_started(tmp_path):
 def test_the_windows_script_shows_the_command_without_running_it_twice():
     win = rp.windows_script(Path("C:/w/100% p"), "npm install && npm run dev > log.txt", "http://127.0.0.1:5173/")
     lines = win.split("\r\n")
-    assert lines[1] == f'cd /d "{Path("C:/w/100%% p")}"'
-    assert lines[2] == "echo [Tribunal AI] npm install ^&^& npm run dev ^> log.txt"       # shown, not run
+    assert lines[1] == "chcp 65001 >nul"                                                 # a Korean folder name survives
+    assert lines[2] == f'cd /d "{Path("C:/w/100%% p")}"'
+    assert lines[3] == "echo [Tribunal AI] npm install ^&^& npm run dev ^> log.txt"       # shown, not run
     assert "npm install && npm run dev > log.txt" in lines and not any(l.startswith('start ""') for l in lines)
 
 
