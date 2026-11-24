@@ -255,7 +255,7 @@ def test_a_diff_keeps_lines_that_only_look_like_a_header(tmp_path):
 
 def test_the_panel_decides_only_about_what_it_shows():
     panel = JS[JS.index("function paintResult(){"):JS.index("function paintDelivery(m){")]
-    assert "now.status==='RUNNING'" in panel and "now.deliverableRun!==result.ms.deliverableRun" in panel and "if(!open||moved)return;" in panel
+    assert "now.status==='RUNNING'" in panel and "now.deliverableRun!==result.ms.deliverableRun" in panel and "if(moved||state==='discarded')return;" in panel and "if(!open){acts.append(run);return;}" in panel
     assert "mine.done='applied'" in panel                                  # no second "원본에 적용" after it worked
     assert "const once=(node,sig,build)=>{if(node.dataset.sig===sig)return;" in panel       # a poll does not rebuild the diff being read
     assert "run_id:ms.deliverableRun" in JS and "decideMission(result.ms.id,'discard',{run_id:result.ms.deliverableRun})" in panel

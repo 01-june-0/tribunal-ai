@@ -189,6 +189,11 @@ class ProposalMaker(AntigravityMaker):
                   '"summary":"..."}. Prefer "edits" for changes to existing files - each "old" must appear EXACTLY ONCE in '
                   'the file as shown below (copy it verbatim with indentation, long enough to be unique); use "files" for '
                   'new files or complete rewrites. Keep the reply compact. '
+                  'When the result is something a person starts (a web page, a windowed app, a terminal program), add '
+                  '"run":{"command":"one shell line, run from the project root on this platform, that starts it (empty '
+                  'for a static page that needs no server)","kind":"web|gui|terminal","url":"http://127.0.0.1:PORT/ when '
+                  'it serves a page, else empty","open":"the .html file to show when no server is needed, else empty"}. '
+                  'Leave "run" out for a library or a change with nothing to start. '
                   'Implement the ORDER and real behavior tests. Preserve existing behavior. No placeholder implementations. '
                   'Return only changed files. No deletion operations. Stay within file and diff budgets. '
                   'ARCHITECT feedback and outstanding inspector findings in context must be resolved. '
@@ -250,8 +255,10 @@ class ProposalMaker(AntigravityMaker):
         # The complete batch was validated (paths, exact edit anchors) before the first file is written.
         for rel, content in new_contents.items():
             self.pre_tool_write_file(rel, content, str(root), order)
+        from core.run_preview import clean_spec
         return MakerResultSchema(status='COMPLETED', files_modified=list(new_contents),
-                                   commands_run=[result['invocation']], summary=proposal.get('summary', 'Files implemented'))
+                                   commands_run=[result['invocation']], summary=proposal.get('summary', 'Files implemented'),
+                                   run=clean_spec(proposal.get('run')))
 
     EDITABLE_BUDGET = 140_000
     CONTEXT_BUDGET = 60_000       # read-only files, all of them together

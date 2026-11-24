@@ -237,12 +237,14 @@ def _open_terminal(exe: str, parts: List[List[str]], cli: str, action: str) -> b
     return False                                # Linux desktops differ too much: show the command instead
 
 
-def _write_script(name: str, text: str) -> Path:
-    """Write the script into a folder of our own, as a new file: never through a link someone left there."""
+def _write_script(name: str, text: str, folder: str = "login-scripts") -> Path:
+    """Write the script into a folder of our own, as a new file: never through a link someone left there.
+    (core/run_preview.py keeps its scripts in "run-scripts".)"""
     from core.db_path import get_db_path
-    folder = Path(get_db_path()).parent / "login-scripts"
+    sub = folder
+    folder = Path(get_db_path()).parent / sub
     if folder.is_symlink():
-        raise OSError("login-scripts must not be a link")
+        raise OSError(f"{sub} must not be a link")
     folder.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         folder.chmod(0o700)

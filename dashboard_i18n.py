@@ -24,6 +24,7 @@ UI_TEXT: Dict[str, str] = {
     "view_changes": "변경사항 보기",
     "test_results": "테스트 결과",
     "view_changes_tests": "변경사항 및 테스트 결과",
+    "try_run": "실행해 보기",
     "open_worktree": "작업 결과 폴더 열기",
     "open_project": "프로젝트 폴더 열기",
     "apply_verify": "프로젝트에 적용하고 검증",

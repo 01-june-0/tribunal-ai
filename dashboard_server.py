@@ -1776,6 +1776,7 @@ DASHBOARD_JS = r"""
     var canAct = show && st !== 'APPLIED' && st !== 'DISCARDED' && !resultBusy;
     ['result-apply-btn', 'result-discard-btn'].forEach(function (id) { var b = document.getElementById(id); if (b) { b.style.display = (st === 'APPLIED' || st === 'DISCARDED') ? 'none' : ''; b.disabled = !canAct || (id === 'result-apply-btn' && blocked); } });
     var ow = document.getElementById('result-open-btn'); if (ow) { ow.style.display = res.worktree_exists && st !== 'DISCARDED' ? '' : 'none'; ow.disabled = resultBusy; }
+    var rr = document.getElementById('result-run-btn'); if (rr) { rr.style.display = (res.worktree_exists && st !== 'DISCARDED') || st === 'APPLIED' ? '' : 'none'; rr.disabled = resultBusy; }   // a waiting result runs in a copy, an applied one in the project
     var op = document.getElementById('result-openproj-btn'); if (op) op.style.display = st === 'APPLIED' ? '' : 'none';
     var cf = document.getElementById('result-confirm'); if (cf) cf.style.display = pendingConfirm ? '' : 'none';
     if (pendingConfirm) {
@@ -1801,6 +1802,33 @@ DASHBOARD_JS = r"""
     .then(function () { resultBusy = false; lastResultKey = ''; pollStatus().then(refreshSelectedResult); pollMessages(); });
   }
   function lastResultShown() { return selectedResultId ? (window.__selres || lastResult) : lastResult; }
+  function runAction() {
+    // Try the result out: show what would run and where, start it only after the person says yes (a new terminal window)
+    var runId = resultRunId(); if (!runId) return;
+    var token = '';
+    function post(path, body) {
+      return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tribunal-Token': token }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j.__code = r.status; return j; }); });
+    }
+    fetch('/ops/roles', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (roles) {
+      token = roles.csrf || '';
+      return post('/ops/run-plan', { run_id: runId });
+    }).then(function (p) {
+      if (p.__code !== 200) { setText('result-status', '실행 계획을 받지 못했습니다.'); return; }
+      if (!p.found) { setText('result-status', '실행 방법을 찾지 못했습니다.'); return; }
+      var where = p.where === 'copy' ? '적용 전 결과물의 임시 복사본' : '원본 프로젝트';
+      var ask = '이 명령을 새 터미널 창에서 실행할까요?\n\n폴더: ' + where + '\n' + p.folder + '\n명령: ' + p.command
+        + (p.command.indexOf('<port>') >= 0 ? '\n(<port>는 빈 포트로 바뀝니다)' : '')
+        + (p.source === 'guess' ? '\n\n실행 방법은 파일을 보고 짐작한 것입니다.' : '');
+      if (!window.confirm(ask)) return;
+      return post('/ops/run-result', { run_id: runId, command: p.command, place: p.where + ':' + p.folder }).then(function (out) {
+        if (out.status === 'started') setText('result-status', '터미널 창에서 실행했습니다.');
+        else if (out.status === 'manual') window.prompt('이 환경에서는 터미널 창을 열 수 없습니다. 아래 명령을 터미널에서 직접 실행해 주세요.', out.command || '');
+        else if (out.status === 'stale') setText('result-status', '실행 계획이 바뀌었습니다. 다시 눌러 주세요.');
+        else setText('result-status', '실행하지 못했습니다 \u00b7 ' + (out.reason || out.error || out.__code));
+      });
+    }).catch(function (e) { setText('result-status', 'Request failed: ' + e); });
+  }
   function openAction(kind) {
     var runId = resultRunId(); if (!runId) return;
     fetch(kind === 'worktree' ? '/result/open_worktree' : '/result/open_project', { method: 'POST',
@@ -1843,6 +1871,7 @@ DASHBOARD_JS = r"""
   rbind('rd-tab-tests', function () { showResultDetail('tests'); });
   rbind('rd-close', function () { document.getElementById('result-detail').style.display = 'none'; });
   rbind('result-open-btn', function () { openAction('worktree'); });
+  rbind('result-run-btn', runAction);
   rbind('result-openproj-btn', function () { openAction('project'); });
   rbind('result-apply-btn', function () { pendingConfirm = 'apply'; lastResultKey = ''; renderResult(lastResultShown()); });
   rbind('result-discard-btn', function () { pendingConfirm = 'discard'; lastResultKey = ''; renderResult(lastResultShown()); });
@@ -2855,6 +2884,7 @@ def render_html():
                 <div class="abtns">
                     <button type="button" id="result-view-btn" class="ghost">{I18N.t("view_changes_tests")}</button>
                     <button type="button" id="result-open-btn">{I18N.t("open_worktree")}</button>
+                    <button type="button" id="result-run-btn" style="display:none;">{I18N.t("try_run")}</button>
                     <button type="button" id="result-apply-btn" class="apply"{r_apply_attr}>{I18N.t("apply_verify")}</button>
                     <button type="button" id="result-discard-btn" class="discard"{r_act_attr}>{I18N.t("discard")}</button>
                     <button type="button" id="result-openproj-btn" style="display:none;">{I18N.t("open_project")}</button>

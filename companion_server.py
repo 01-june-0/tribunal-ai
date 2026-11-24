@@ -301,6 +301,29 @@ class CompanionHandler(d.DashboardHandler):
                 current = ''
             result = pick_folder(current)
             return self._send_json(result, 409 if 'error' in result else 200)
+        if self.path in ('/ops/run-plan', '/ops/run-result'):
+            # "실행해 보기": the plan (what would run, where) and starting exactly that plan. Nothing starts without the
+            # local token and the command the page showed; the server builds the plan again from its own records.
+            try:
+                size = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(size).decode('utf-8') or '{}') if 0 < size <= 4096 else {}
+            except (ValueError, OSError, UnicodeDecodeError):
+                body = {}
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            run_id = str(body.get('run_id') or '') if isinstance(body, dict) else ''
+            if not re.fullmatch(r'RUN-[A-Za-z0-9-]{1,80}', run_id):
+                return self._send_json({'error': 'run_id required'}, 400)
+            from core import run_preview
+            if self.path == '/ops/run-plan':
+                return self._send_json(run_preview.plan(run_id))
+            out = run_preview.start(run_id, str(body.get('command') or ''), expected_folder=str(body.get('place') or ''))   # what and where, as shown
+            if out.get('status') == 'started':
+                try:
+                    d.ChatManager().add_message(d.active_session_id(), "SYSTEM", f"[HUMAN] 결과 실행해 보기: {run_id} · {out.get('command', '')[:200]}", run_id=run_id)
+                except Exception:
+                    pass
+            return self._send_json(out, 200 if out.get('status') in ('started', 'manual') else 409)
         if self.path == '/ops/open-project':
             # Opens the project the console works on in Finder / Explorer. The page sends no path: only the folder the
             # server already has as the project, and only while it is still a valid project, is ever opened.

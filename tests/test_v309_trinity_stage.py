@@ -58,7 +58,7 @@ def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/record", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
                       "/ops/open",                      # /ops/open-project (the pattern stops at "-"): opens the folder, changes nothing
                       "/result", "/run/inspect"}                       # read-only: what changed, and the ORDER of a run awaiting approval
-    assert js.count("method:'POST'") == 10                            # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission, open the project folder
+    assert js.count("method:'POST'") == 11                            # writes: chat to ARCHITECT, a role change, a delivery decision, AI settings, "check now", AI status recheck, account actions, approve / reject a run, apply / discard a result that has no mission, open the project folder, try a result (plan + start)
     assert "fetch(kind==='approve'?'/run/approve':'/run/reject',{method:'POST'" in js
     assert "fetch(kind==='apply'?'/result/apply':'/result/discard',{method:'POST'" in js
     assert set(re.findall(r"accountPost\('(/[a-z/_]+)", js)) == {"/ops/ai/account", "/ops/ai/account/reveal"}     # both go through the one token-carrying helper
@@ -138,3 +138,23 @@ def test_the_project_folder_opens_only_with_the_token_and_only_the_current_proje
     assert request(http_server, "POST", "/ops/open-project", headers={"X-Tribunal-Token": "test-token"})[0] == 409
     html = (Path(__file__).resolve().parents[1] / "console" / "index.html").read_text(encoding="utf-8")
     assert 'id="top-open"' in html and 'aria-label="프로젝트 폴더 열기"' in html
+
+
+def test_trying_a_result_needs_the_token_and_starts_only_the_shown_command(http_server, monkeypatch):
+    """"실행해 보기": the plan is read, then that exact command is started; nothing runs without the local token."""
+    import json
+    from core import run_preview
+    started = []
+    monkeypatch.setattr(run_preview, "plan", lambda run_id, rm=None: {"found": True, "command": "python3 main.py", "where": "copy"})
+    monkeypatch.setattr(run_preview, "start", lambda run_id, command, launcher=None, rm=None, expected_folder=None: started.append((run_id, command))
+                        or {"status": "started" if command == "python3 main.py" else "stale", "command": command})
+    body = json.dumps({"run_id": "RUN-1", "command": "python3 main.py"})
+    assert request(http_server, "POST", "/ops/run-result", body=body)[0] == 403 and started == []
+    code, out = request(http_server, "POST", "/ops/run-plan", headers={"X-Tribunal-Token": "test-token"}, body=json.dumps({"run_id": "RUN-1"}))
+    assert code == 200 and json.loads(out)["command"] == "python3 main.py"
+    code, out = request(http_server, "POST", "/ops/run-result", headers={"X-Tribunal-Token": "test-token"}, body=body)
+    assert code == 200 and json.loads(out)["status"] == "started" and started == [("RUN-1", "python3 main.py")]
+    code, out = request(http_server, "POST", "/ops/run-result", headers={"X-Tribunal-Token": "test-token"},
+                        body=json.dumps({"run_id": "RUN-1", "command": "rm -rf ~"}))
+    assert code == 409 and json.loads(out)["status"] == "stale"
+    assert request(http_server, "POST", "/ops/run-plan", headers={"X-Tribunal-Token": "test-token"}, body=json.dumps({"run_id": "../x"}))[0] == 400

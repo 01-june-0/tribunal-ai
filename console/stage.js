@@ -437,7 +437,10 @@ function paintResult(){
   // (the server's own pre-check is not repeated here: it is decided, and explained, when "원본에 적용" is pressed)
   if(note.textContent!==said)note.textContent=said;
   once(acts,JSON.stringify([state,deliveryBusy,!!moved,open]),()=>{
-    if(!open||moved)return;
+    if(moved||state==='discarded')return;
+    const run=el('button',T('실행해 보기'));run.type='button';run.dataset.act='run';     // waiting: in a copy · applied: in the project
+    run.title=T('결과를 새 터미널 창에서 실행해 봅니다. 실행할 명령을 먼저 보여 줍니다.');run.onclick=()=>tryRun(result.ms.deliverableRun);
+    if(!open){acts.append(run);return;}
     const apply=el('button',deliveryBusy?T('처리 중…'):T('원본에 적용'));apply.type='button';apply.dataset.act='apply';
     apply.onclick=async()=>{const mine=result;let out=null;
       if(!loose)out=await applyMission(mine.ms,state);
@@ -447,7 +450,27 @@ function paintResult(){
     const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=async()=>{await decideMission(result.ms.id,'extend');closeResult();};
     const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';
     drop.onclick=async()=>{if(confirm(T('이 작업의 결과물을 폐기할까요? 기록은 남습니다.'))){if(loose)await decideResult(result.ms.id,'discard');else await decideMission(result.ms.id,'discard',{run_id:result.ms.deliverableRun});closeResult();}};
-    for(const b of [apply,more,drop])b.disabled=deliveryBusy;acts.append(...(loose?[apply,drop]:[apply,more,drop]));});
+    for(const b of [apply,more,drop])b.disabled=deliveryBusy;acts.append(...(loose?[apply,run,drop]:[apply,run,more,drop]));});
+}
+
+// "실행해 보기": the server says what would run and where; it starts only after the person confirms that exact command.
+async function tryRun(runId){
+  if(!runId)return;
+  try{if(!roleToken)await pollRoles();
+    const post=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken||''},body:JSON.stringify(body)});return [r,await r.json().catch(()=>({}))];};
+    const [r1,p]=await post('/ops/run-plan',{run_id:runId});
+    if(!r1.ok){notice(r1.status===403?T('잠시 뒤 다시 눌러 주세요.'):T('실행 계획을 받지 못했습니다.'));return;}
+    if(!p.found){notice(T('실행 방법을 찾지 못했습니다.'));return;}
+    const where=p.where==='copy'?T('적용 전 결과물의 임시 복사본'):T('원본 프로젝트');
+    const ask=T('이 명령을 새 터미널 창에서 실행할까요?')+'\n\n'+T('폴더: ')+where+'\n'+p.folder+'\n'+T('명령: ')+p.command
+      +(p.command.includes('<port>')?'\n'+T('(<port>는 빈 포트로 바뀝니다)'):'')+(p.source==='guess'?'\n\n'+T('실행 방법은 파일을 보고 짐작한 것입니다.'):'');
+    if(!confirm(ask))return;
+    const [r2,out]=await post('/ops/run-result',{run_id:runId,command:p.command,place:p.where+':'+p.folder});
+    if(out.status==='started')notice(T('터미널 창에서 실행했습니다.'));
+    else if(out.status==='manual')prompt(T('이 환경에서는 터미널 창을 열 수 없습니다. 아래 명령을 터미널에서 직접 실행해 주세요.'),out.command||'');
+    else if(out.status==='stale')notice(T('실행 계획이 바뀌었습니다. 다시 눌러 주세요.'));
+    else notice(T('실행하지 못했습니다 · ')+(out.reason||out.error||r2.status));}
+  catch(e){notice(T('요청 실패 · ')+e.message);}
 }
 
 // A run that passed outside any mission (a task approved at its very start runs on its own) has no card: its result is

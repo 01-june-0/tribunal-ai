@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class MakerResultSchema(BaseModel):
@@ -16,4 +16,8 @@ class MakerResultSchema(BaseModel):
     error: Optional[str] = Field(
         default=None,
         description="Error message if status is FAILED"
+    )
+    run: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="How a person starts the result (command, kind, url, open), checked by core/run_preview.clean_spec"
     )
