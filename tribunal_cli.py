@@ -221,7 +221,22 @@ def _director_commands() -> None:
 _director_commands()
 
 
+def safe_console() -> None:
+    """Korean text and ✓ / ✗ must never stop a command. A terminal shows them as they are; output that goes to a pipe
+    or a file is UTF-8; a code page that still cannot show a character gets a placeholder instead of an error
+    (found by the Windows test run: cp1252 raised UnicodeEncodeError in `tribunal doctor`)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None and not stream.isatty():
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            elif stream is not None:
+                stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main() -> None:
+    safe_console()
     cli()
 
 

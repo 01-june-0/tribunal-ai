@@ -117,3 +117,16 @@ def test_tribunals_records_folder_is_refused_as_a_project(monkeypatch, tmp_path)
     monkeypatch.setenv("TRIBUNAL_HOME", str(home))
     ok, why = dashboard_server.validate_project_path(str(home / "data"))
     assert ok is False
+
+
+def test_korean_output_never_stops_a_command_on_a_narrow_code_page(monkeypatch):
+    """Found by the Windows test run: with output going to a pipe in cp1252, `tribunal doctor` died on its Korean text."""
+    import io
+    import sys
+    raw = io.BytesIO()
+    narrow = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", narrow)
+    tribunal_cli.safe_console()
+    print("준비됨 ✓")
+    narrow.flush()
+    assert raw.getvalue().decode("utf-8").strip() == "준비됨 ✓"

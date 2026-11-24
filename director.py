@@ -499,4 +499,6 @@ def clean_worktrees(project: str, dry_run: bool, purge_reviewed: bool):
     click.echo(f"\n{action_label} {cleaned_count} terminal worktree(s). A run that still waits for a decision keeps its branch.")
 
 if __name__ == "__main__":
+    from tribunal_cli import safe_console
+    safe_console()                     # Korean output must not stop a command on a Windows code page
     cli()
