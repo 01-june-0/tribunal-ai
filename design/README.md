@@ -11,3 +11,4 @@
 | `stage-approval-mockup/` | 작업 카드의 승인 · 멈춘 이유 · 변경 내용 보기 |
 | `timeline-mockup/` | 통합 기록과 상세 패널 |
 | `cloud-inside-mockup/` | 구름 줌인과 구름 속 화면 |
+| `first-run-wizard-mockup/` | 처음 실행 도우미(비용 안내 → git → AI 설치 → 로그인 → 첫 작업), [PACKAGING.md](../docs/PACKAGING.md) 2단계 |

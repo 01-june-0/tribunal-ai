@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>시안 · 처음 실행 도우미</title>
+<style>
+:root{
+  --fs-xs:12px;--fs-sm:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:26px;
+  --claude:#ff8a5c;--codex:#3df2c0;--agy:#6aa5ff;--ok:#5ef2b0;--bad:#ff6b7a;--warn:#ffc46b;
+  --text:#eef3ff;--muted:#9aabc7;--faint:#7586a4;--line:rgba(255,255,255,.1);--line2:rgba(255,255,255,.17);
+  --num:'Bahnschrift','Segoe UI Variable Display','Segoe UI',sans-serif;
+  --body:'Pretendard','Apple SD Gothic Neo','Segoe UI','Malgun Gothic',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#04060c;color:var(--text);font:var(--fs-sm)/1.6 var(--body);word-break:keep-all;-webkit-font-smoothing:antialiased;overflow:auto}
+/* the scene behind: three soft clouds in the AIs' colours, still (the real console keeps its WebGL scene running here) */
+.sky{position:fixed;inset:0;z-index:0;background:
+  radial-gradient(40vw 32vw at 22% 30%,rgba(255,138,92,.16),transparent 70%),
+  radial-gradient(42vw 34vw at 78% 34%,rgba(61,242,192,.12),transparent 70%),
+  radial-gradient(46vw 36vw at 52% 86%,rgba(106,165,255,.16),transparent 70%),#04060c;filter:saturate(1.1)}
+button{font:inherit;color:inherit;cursor:pointer}
+.kicker{font:600 var(--fs-xs)/1 var(--num);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.glass{background:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.015) 60%),rgba(9,13,24,.62);border:1px solid rgba(255,255,255,.12);border-radius:20px;backdrop-filter:blur(24px) saturate(1.2);box-shadow:0 24px 80px rgba(0,0,0,.45)}
+
+/* mockup-only controls */
+.demo{position:fixed;z-index:3;top:12px;right:16px;display:flex;gap:6px;align-items:center;font-size:var(--fs-xs);color:var(--faint)}
+.demo button{height:26px;padding:0 10px;border-radius:8px;border:1px dashed var(--line2);background:rgba(255,255,255,.03)}
+.demo button[aria-pressed=true]{border-style:solid;border-color:var(--agy);color:var(--text)}
+
+.wrap{position:relative;z-index:1;min-height:100%;display:flex;align-items:center;justify-content:center;padding:56px 16px 56px}
+.wizard{width:min(880px,100%);display:grid;grid-template-columns:232px 1fr;overflow:hidden}
+@media (max-width:760px){.wizard{grid-template-columns:1fr}.rail{display:none}}
+
+.rail{padding:24px 20px;border-right:1px solid var(--line);background:rgba(0,0,0,.12)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.mark{position:relative;width:28px;height:28px;flex:none;animation:spin 14s linear infinite}
+.mark i{position:absolute;width:10px;height:10px;border-radius:50%;left:9px;top:0;transform-origin:5px 14px}
+.mark i:nth-child(1){background:var(--claude);box-shadow:0 0 10px var(--claude)}
+.mark i:nth-child(2){background:var(--agy);box-shadow:0 0 10px var(--agy);transform:rotate(120deg)}
+.mark i:nth-child(3){background:var(--codex);box-shadow:0 0 10px var(--codex);transform:rotate(240deg)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.brand strong{display:block;font:700 var(--fs-md)/1.1 var(--num);letter-spacing:.16em}
+.brand span{font-size:var(--fs-xs);color:var(--muted)}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.steps li{display:flex;gap:12px;align-items:center;padding:8px 8px;border-radius:12px;color:var(--muted)}
+.steps li[aria-current=step]{background:rgba(255,255,255,.06);color:var(--text)}
+.dot{width:24px;height:24px;flex:none;border-radius:50%;display:grid;place-items:center;font:600 var(--fs-xs)/1 var(--num);border:1px solid var(--line2)}
+.steps li.done .dot{background:rgba(94,242,176,.14);border-color:rgba(94,242,176,.5);color:var(--ok)}
+.steps li.need .dot{border-color:rgba(255,196,107,.6);color:var(--warn)}
+.steps li[aria-current=step] .dot{border-color:var(--text)}
+.rail-note{margin-top:24px;font-size:var(--fs-xs);color:var(--faint);line-height:1.55}
+
+.main{padding:24px 28px 20px;display:flex;flex-direction:column;min-height:560px}
+.head .kicker{display:block;margin-bottom:8px}
+h1{font:600 var(--fs-xl)/1.25 var(--body);margin:0 0 8px}
+.lead{color:var(--muted);margin:0 0 20px;font-size:var(--fs-md);line-height:1.55}
+.body{flex:1}
+.foot{display:flex;align-items:center;gap:12px;padding-top:16px;margin-top:16px;border-top:1px solid var(--line)}
+.foot .why{flex:1;font-size:var(--fs-xs);color:var(--faint)}
+.btn{height:36px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:rgba(255,255,255,.05)}
+.btn:hover{background:rgba(255,255,255,.1)}
+.btn.primary{background:linear-gradient(180deg,#6aa5ff,#4a7ee0);border-color:#7fb2ff;color:#04101f;font-weight:600}
+.btn.primary:disabled{opacity:.35;cursor:not-allowed}
+.btn.small{height:30px;padding:0 12px;border-radius:8px;font-size:var(--fs-xs)}
+.btn.ghost{background:transparent}
+
+/* rows: one per thing that is checked */
+.rows{display:grid;gap:8px}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.025)}
+.row .who{display:flex;align-items:center;gap:12px;min-width:0}
+.swatch{width:12px;height:12px;border-radius:50%;flex:none}
+.row b{display:block;font-size:var(--fs-md);font-weight:600}
+.row small{display:block;color:var(--muted);font-size:var(--fs-xs)}
+.state{font-size:var(--fs-xs);white-space:nowrap}
+.state.ok{color:var(--ok)}.state.bad{color:var(--bad)}.state.wait{color:var(--warn)}
+.icon{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-sm)}
+.icon.ok{background:rgba(94,242,176,.14);color:var(--ok)}.icon.bad{background:rgba(255,107,122,.14);color:var(--bad)}.icon.wait{background:rgba(255,196,107,.12);color:var(--warn)}
+.spin{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .8s linear infinite}
+
+/* the command box: shown exactly as it would run */
+.cmd{margin-top:12px;padding:12px 16px;border-radius:12px;border:1px solid rgba(106,165,255,.35);background:rgba(106,165,255,.06)}
+.cmd .label{font-size:var(--fs-xs);color:var(--muted);margin-bottom:6px;display:flex;gap:8px;align-items:center}
+.cmd code{display:block;font:var(--fs-sm)/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text);white-space:pre-wrap;word-break:break-all}
+.cmd .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.cmd a{color:#9cc3ff;font-size:var(--fs-xs)}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:11px;border:1px solid var(--line2);color:var(--muted)}
+
+/* cost cards */
+.cost{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 16px}
+@media (max-width:760px){.cost{grid-template-columns:1fr}}
+.card{padding:14px 16px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.card b{display:flex;align-items:center;gap:8px;font-size:var(--fs-md)}
+.card small{display:block;color:var(--muted);font-size:var(--fs-xs);margin-top:4px}
+.facts{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.facts li{display:flex;gap:10px;align-items:flex-start;color:var(--text)}
+.facts li::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--agy);margin-top:8px;flex:none}
+.facts li span{color:var(--muted)}
+.agree{display:flex;gap:10px;align-items:center;margin-top:20px;padding:12px 16px;border-radius:12px;border:1px solid var(--line2);cursor:pointer}
+.agree input{width:18px;height:18px;accent-color:#6aa5ff}
+.count{margin-top:12px;font-size:var(--fs-sm);color:var(--muted)}
+.count b{color:var(--text)}
+.examples{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chip{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.04)}
+.chip[aria-pressed=true]{border-color:var(--agy);background:rgba(106,165,255,.12)}
+.field{display:flex;gap:8px;align-items:center;margin-top:8px}
+.field input{flex:1;height:36px;border-radius:10px;border:1px solid var(--line2);background:rgba(0,0,0,.25);color:var(--text);padding:0 12px;font:inherit}
+
+/* the confirm dialog (the real one is the browser's own confirm(); drawn here so the mockup can show it) */
+.veil{position:fixed;inset:0;z-index:5;background:rgba(2,4,10,.6);display:none;align-items:center;justify-content:center;padding:16px}
+.veil.open{display:flex}
+.dialog{width:min(520px,100%);padding:20px 24px}
+.dialog h2{margin:0 0 8px;font-size:var(--fs-lg)}
+.dialog p{margin:0 0 12px;color:var(--muted)}
+.dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.toast{position:fixed;z-index:6;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:12px;background:rgba(9,13,24,.9);border:1px solid var(--line2);font-size:var(--fs-sm);display:none}
+.toast.show{display:block}
+.mocknote{position:relative;z-index:1;margin:0;padding:0 16px 16px;text-align:center;font-size:var(--fs-xs);color:var(--faint)}
+</style></head>
+<body>
+<div class="sky" aria-hidden="true"></div>
+
+<div class="demo" role="group" aria-label="시안용: 상황 바꾸기">
+  <span>시안 · 상황:</span>
+  <button type="button" data-sc="ready">모두 준비됨</button>
+  <button type="button" data-sc="nogit">git 없음</button>
+  <button type="button" data-sc="onecli">AI CLI 하나뿐</button>
+  <button type="button" data-sc="win">Windows</button>
+</div>
+
+<div class="wrap">
+  <section class="wizard glass" aria-labelledby="w-title">
+    <nav class="rail" aria-label="준비 단계">
+      <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><div><strong>TRIBUNAL AI</strong><span>시작하기</span></div></div>
+      <ol class="steps" id="steps"></ol>
+      <p class="rail-note">Tribunal은 확인 없이 아무것도 설치하지 않습니다. 비밀번호와 로그인 토큰은 묻지도 읽지도 않습니다.</p>
+    </nav>
+    <div class="main">
+      <div class="head"><span class="kicker" id="w-kicker"></span><h1 id="w-title"></h1><p class="lead" id="w-lead"></p></div>
+      <div class="body" id="w-body"></div>
+      <div class="foot">
+        <button type="button" class="btn ghost" id="back">이전</button>
+        <span class="why" id="why"></span>
+        <button type="button" class="btn" id="later" hidden>나중에 하기</button>
+        <button type="button" class="btn primary" id="next">다음</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="d-title">
+  <div class="dialog glass">
+    <h2 id="d-title">이 명령을 새 터미널 창에서 실행할까요?</h2>
+    <p id="d-what"></p>
+    <div class="cmd"><div class="label">실행할 명령</div><code id="d-cmd"></code></div>
+    <p style="margin-top:12px;font-size:var(--fs-xs)">터미널 창에서 진행 상황을 볼 수 있고, 비밀번호를 묻는 경우 그 창에 직접 입력합니다. 끝나면 이 화면이 다시 확인합니다.</p>
+    <div class="acts"><button type="button" class="btn ghost" id="d-no">취소</button><button type="button" class="btn primary" id="d-yes">실행</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<p class="mocknote">시안입니다 — 버튼은 화면만 바뀌고 실제로 설치 · 실행하지 않습니다. 설치 명령은 예시이며, 구현 때 각 회사의 공식 안내를 따릅니다.</p>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
+// what each machine looks like in the mockup's situations
+const SC={
+  ready: {os:'mac',git:'2.50.1',clis:{claude:'2.1.293',codex:'0.171.0',agy:'1.5.16'},signed:{claude:'u•••@e•••.com',codex:'u•••@e•••.com',agy:null}},
+  nogit: {os:'mac',git:null,clis:{claude:'2.1.293',codex:null,agy:null},signed:{claude:'u•••@e•••.com'}},
+  onecli:{os:'mac',git:'2.50.1',clis:{claude:'2.1.293',codex:null,agy:null},signed:{claude:'u•••@e•••.com'}},
+  win:   {os:'win',git:null,clis:{claude:null,codex:null,agy:null},signed:{}},
+};
+const AIS=[
+  {key:'claude',name:'Claude Code',who:'Anthropic',plan:'Claude 구독(Pro · Max)',color:'var(--claude)',
+   install:{mac:'curl -fsSL https://claude.ai/install.sh | bash',win:'irm https://claude.ai/install.ps1 | iex'},login:'claude auth login',page:'Claude Code 설치 안내'},
+  {key:'codex',name:'Codex',who:'OpenAI',plan:'ChatGPT 구독(Plus · Pro)',color:'var(--codex)',
+   install:{mac:'npm install -g @openai/codex',win:'npm install -g @openai/codex'},login:'codex login',page:'Codex CLI 설치 안내'},
+  {key:'agy',name:'Antigravity',who:'Google',plan:'Google 계정 (제공 한도 또는 구독)',color:'var(--agy)',
+   install:{mac:'Antigravity 앱을 설치하면 agy 명령이 함께 생깁니다',win:'Antigravity 앱을 설치하면 agy 명령이 함께 생깁니다'},login:null,page:'Antigravity 설치 안내',app:true},
+];
+const GIT={mac:'xcode-select --install',win:'winget install --id Git.Git -e'};
+let sc=structuredClone(SC.ready),step=0,agreed=false,checking=false,goal='계산기 창 앱을 만들어줘';
+const STEPS=[
+  {kicker:'1 / 5 · 시작하기 전에',title:'Tribunal AI는 무료, AI는 구독이 필요합니다',lead:'Tribunal은 세 회사의 코딩 AI를 한 팀처럼 부리는 프로그램입니다. 프로그램 자체는 무료이고, 일하는 AI는 각 회사의 구독으로 돌아갑니다.'},
+  {kicker:'2 / 5 · git',title:'변경 기록 도구(git)를 확인합니다',lead:'Tribunal은 원본을 건드리지 않고 작업 사본에서 일합니다. 이때 git이 필요합니다.'},
+  {kicker:'3 / 5 · AI 설치',title:'코딩 AI를 설치합니다',lead:'최소 두 개가 있어야 작업을 시킬 수 있습니다. 만드는 AI와 검토하는 AI가 달라야 하기 때문입니다. 셋이면 하나가 한도에 걸려도 이어 갑니다.'},
+  {kicker:'4 / 5 · 로그인',title:'각 AI에 구독 계정으로 로그인합니다',lead:'로그인은 각 AI의 공식 명령으로, 새 터미널 창과 브라우저에서 직접 합니다. Tribunal은 계정 주소만 가려서 보여 줍니다.'},
+  {kicker:'5 / 5 · 첫 작업',title:'연습용 폴더에서 첫 작업을 시켜 봅니다',lead:'원본 프로젝트가 아니라 연습용 폴더에서 시작합니다. 결과는 바로 적용하지 않고, 변경 내용을 본 뒤 적용하거나 버릴 수 있습니다.'},
+];
+const ready=()=>Object.values(sc.clis).filter(Boolean).length;
+const signed=()=>AIS.filter(a=>sc.clis[a.key]&&(a.key==='agy'||sc.signed[a.key])).length;
+function stepState(i){
+  if(i===0)return agreed?'done':'';
+  if(i===1)return sc.git?'done':'need';
+  if(i===2)return ready()>=2?'done':'need';
+  if(i===3)return signed()>=2?'done':'need';
+  return '';
+}
+function paintRail(){
+  const ol=$('steps');ol.replaceChildren();
+  const names=['비용 안내','git','AI 설치','로그인','첫 작업'];
+  names.forEach((n,i)=>{const li=el('li','',stepState(i));if(i===step)li.setAttribute('aria-current','step');
+    const st=stepState(i);li.append(el('span',st==='done'?'✓':st==='need'?'!':String(i+1),'dot'),el('span',n));ol.append(li);});
+}
+function cmdBox(label,command,what,link){
+  const box=el('div','','cmd'),lab=el('div','','label');lab.append(el('span',label),el('span',sc.os==='win'?'Windows PowerShell':'터미널','pill'));
+  if(/^npm /.test(command)){const need=el('span','Node.js 필요','pill');need.style.borderColor='rgba(255,196,107,.6)';need.style.color='var(--warn)';
+    need.title='npm은 Node.js와 함께 설치됩니다. 없으면 먼저 Node.js를 설치하도록 같은 방식으로 안내합니다.';lab.append(need);}
+  const code=el('code',command),acts=el('div','','acts');
+  const run=el('button','새 터미널 창에서 실행','btn small');run.type='button';run.onclick=()=>ask(what,command);
+  const copy=el('button','복사','btn small ghost');copy.type='button';copy.onclick=()=>toast('명령을 복사했습니다');
+  acts.append(run,copy);if(link){const a=el('a',link+' ↗');a.href='#';a.onclick=e=>{e.preventDefault();toast('공식 안내 페이지를 브라우저로 엽니다');};acts.append(a);}
+  box.append(lab,code,acts);return box;
+}
+function recheck(){checking=true;paint();setTimeout(()=>{checking=false;paint();},900);}
+function row(icon,cls,title,sub,right){const r=el('div','','row'),who=el('div','','who');who.append(el('span',icon,'icon '+cls));
+  const t=el('div');t.append(el('b',title),el('small',sub));who.append(t);r.append(who,el('span'),right||el('span'));return r;}
+function body(){
+  const b=$('w-body');b.replaceChildren();
+  if(step===0){
+    const cost=el('div','','cost');
+    for(const a of AIS){const c=el('div','','card'),t=el('b');const s=el('span','','swatch');s.style.background=a.color;t.append(s,a.name);c.append(t,el('small',a.who+' · '+a.plan));cost.append(c);}
+    const facts=el('ul','','facts');
+    for(const [a,b2] of [['Tribunal AI는 무료입니다.',' MIT 라이선스이고, 쓴 만큼 돈이 나가는 API 요금은 쓰지 않습니다.'],
+      ['AI 구독이 최소 두 개 필요합니다.',' 이미 쓰고 있는 구독이 있으면 그대로 씁니다.'],
+      ['작업마다 구독 한도를 씁니다.',' 작업 하나에 AI 호출이 여러 번 들어갑니다. 남은 한도는 AI 설정에서 볼 수 있습니다.'],
+      ['요금과 한도는 각 회사가 정합니다.',' Tribunal에 적힌 금액은 없고, 각 서비스의 이용 약관을 따릅니다.']]){
+      const li=el('li');const t=el('div');t.append(el('b',a),el('span',b2));li.append(t);facts.append(li);}
+    const ag=el('label','','agree'),cb=el('input');cb.type='checkbox';cb.checked=agreed;cb.onchange=()=>{agreed=cb.checked;paint();};
+    ag.append(cb,el('span','이해했습니다. 필요한 구독은 제가 각 회사에서 준비합니다.'));
+    b.append(cost,facts,ag);
+  }else if(step===1){
+    const rows=el('div','','rows');
+    if(checking)rows.append(row('','wait','git','확인하는 중…',el('span','','spin state wait')));
+    else if(sc.git)rows.append(row('✓','ok','git '+sc.git,'설치되어 있습니다',el('span','준비됨','state ok')));
+    else{rows.append(row('✗','bad','git','이 컴퓨터에 없습니다',el('span','설치 필요','state bad')));
+      rows.append(cmdBox(sc.os==='win'?'Windows 공식 설치(winget)':'macOS 개발 도구 설치',GIT[sc.os],'git을 설치합니다.','git 공식 안내'));}
+    b.append(rows);
+  }else if(step===2){
+    const rows=el('div','','rows');
+    for(const a of AIS){const v=sc.clis[a.key];const s=el('span','','swatch');s.style.background=a.color;
+      const r=el('div','','row'),who=el('div','','who'),t=el('div');t.append(el('b',a.name),el('small',a.who+(v?' · '+v:' · 설치되어 있지 않음')));who.append(s,t);
+      const st=checking?el('span','','spin state wait'):el('span',v?'✓ 설치됨':'설치 필요',v?'state ok':'state bad');
+      r.append(who,el('span'),st);rows.append(r);
+      if(!v&&!checking){const cmd=a.app?null:a.install[sc.os];
+        if(cmd)rows.append(cmdBox(a.name+' 공식 설치 명령',cmd,'설치합니다: '+a.name,a.page));
+        else{const box=el('div','','cmd');box.append(el('div',a.install[sc.os],'label'));const acts=el('div','','acts'),link=el('a',a.page+' ↗');link.href='#';link.onclick=e=>{e.preventDefault();toast('공식 안내 페이지를 브라우저로 엽니다');};acts.append(link);box.append(acts);rows.append(box);}}
+    }
+    const n=ready();const c=el('p','','count');c.append('지금 ',el('b',n+'개'),' 설치됨 · 최소 2개 필요'+(n>=2&&n<3?' (셋째는 나중에 설치해도 됩니다)':''));
+    const again=el('button','다시 확인','btn small');again.type='button';again.onclick=recheck;
+    b.append(rows,c,again);
+  }else if(step===3){
+    const rows=el('div','','rows');
+    for(const a of AIS){if(!sc.clis[a.key])continue;const s=el('span','','swatch');s.style.background=a.color;
+      const r=el('div','','row'),who=el('div','','who'),t=el('div');
+      const acc=sc.signed[a.key];
+      t.append(el('b',a.name),el('small',a.key==='agy'?'계정과 로그인 여부를 CLI가 알려 주지 않습니다':acc?'로그인됨 · '+acc:'로그인되어 있지 않습니다'));who.append(s,t);
+      let right;
+      if(a.key==='agy'){right=el('button','터미널에서 열기','btn small');right.onclick=()=>ask('Antigravity를 터미널에서 엽니다. 처음이면 거기서 로그인합니다.','agy');}
+      else if(acc)right=el('span','✓ 로그인됨','state ok');
+      else{right=el('button','로그인','btn small');right.onclick=()=>ask(a.name+'에 로그인합니다. 브라우저가 열리면 구독 계정으로 로그인하세요.',a.login);}
+      r.append(who,el('span'),right);rows.append(r);}
+    if(!rows.children.length)rows.append(el('p','설치된 AI가 아직 없습니다. 이전 단계에서 설치해 주세요.','count'));
+    b.append(rows);
+  }else{
+    const p1=el('p','연습용 폴더','kicker');p1.style.margin='0 0 4px';
+    const f=el('div','','field'),inp=el('input');inp.value=sc.os==='win'?'C:\\Users\\나\\Tribunal 연습':'~/Tribunal 연습';inp.setAttribute('aria-label','연습용 폴더');
+    const make=el('button','만들기','btn small');make.onclick=()=>toast('연습용 폴더를 만들었습니다 · 프로젝트로 선택됨');f.append(inp,make);
+    const p2=el('p','첫 작업 예시','kicker');p2.style.margin='20px 0 4px';
+    const ex=el('div','','examples');
+    for(const g of ['계산기 창 앱을 만들어줘','할 일 목록 웹 페이지를 만들어줘','지뢰찾기 게임을 만들어줘','내 소개 웹 페이지를 만들어줘']){
+      const c=el('button',g,'chip');c.type='button';c.setAttribute('aria-pressed',String(g===goal));c.onclick=()=>{goal=g;paint();};ex.append(c);}
+    const note=el('p','끝나면 결과물 창의 「실행해 보기」로 바로 써 볼 수 있습니다. 작업 한 번에 AI 호출이 대략 5~10번 들어갑니다.','count');
+    b.append(p1,f,p2,ex,note);
+  }
+}
+function paint(){
+  const s=STEPS[step];$('w-kicker').textContent=s.kicker;$('w-title').textContent=s.title;$('w-lead').textContent=s.lead;
+  paintRail();body();
+  $('back').style.visibility=step?'visible':'hidden';
+  const next=$('next');next.textContent=step===4?'이 작업 시작하기':'다음';
+  let ok=true,why='';
+  if(step===0&&!agreed){ok=false;why='비용 안내를 읽고 체크해 주세요.';}
+  if(step===1&&!sc.git){ok=false;why='git을 설치한 뒤 「다음」이 열립니다.';}
+  if(step===2&&ready()<2){ok=false;why='AI가 두 개 이상 있어야 합니다.';}
+  if(step===3&&signed()<2){ok=false;why='두 개 이상 로그인해야 작업을 시킬 수 있습니다.';}
+  next.disabled=!ok;$('why').textContent=why;
+  $('later').hidden=!(step===3&&signed()>=2&&signed()<ready());
+}
+let pending=null;
+function ask(what,command){pending=command;$('d-what').textContent=what;$('d-cmd').textContent=command;$('veil').classList.add('open');$('d-yes').focus();}
+$('d-no').onclick=()=>{$('veil').classList.remove('open');pending=null;};
+$('d-yes').onclick=()=>{$('veil').classList.remove('open');toast('터미널 창을 열었습니다. 끝나면 「다시 확인」을 누르거나 이 화면이 스스로 확인합니다.');
+  // the mockup pretends it worked, so the next state can be seen
+  setTimeout(()=>{if(step===1)sc.git='2.50.1';
+    if(step===2){const a=AIS.find(x=>x.install[sc.os]===pending);if(a)sc.clis[a.key]='새로 설치됨';}
+    if(step===3){const a=AIS.find(x=>x.login===pending);if(a)sc.signed[a.key]='u•••@e•••.com';}
+    recheck();},700);};
+function toast(t){const n=$('toast');n.textContent=t;n.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>n.classList.remove('show'),2600);}
+$('back').onclick=()=>{if(step){step--;paint();}};
+$('next').onclick=()=>{if(step<4){step++;if(step===1||step===2)recheck();else paint();}else toast('한눈에 탭으로 넘어가 「'+goal+'」 작업을 시작합니다');};
+$('later').onclick=()=>{step=4;paint();};
+document.querySelectorAll('.demo button').forEach(b=>b.onclick=()=>{sc=structuredClone(SC[b.dataset.sc]);document.querySelectorAll('.demo button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));paint();});
+document.querySelector('.demo button').setAttribute('aria-pressed','true');
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('veil').classList.contains('open'))$('d-no').click();});
+paint();
+</script>
+</body></html>
