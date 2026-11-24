@@ -2725,8 +2725,9 @@ def render_html():
             <form id="project-form" method="POST" action="/project" accept-charset="utf-8" style="{'display:none;' if project_path else ''}">
                 <input type="text" id="project-input" name="path" placeholder="git 저장소의 절대 경로" aria-label="프로젝트 폴더 경로" />
                 <button type="submit" id="project-btn">{I18N.t("select_project")}</button>
-                <div id="project-result" style="color:var(--amber); font-size:12px; margin-top:4px;"></div>
             </form>
+            <!-- outside the form: the form folds away on success, and the line saying so must stay -->
+            <div id="project-result" role="status" style="color:var(--amber); font-size:12px; margin-top:4px;"></div>
             <h2 style="margin-top:14px;">{I18N.t("recovery")}</h2>
             <div id="recovery-short" data-raw="{recovery_short}">{html_lib.escape(st.get("recovery_short_ko") or st.get("recovery_short") or "")}</div>
             <details id="recovery-details">

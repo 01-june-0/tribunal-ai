@@ -161,3 +161,5 @@ def test_the_project_picker_line_says_it_in_words_not_codes():
     server = (ROOT / "dashboard_server.py").read_text(encoding="utf-8")
     assert '"text": I18N.project_text(message)' in server and "setText('project-result', j.text || j.message || '')" in server
     assert "message:res.text||res.message||''" in (CONSOLE / "console.js").read_text(encoding="utf-8")
+    form = server[server.index('<form id="project-form"'):server.index('</form>', server.index('<form id="project-form"'))]
+    assert 'id="project-result"' not in form          # the form folds away on success: the line stays visible outside it
