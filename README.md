@@ -61,6 +61,15 @@
 - Python 3.9 이상, Git (테스트 모음은 3.9와 3.13에서 모두 통과)
 - 로그인된 CLI 중 최소 두 개: `claude`, `codex`, `agy`. 구독 로그인 세션을 그대로 씁니다. API 키는 필요 없고, 있어도 무시됩니다.
 
+## 비용
+
+- **Tribunal AI는 무료입니다**(MIT 라이선스). 종량제 API 요금은 쓰지 않습니다.
+- **대신 AI 회사의 구독이 필요합니다.** Claude Code(Anthropic), Codex(OpenAI · ChatGPT), Antigravity(Google) 중 최소 두 개를 각자의
+  구독으로 로그인해 둬야 합니다. 셋이면 하나가 한도에 걸려도 이어 갑니다.
+- **작업마다 구독 한도를 씁니다.** 작업 하나에 AI 호출이 여러 번 들어가고, 자동 수정이 많을수록 더 씁니다. 남은 한도는 콘솔의
+  AI 설정에서 볼 수 있습니다.
+- 요금과 한도는 각 회사가 정하고 바꿉니다. 각 서비스의 이용 약관을 따르세요.
+
 ## 빠른 시작
 
 ```bash
@@ -99,6 +108,7 @@ sh stop-companion.sh
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 설정 파일, 프로필, 이 컴퓨터 전용 설정 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 테스트, 실제 작업으로 시험하는 법, 화면이 쓰는 주소 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 원본 이후의 변경 이력, 물려받았지만 검증하지 않은 것 |
+| [docs/PACKAGING.md](docs/PACKAGING.md) | 설치형 프로그램으로 만드는 계획 (웹 · 앱, macOS · Windows · Linux) |
 
 ## 알려진 한계
 
