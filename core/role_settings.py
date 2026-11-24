@@ -4,7 +4,9 @@ import os
 import threading
 from pathlib import Path
 
-PATH = Path(__file__).resolve().parent.parent / 'data' / 'role_settings.json'
+from core.paths import data_dir
+
+PATH = data_dir() / 'role_settings.json'
 LOCK = threading.Lock()
 ALIASES = {'codex': 'openai', 'openai': 'openai', 'claude': 'claude',
            'anthropic': 'claude', 'google': 'antigravity', 'antigravity': 'antigravity'}

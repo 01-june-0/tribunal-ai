@@ -24,7 +24,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-ROOT = Path(__file__).resolve().parents[1]
+from core.paths import CODE_ROOT, home as _home
+
+ROOT = _home()           # where this machine's settings and runtime files live (the checkout itself when run from source)
 DEFAULT_PORT = 8081
 APP_ID = "tribunal-ai"
 PORT_TRIES = 20                      # default port .. default port + 19
@@ -35,6 +37,8 @@ def load_companion_config(root: Path = ROOT) -> dict:
     config = {}
     for name in ("companion.json", "companion.local.json"):
         path = Path(root) / name
+        if name == "companion.json" and not path.exists():
+            path = CODE_ROOT / name            # the defaults ship with the code; an installed home has none of its own
         if not path.exists():
             continue
         data = json.loads(path.read_text(encoding="utf-8"))

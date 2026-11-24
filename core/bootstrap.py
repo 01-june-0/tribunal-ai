@@ -27,7 +27,9 @@ def identity():
 def prepare_project(path):
     if not str(path).strip(): raise ValueError('프로젝트 경로가 필요합니다')
     root = Path(path).resolve()
-    if root == Path(root.anchor) or root == Path.home() or root == SOURCE_ROOT or SOURCE_ROOT in root.parents or root in SOURCE_ROOT.parents:
+    from core.paths import home as tribunal_home
+    keep_out = {SOURCE_ROOT, tribunal_home().resolve()}       # the code, and where an installed copy keeps its records
+    if root == Path(root.anchor) or root == Path.home() or any(root == k or k in root.parents or root in k.parents for k in keep_out):
         raise ValueError('프로젝트 루트로 사용할 수 없는 광범위/제어 경로입니다')
     root.mkdir(parents=True, exist_ok=True)
     if not (root / '.git').exists(): git(root, 'init')

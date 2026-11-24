@@ -277,7 +277,7 @@ def test_a_result_without_a_mission_can_be_read_and_decided_on_the_stage(tmp_pat
 
 def test_the_server_says_whether_a_run_belongs_to_a_mission(tmp_path, monkeypatch):
     import dashboard_server as d
-    monkeypatch.setattr(d, "DIRECTOR_ROOT", tmp_path)
+    monkeypatch.setenv("TRIBUNAL_RUNS_DIR", str(tmp_path / "runs"))      # where run folders are read (core/paths.py)
     (tmp_path / "runs" / "RUN-M").mkdir(parents=True)
     (tmp_path / "runs" / "RUN-M" / "mission_base.json").write_text('{"mission_id": "MSN-1", "base_worktree": null}', encoding="utf-8")
     (tmp_path / "runs" / "RUN-S").mkdir()

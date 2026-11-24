@@ -64,7 +64,8 @@ class ResultManager:
     # ------------------------------------------------------------------ artifacts
     @staticmethod
     def run_dir(run_id: str) -> Path:
-        return Path(__file__).resolve().parent.parent / "runs" / run_id
+        from core.paths import runs_dir
+        return runs_dir() / run_id
 
     def _load(self, run_id: str, name: str):
         from core.role_names import canon, old_file

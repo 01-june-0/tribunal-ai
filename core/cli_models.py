@@ -23,7 +23,9 @@ from typing import List, Optional
 
 import yaml
 
-LOCAL_CONFIG = Path(__file__).resolve().parents[1] / "config.local.yaml"
+from core.paths import home as _home
+
+LOCAL_CONFIG = _home() / "config.local.yaml"
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]{0,99}$")
 
 

@@ -11,7 +11,8 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import dashboard_server as d
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent            # the code: console pages, helper scripts
+from core.paths import home as tribunal_home, data_dir   # noqa: E402 - this machine's runtime files and records
 # The console is a fixed allowlist of local files: nothing outside console/ is ever served.
 STATIC_FILES = {'/': 'index.html', '/console.js': 'console.js', '/console.css': 'console.css',
                 '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js', '/i18n_classic.js': 'i18n_classic.js'}
@@ -139,7 +140,7 @@ class CompanionHandler(d.DashboardHandler):
             from core.companion_config import hello_payload
             nonce = parse_qs(urlsplit(self.path).query).get('nonce', [''])[0]
             # install_root: the demo console (scripts/demo_console.py) must not pass for this folder's real console
-            return self._send_json(hello_payload(getattr(self.server, 'install_root', ROOT), self.server.bridge_token, nonce))
+            return self._send_json(hello_payload(getattr(self.server, 'install_root', tribunal_home()), self.server.bridge_token, nonce))
         if path == '/ops/roles':
             from core.role_settings import current, independence
             roles = current(d.load_config())
@@ -167,7 +168,7 @@ class CompanionHandler(d.DashboardHandler):
         if path == '/classic':
             self.path = '/'
         elif path == '/ops/state':
-            report = ROOT / 'data' / 'cli_diagnostics.json'
+            report = data_dir() / 'cli_diagnostics.json'
             return self._send_json({'csrf': self.server.bridge_token,
                 'diagnostics': json.loads(report.read_text(encoding='utf-8')) if report.exists() else None,
                 'status': d.cached_status_payload()})
@@ -375,10 +376,10 @@ class CompanionHandler(d.DashboardHandler):
 
 def run():
     from core.companion_config import load_companion_config, choose_port, write_runtime, clear_runtime
-    config = load_companion_config(ROOT)
+    config = load_companion_config(tribunal_home())
     if os.environ.get('TRIBUNAL_DB_PATH'):
         print('Tribunal AI: TRIBUNAL_DB_PATH is set — records are read from and written to ' + os.environ['TRIBUNAL_DB_PATH'], flush=True)
-    action, port, note = choose_port(ROOT)
+    action, port, note = choose_port(tribunal_home())
     if action == 'running':                     # a second start is not an error: say where the console is
         print('Tribunal AI already running http://127.0.0.1:' + str(port), flush=True)
         return
@@ -390,13 +391,13 @@ def run():
     try:
         server = d.DashboardServer(('127.0.0.1', port), CompanionHandler)
     except OSError as exc:                      # lost a race for the port after the check above
-        again = choose_port(ROOT)
+        again = choose_port(tribunal_home())
         if again[0] == 'running':
             print('Tribunal AI already running http://127.0.0.1:' + str(again[1]), flush=True)
             return
         raise SystemExit(f'Tribunal AI cannot start: port {port} was taken while starting ({exc}). Start again.')
     from core.companion_config import bridge_token_path
-    token_path = bridge_token_path(ROOT)
+    token_path = bridge_token_path(tribunal_home())
     if not token_path.exists():
         token_path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
     server.bridge_token = token_path.read_text(encoding='utf-8').strip()
@@ -404,12 +405,12 @@ def run():
         import threading
         threading.Thread(target=d.resume_interrupted_missions, name='director-mission-resume', daemon=True).start()
     server.stopping = False
-    write_runtime(ROOT, server.server_address[1])
+    write_runtime(tribunal_home(), server.server_address[1])
     print('Tribunal AI console http://127.0.0.1:' + str(server.server_address[1]), flush=True)
     try:
         server.serve_forever()
     finally:
-        clear_runtime(ROOT)
+        clear_runtime(tribunal_home())
         server.server_close()
         print('Tribunal AI companion stopped (system stop)', flush=True)
 

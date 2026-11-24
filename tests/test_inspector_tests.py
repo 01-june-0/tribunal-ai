@@ -222,7 +222,7 @@ def test_summary_survives_a_damaged_record(tmp_path):
 
 def test_the_mission_view_carries_it_per_step_and_only_for_plain_run_ids(tmp_path, monkeypatch):
     import dashboard_server as d
-    monkeypatch.setattr(d, "DIRECTOR_ROOT", tmp_path)
+    monkeypatch.setenv("TRIBUNAL_RUNS_DIR", str(tmp_path / "runs"))      # where run folders are read (core/paths.py)
     run = tmp_path / "runs" / "RUN-1"
     run.mkdir(parents=True)
     (run / "inspector_tests.json").write_text(json.dumps({"proposed": 1, "files": ["tests/test_inspector_a.py"], "ran": True, "passed": True}), encoding="utf-8")

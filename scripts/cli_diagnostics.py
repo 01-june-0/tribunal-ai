@@ -15,7 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-REPORT = ROOT / "data" / "cli_diagnostics.json"
+from core.paths import data_dir  # noqa: E402
+
+REPORT = data_dir() / "cli_diagnostics.json"
 EXECUTABLES = {"claude": "claude", "openai": "codex", "antigravity": "agy"}
 NAMES = {"claude": "Claude", "openai": "Codex", "antigravity": "Antigravity"}
 ROLE_KO = {"architect": "설계", "maker": "제작", "inspector": "감리"}

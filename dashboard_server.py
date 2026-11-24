@@ -20,6 +20,7 @@ from core.orchestrator import Orchestrator
 from core.state_machine import StateMachine, State, TERMINAL_STATES
 from core.safety import SafetyPolicy
 from core.db_path import get_db_path, SOURCE_ROOT
+from core.paths import runs_dir
 from schemas.order import OrderSchema
 from director import load_config
 from core.result_manager import ResultManager
@@ -450,7 +451,7 @@ def _run_in_mission(run_id) -> bool:
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", run_id) or ".." in run_id:
         return True                                          # unknown shape: never offered as a stand-alone result
     try:
-        data = json.loads((DIRECTOR_ROOT / "runs" / run_id / "mission_base.json").read_text(encoding="utf-8"))
+        data = json.loads((runs_dir() / run_id / "mission_base.json").read_text(encoding="utf-8"))
         return bool(isinstance(data, dict) and data.get("mission_id"))
     except FileNotFoundError:
         return False
@@ -837,7 +838,7 @@ def build_activity_payload(limit_missions: int = 5) -> dict:
     missions = sorted(store.all(), key=lambda m: m.get("updated_at", ""), reverse=True)
     if not _USAGE_BACKFILLED["done"]:
         try:
-            usage.backfill_from_runs(DIRECTOR_ROOT / "runs", missions)
+            usage.backfill_from_runs(runs_dir(), missions)
         except Exception:
             pass
         _USAGE_BACKFILLED["done"] = True
@@ -867,7 +868,7 @@ def _inspector_tests(run_id) -> Optional[dict]:
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", run_id) or ".." in run_id:
         return None
     from core import inspector_tests
-    return inspector_tests.summary(DIRECTOR_ROOT / "runs" / run_id)
+    return inspector_tests.summary(runs_dir() / run_id)
 
 
 def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
@@ -1422,7 +1423,7 @@ def build_status_payload() -> dict:
     state = raw_state
     recovered = None
     if current_run and raw_state == State.FAIL:
-        recovery_path = Path(__file__).resolve().parent / "runs" / current_run['run_id'] / "recovery.json"
+        recovery_path = runs_dir() / current_run['run_id'] / "recovery.json"
         try:
             candidate = json.loads(recovery_path.read_text(encoding="utf-8"))
             if candidate.get("status") == "VERIFIED" and candidate.get("project_path") == current_run['project_path']:

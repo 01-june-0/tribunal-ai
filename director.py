@@ -9,14 +9,25 @@ import click
 from core.orchestrator import Orchestrator
 from core.state_machine import StateMachine, State
 
+def _merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for key, value in over.items():
+        out[key] = _merge(out[key], value) if isinstance(value, dict) and isinstance(out.get(key), dict) else value
+    return out
+
+
 def load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent / "config.yaml"
-    if cfg_path.exists():
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            from core.role_settings import apply
-            from core.role_names import canon
-            return apply(canon(yaml.safe_load(f) or {}))      # old key names (head:, builder_attempts ...) are still read
-    return {}
+    """config.yaml that ships with the code, and - for an installed copy - the person's own config.yaml in Tribunal's
+    home on top of it (only the keys they set; core/paths.py). Run from source, both are the same file."""
+    from core.paths import CODE_ROOT, home
+    from core.role_settings import apply
+    from core.role_names import canon
+    cfg: dict = {}
+    for path in dict.fromkeys([CODE_ROOT / "config.yaml", home() / "config.yaml"]):
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = _merge(cfg, canon(yaml.safe_load(f) or {}))    # old key names (head:, builder_attempts ...) are still read
+    return apply(cfg) if cfg else {}
 
 @click.group()
 def cli():
@@ -116,7 +127,8 @@ def do(goal: str, project: Optional[str], profile: Optional[str], no_apply: bool
                # Never the current folder by default, and never a folder inside someone else's repository.
                "create_project": bool(project) and _fresh_folder(Path(target).resolve())}
     from core.companion_config import bridge_token_path
-    token_path = bridge_token_path(Path(__file__).resolve().parent)
+    from core.paths import home as tribunal_home
+    token_path = bridge_token_path(tribunal_home())
     from core.companion_config import active_port, verify, local_open, DEFAULT_PORT
     try:
         port = active_port()

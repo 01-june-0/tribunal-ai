@@ -2,8 +2,8 @@
 Canonical DB path resolver for TRIBUNAL AI.
 
 Every component (StateMachine, ChatManager, ProviderManager, dashboard) must obtain the
-SQLite path through get_db_path(). The path is absolute and anchored at the project source
-root, so running the dashboard or CLI from a different cwd can never create a split-brain DB.
+SQLite path through get_db_path(). The path is absolute and anchored at Tribunal's home (the source
+checkout, or the per-user data folder of an installed copy - core/paths.py), so running the dashboard or CLI from a different cwd can never create a split-brain DB.
 
 Test isolation: when DIRECTOR_TESTING=1 and TEST_DB_PATH is set, that path is returned instead.
 Another data set: TRIBUNAL_DB_PATH (an absolute path) moves the DB and what is kept next to it — missions, locks,
@@ -13,8 +13,9 @@ console; scripts/demo_console.py uses it, behind a read-only server, to show inv
 import os
 from pathlib import Path
 
-SOURCE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DB_PATH = SOURCE_ROOT / "data" / "director.db"
+from core.paths import CODE_ROOT as SOURCE_ROOT, data_dir
+
+DEFAULT_DB_PATH = data_dir() / "director.db"       # the checkout's data/ when run from source (core/paths.py)
 
 
 def get_db_path() -> Path:

@@ -29,12 +29,8 @@ def _conn() -> sqlite3.Connection:
 
 
 def _runs_dir() -> Path:
-    import os
-    elsewhere = os.environ.get("TRIBUNAL_RUNS_DIR")       # the demo console reads an invented set, never the real records
-    if elsewhere:
-        return Path(elsewhere)
-    from core.db_path import SOURCE_ROOT
-    return SOURCE_ROOT / "runs"
+    from core.paths import runs_dir                       # TRIBUNAL_RUNS_DIR (the demo console) is honoured there
+    return runs_dir()
 
 
 def _run_dir(run_id: Any) -> Optional[Path]:

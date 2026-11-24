@@ -182,6 +182,7 @@ def do_env(tmp_path, monkeypatch):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "bridge.token").write_text(TOKEN)
     monkeypatch.setattr(director, "__file__", str(tmp_path / "director.py"))        # `do` looks for data/ next to itself
+    monkeypatch.setenv("TRIBUNAL_HOME", str(tmp_path))                              # ... in Tribunal's home (core/paths.py)
     ran = []
     monkeypatch.setattr(director.mission, "callback", lambda **kw: ran.append(kw))
     return director, ran, tmp_path
