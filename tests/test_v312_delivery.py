@@ -502,3 +502,61 @@ def test_the_result_panel_says_how_to_skip_and_what_the_kept_copy_holds():
     assert "said=T('적용 보류: ')+(text?text+(clash.length?' · '+again:''):again);" in src
     assert "mine.skipped=out.skipped_conflicts||null;" in src
     assert "if(left.length&&d.worktree_exists!==false)said=T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')" in src
+
+
+def test_a_result_applied_outside_its_card_shows_as_applied_and_stays_readable(monkeypatch, tmp_path):
+    """Found checking the Details tab by hand: a task's result applied there left the task card at "적용 대기 · 원본
+    프로젝트는 아직 그대로입니다", and once applied no screen offered to look at it again. The task's own decisions
+    (apply again, discard, clear the kept copies) go by the same record."""
+    import dashboard_server as d
+    from core.result_manager import ResultManager
+    monkeypatch.setattr(ResultManager, "run_dir", staticmethod(lambda run_id: tmp_path / run_id))
+    def record(run_id, st):
+        (tmp_path / run_id).mkdir(exist_ok=True); (tmp_path / run_id / "result_state.json").write_text(json.dumps(st), encoding="utf-8")
+
+    class SM:
+        def get_run(self, run_id): return {"current_state": "PASS", "worktree_path": ""}
+        def get_transitions(self, run_id): return []
+        def get_audit_logs(self, run_id): return []
+    mission = {"mission_id": "M-1", "status": "DONE", "base_worktree": "X/.director_worktrees/RUN-A",
+               "steps": [{"index": 1, "run_id": "RUN-A", "order": {}, "result": {"final_state": "PASS", "worktree_path": "X/.director_worktrees/RUN-A"}}]}
+    assert d.mission_view(mission, SM())["apply_state"] == "pending"                  # no record yet
+    record("RUN-A", {"state": "APPLIED", "at": "t", "files": ["a.py"], "skipped_conflicts": ["b.py"]})
+    view = d.mission_view(mission, SM())
+    assert view["apply_state"] == "applied" and view["applied"]["files"] == ["a.py"]
+    assert view["applied"]["skipped_conflicts"] == [{"path": "b.py"}]          # the shape a task's own record has
+    record("RUN-A", {"state": "READY"})
+    assert d.mission_view(mission, SM())["apply_state"] == "pending"
+    assert d.mission_view(dict(mission, applied={"status": "discarded", "run_id": "RUN-A"}), SM())["apply_state"] == "discarded"
+
+    # the task's own buttons: nothing is applied twice, a discard is not recorded over it, the kept copies can go
+    record("RUN-A", {"state": "APPLIED", "at": "t", "files": ["a.py"]})
+    task = dict(mission, project_path="/nowhere")
+    calls, saved = [], []
+
+    class Store:
+        def load(self, mid): return dict(task)
+        def save(self, m): saved.append(m)
+
+    class Results:
+        def apply_tree(self, rid, **kw): calls.append("apply"); return {"status": "blocked"}
+        def discard(self, rid, **kw): calls.append("discard"); return {"status": "refused"}
+        def release_worktrees(self, runs, **kw): calls.append("clear"); return runs
+    monkeypatch.setattr(d, "MissionStore", Store)
+    monkeypatch.setattr(d, "_result_manager", lambda: Results())
+    monkeypatch.setattr(d, "active_session_id", lambda: "S")
+    monkeypatch.setattr(d, "ChatManager", lambda: type("C", (), {"add_message": lambda *a, **k: None})())
+    monkeypatch.setattr(d, "invalidate_status_cache", lambda: None)
+    again = d.decide_mission("M-1", "apply")
+    assert again["status"] == "applied" and again["already"] is True
+    assert d.decide_mission("M-1", "discard")["status"] == "refused"
+    assert d.decide_mission("M-1", "clear")["status"] == "cleared"
+    assert calls == ["clear"] and saved == []                                   # no apply, no discard, no record written
+    record("RUN-A", {"state": "DISCARDED", "at": "t"})
+    assert d.decide_mission("M-1", "discard")["already"] is True and calls == ["clear"]
+
+    js = (Path(__file__).resolve().parents[1] / "console" / "stage.js").read_text(encoding="utf-8")
+    assert "if(state==='applied'&&ms.deliverableRun){seen=el('div','','delivery-actions');" in js
+    assert "if(d&&d.worktree_path&&d.worktree_exists!==false){" in js          # a copy removed on applying is not pointed at
+    src = (Path(__file__).resolve().parents[1] / "dashboard_server.py").read_text(encoding="utf-8")
+    assert "['READY', 'APPLIED'].indexOf((j.result.result || {}).state || 'READY') >= 0" in src

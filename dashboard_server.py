@@ -887,6 +887,8 @@ def mission_view(m: dict, sm: Optional[StateMachine] = None) -> dict:
                 "rejected": state == State.HUMAN_REQUIRED and bool(step.get("run_id")) and _step_rejected(sm, step["run_id"]),
                 "note": (res.get("stop_detail") or "")[:220] if state not in ("PASS", None) else ""}
     applied = m.get("applied") or None
+    if not applied and deliverable_run_id(m) and m.get("status") != "RUNNING":
+        applied = _applied_elsewhere(deliverable_run_id(m))
     return {"mission_id": m["mission_id"], "goal": m.get("goal", "")[:400], "status": m.get("status"),
             "live": m.get("status") == "RUNNING" and _pid_alive(m.get("owner_pid")),
             "project": Path(m.get("project_path", "")).name, "project_path": m.get("project_path"),
@@ -1004,6 +1006,26 @@ def stop_missions(reason: str = "", mission_id: Optional[str] = None, by: str = 
     return {"status": "stopped" if stopped else "idle", "missions": stopped, "killed": killed}
 
 
+def _applied_elsewhere(run_id: str) -> Optional[dict]:
+    """A task's result that was applied or discarded outside its card (the Details tab, `/result/apply`) leaves the task
+    record unchanged; the run's own result record says it. Shaped like a task's `applied`, so the card stops offering it."""
+    if not run_id:
+        return None
+    try:                                         # one small file: this runs for every task on every poll
+        from core.result_manager import ResultManager
+        st = json.loads((ResultManager.run_dir(run_id) / "result_state.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(st, dict):
+        return None
+    status = {"APPLIED": "applied", "DISCARDED": "discarded"}.get(st.get("state"))
+    if not status:
+        return None
+    return {"run_id": run_id, "at": st.get("at"), "status": status, "files": st.get("files") or [],
+            "skipped_conflicts": [{"path": p} for p in st.get("skipped_conflicts") or [] if isinstance(p, str)],
+            "elsewhere": True}
+
+
 def _run_has_worktree(run_id: str) -> bool:
     try:
         wt = (StateMachine().get_run(run_id) or {}).get("worktree_path") or ""
@@ -1039,7 +1061,7 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         with _RUN_LOCK:
             if _project_key(m.get("project_path") or "") in _ACTIVE_PROJECTS:
                 return {"status": "busy", "error": "a task is still working in this project"}
-        if (m.get("applied") or {}).get("status") != "applied":
+        if (m.get("applied") or _applied_elsewhere(deliverable_run_id(m)) or {}).get("status") != "applied":
             return {"status": "refused", "reason": "only the working copies of an applied result are cleared this way"}
         released = _result_manager().release_worktrees([s["run_id"] for s in m.get("steps", []) if s.get("run_id")], by=by, why="cleared after apply")
         ChatManager().add_message(sid, "SYSTEM", f"[{by}] 작업 {mission_id} 작업 사본 정리: {len(released)}개")
@@ -1049,7 +1071,7 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         rid = deliverable_run_id(m)
         if not rid:
             return {"status": "blocked", "blocks": ["no PASSED milestone to apply"]}
-        done = m.get("applied") or {}
+        done = m.get("applied") or _applied_elsewhere(rid) or {}          # applied in the Details tab counts too
         if done.get("status") == "applied" and done.get("run_id") == rid:
             return {**{k: v for k, v in done.items() if k not in ("at", "by")}, "already": True}      # a second click changes nothing
         result = _result_manager().apply_tree(rid, request_id=f"{by.lower()}-{mission_id}-{datetime.utcnow().strftime('%H%M%S')}",
@@ -1074,6 +1096,10 @@ def decide_mission(mission_id: str, action: str, reason: str = "", max_steps: Op
         with _RUN_LOCK:                             # a stopped task's loop may still be finishing its step in there
             if _project_key(m.get("project_path") or "") in _ACTIVE_PROJECTS:
                 return {"status": "busy", "error": "a task is still working in this project"}
+        elsewhere = None if m.get("applied") else _applied_elsewhere(rid)
+        if elsewhere:                               # decided in the Details tab already: nothing to do, nothing to record
+            return {**elsewhere, "already": True} if elsewhere["status"] == "discarded" else \
+                {"status": "refused", "reason": "the result was already applied to the project"}
         if rid:
             result = rm.discard(rid, request_id=f"{by.lower()}-{mission_id}", by=by)
         elif any(_run_has_worktree(r) for r in steps):
@@ -2088,7 +2114,7 @@ DASHBOARD_JS = r"""
       lastResult = j.result; if (!selectedResultId) renderResult(j.result); renderResults(j.results);
       renderTodo(j.run, j.approval, j.result);
       if (selectedResultId) refreshSelectedResult();
-      var cvr = document.getElementById('chat-view-result-btn'); if (cvr) cvr.style.display = (j.result && j.result.is_pass && ((j.result.result || {}).state || 'READY') === 'READY') ? '' : 'none';
+      var cvr = document.getElementById('chat-view-result-btn'); if (cvr) cvr.style.display = (j.result && j.result.is_pass && ['READY', 'APPLIED'].indexOf((j.result.result || {}).state || 'READY') >= 0) ? '' : 'none';   // an applied result stays readable (kept when it was applied)
       if (selectedRunId) refreshSelectedApproval();
       var sw = document.getElementById('stale-warning');
       if (sw) { var n = (j.stale_runs || []).length; var st = n ? ('STALE RUN' + ' DETECTED (' + n + ') \u00b7 오래 멈춘 작업') : ''; if (sw.textContent !== st) sw.textContent = st; var sd = document.getElementById('stale-details'); if (sd) sd.style.display = n ? '' : 'none'; }

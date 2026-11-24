@@ -390,7 +390,7 @@ function paintResult(){
   const moved=loose?'':!now?T('이 작업은 지금 화면의 작업이 아닙니다. 작업 카드에서 다시 열어 주세요.'):now.status==='RUNNING'?T('작업이 다시 진행 중입니다. 끝난 뒤 변경 내용을 다시 열어 주세요.'):now.deliverableRun!==result.ms.deliverableRun?T('결과물이 바뀌었습니다. 변경 내용을 다시 열어 확인해 주세요.'):'';
   $('rp-title').textContent=live.goal||'—';$('rp-title').title=live.goal||'';
   let meta=T('프로젝트 · ')+(live.project||'—')+' · '+((APPLY_KO[state]||[state])[0]),where='';
-  if(d&&d.worktree_path){const full=String(d.worktree_path),base=String(d.project_path||''),inside=base&&full.startsWith(base);
+  if(d&&d.worktree_path&&d.worktree_exists!==false){const full=String(d.worktree_path),base=String(d.project_path||''),inside=base&&full.startsWith(base);
     meta+=' · '+T('결과물 위치: ')+(inside?(live.project||'')+full.slice(base.length):full.split(/[\\/]/).slice(-2).join('/'));where=full;}
   if($('rp-meta').textContent!==meta)$('rp-meta').textContent=meta;$('rp-meta').title=where;
   const sum=$('rp-sum'),files=$('rp-files'),diff=$('rp-diff'),note=$('rp-note'),acts=$('rp-actions');
@@ -495,10 +495,13 @@ function paintDelivery(m){
   if(ms.applied&&ms.applied.files)box.append(el('small',ms.applied.files.slice(0,6).join(', ')+(ms.applied.files.length>6?T(' 외 {0}개',ms.applied.files.length-6):''),'ai-sub'));
   if(state==='rolled_back')box.append(el('small',undone(ms.applied),'ai-sub'));
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',blockText(ms.applied.blocks).slice(0,220),'ai-sub'));
+  let seen=null;                               // what was applied stays readable: it is kept at the moment of applying
+  if(state==='applied'&&ms.deliverableRun){seen=el('div','','delivery-actions');const see=el('button',T('변경 내용 보기'));see.type='button';see.className='ghost';see.dataset.act='view';
+    see.onclick=()=>openResult(ms);seen.append(see);box.append(seen);if(held==='view')see.focus();}
   if(state==='applied'&&ms.leftover){          // kept on purpose: the AIs' version of a skipped file exists only in there
     const skipped=((ms.applied||{}).skipped_conflicts||[]).map(c=>c.path).filter(Boolean);
-    box.append(el('small',T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')+(skipped.length?' '+skipped.slice(0,6).join(', '):''),'ai-sub'));
-    const row=el('div','','delivery-actions'),clear=el('button',deliveryBusy?T('처리 중…'):T('작업 사본 지우기'));clear.type='button';clear.className='ghost';clear.dataset.act='clear';clear.disabled=deliveryBusy;
+    box.insertBefore(el('small',T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')+(skipped.length?' '+skipped.slice(0,6).join(', '):''),'ai-sub'),seen);
+    const row=seen||el('div','','delivery-actions'),clear=el('button',deliveryBusy?T('처리 중…'):T('작업 사본 지우기'));clear.type='button';clear.className='ghost';clear.dataset.act='clear';clear.disabled=deliveryBusy;
     clear.onclick=()=>{if(confirm(T('남겨 둔 작업 사본 {0}개를 지울까요? 건너뛴 파일의 AI 버전도 함께 사라집니다. 원본 프로젝트는 바뀌지 않습니다.',ms.leftover)))decideMission(ms.id,'clear');};
     row.append(clear);box.append(row);
     if(held==='clear'&&!clear.disabled)clear.focus();
