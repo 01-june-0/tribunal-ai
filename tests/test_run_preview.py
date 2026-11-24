@@ -169,6 +169,7 @@ def test_a_tkinter_app_gets_a_python_that_has_tkinter(tmp_path, monkeypatch):
     names a Python that can open the window, and says so; nothing else is changed."""
     app = _write(tmp_path / "app", {"app.py": "import tkinter\nif __name__ == '__main__':\n    tkinter.Tk().mainloop()\n"})
     monkeypatch.setattr(rp, "_has_tk", lambda python: python == "/usr/bin/python3")
+    monkeypatch.setattr(rp, "_version", lambda python: tuple(rp.sys.version_info[:2]))
     monkeypatch.setattr(rp.shutil, "which", lambda name: None)
     monkeypatch.setattr(rp.Path, "is_file", lambda self: True if str(self) == "/usr/bin/python3" else Path.exists(self) and not Path.is_dir(self))
     assert rp._with_tk("python3 app.py", app) == ("/usr/bin/python3 app.py", {"tk": "switched", "from": "python3", "to": "/usr/bin/python3"})
@@ -176,5 +177,13 @@ def test_a_tkinter_app_gets_a_python_that_has_tkinter(tmp_path, monkeypatch):
     assert rp._with_tk(".venv/bin/python app.py", app) == (".venv/bin/python app.py", None)
     plain = _write(tmp_path / "cli", {"main.py": "if __name__ == '__main__':\n    print(1)\n"})
     assert rp._with_tk("python3 main.py", plain) == ("python3 main.py", None)       # no tkinter in the project
+    # Found running it: the only Python with tkinter was 3.9, the app was written for Tribunal's 3.13 (`float | None`
+    # in a class body) and stopped at start. An older one is still offered, but with the reason and the fix.
+    monkeypatch.setattr(rp, "_version", lambda python: (3, 9))
+    monkeypatch.setattr(rp, "_tk_fix", lambda wanted: "brew install python-tk@%d.%d" % wanted)
+    cmd, note = rp._with_tk("python3 app.py", app)
+    want = "%d.%d" % tuple(rp.sys.version_info[:2])
+    assert cmd == "/usr/bin/python3 app.py" and note == {"tk": "old", "from": "python3", "to": "/usr/bin/python3", "version": "3.9",
+                                                         "wants": want, "fix": "brew install python-tk@" + want}
     monkeypatch.setattr(rp, "_has_tk", lambda python: False)
-    assert rp._with_tk("python3 app.py", app) == ("python3 app.py", {"tk": "missing", "from": "python3"})
+    assert rp._with_tk("python3 app.py", app) == ("python3 app.py", {"tk": "missing", "from": "python3", "fix": "brew install python-tk@" + want})

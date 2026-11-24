@@ -45,6 +45,8 @@ const EN={
   "실행해 보기": "Try it",
   "최근 적용한 결과물 (작업 기록 없음)": "Recently applied results (no task)",
   "끝내지 못함": "Not finished",
+  "이 컴퓨터의 {0}에는 tkinter가 없습니다. tkinter가 있는 Python은 {1} (Python {2})뿐인데, 앱은 Python {3}에 맞춰 만들어져 시작하자마자 오류가 날 수 있습니다.": "{0} on this computer has no tkinter. The only Python with tkinter is {1} (Python {2}), but the app was written for Python {3} and may fail at start.",
+  "확실하게 하려면 터미널에서: {0}": "To be sure, run in a terminal: {0}",
   "이 컴퓨터의 {0}에는 tkinter가 없어, tkinter가 있는 Python으로 바꿨습니다: {1}": "{0} on this computer has no tkinter, so a Python that has it is used: {1}",
   "이 컴퓨터의 {0}에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.": "{0} on this computer has no tkinter, and no Python with tkinter was found. The window may not open and an error may show.",
   "작업 사본 남음": "working copy kept",

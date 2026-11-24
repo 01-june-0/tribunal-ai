@@ -229,17 +229,53 @@ def _uses_tk(root: Path) -> bool:
     return False
 
 
+_VERSION: Dict[str, Optional[tuple]] = {}
+
+
+def _version(python: str) -> Optional[tuple]:
+    """(major, minor) of a Python, or None when it cannot be asked. Remembered per process."""
+    if python not in _VERSION:
+        import subprocess
+        try:
+            out = subprocess.run([python, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"], capture_output=True,
+                                 text=True, timeout=15, stdin=subprocess.DEVNULL)
+            _VERSION[python] = tuple(int(x) for x in out.stdout.strip().split(".")) if out.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            _VERSION[python] = None
+    return _VERSION[python]
+
+
+def _tk_fix(wanted: tuple) -> str:
+    """The command that gives this machine's python3 its tkinter (Homebrew ships it separately)."""
+    if sys.platform == "darwin" and shutil.which("brew"):
+        return f"brew install python-tk@{wanted[0]}.{wanted[1]}"
+    return "sudo apt install python3-tk" if sys.platform.startswith("linux") else ""
+
+
 def _with_tk(command: str, root: Path):
     """A windowed tkinter app started with a bare `python3` / `python` that cannot import tkinter gets a Python on
-    this machine that can (the macOS system one, for example). The change is said in the plan, so it is shown before
-    anything runs. Anything else is left exactly as it was."""
+    this machine that can. The Maker writes for the Python it was told about (Tribunal's own), so a Python at least
+    that new is preferred; an older one is used only with a warning (new syntax fails there at start). Every change
+    and warning is said in the plan, so it is shown before anything runs. Anything else is left exactly as it was."""
     first, _, rest = command.partition(" ")
     if first not in ("python3", "python") or not rest or _has_tk(first) or not _uses_tk(root):
         return command, None
+    wanted = tuple(sys.version_info[:2])
+    found = []
     for other in [shutil.which(f"python3.{minor}") for minor in range(14, 8, -1)] + ["/usr/bin/python3"]:
-        if other and Path(other).is_file() and _has_tk(other):
-            return f"{shlex.quote(other)} {rest}", {"tk": "switched", "from": first, "to": other}
-    return command, {"tk": "missing", "from": first}
+        if other and other not in [f for f, _v in found] and Path(other).is_file() and _has_tk(other):
+            found.append((other, _version(other)))
+    fix = _tk_fix(wanted)
+    new_enough = [(f, v) for f, v in found if v and v >= wanted]
+    if new_enough:
+        other, v = new_enough[0]
+        return f"{shlex.quote(other)} {rest}", {"tk": "switched", "from": first, "to": other}
+    if found:
+        other, v = max(found, key=lambda fv: fv[1] or (0, 0))
+        return f"{shlex.quote(other)} {rest}", {"tk": "old", "from": first, "to": other,
+                                                 "version": ".".join(map(str, v)) if v else "?",
+                                                 "wants": f"{wanted[0]}.{wanted[1]}", "fix": fix}
+    return command, {"tk": "missing", "from": first, "fix": fix}
 
 
 # ------------------------------------------------------------------ starting it
