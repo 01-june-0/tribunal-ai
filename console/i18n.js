@@ -76,7 +76,7 @@ const EN={
   "작업 단계": "Task steps",
   "세 AI 작업 무대": "Stage of the three AIs",
   "작업 흐름": "Pipeline",
-  "ARCHITECT에게 지시하기 — 예: 캡션 글자 수 검사기를 만들어줘": "Tell ARCHITECT what to build — e.g. make a caption length checker",
+  "무엇을 만들까요? 예: 계산기 창 앱을 만들어줘": "What should we build? e.g. make a calculator window app",
   "ARCHITECT에게 지시하기": "Instruction for ARCHITECT",
   "보기": "Filter",
   "준비": "Ready",

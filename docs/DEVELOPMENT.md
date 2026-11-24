@@ -165,7 +165,10 @@ cd ~/Developer/tribunal-ai
 | `/run/approve`, `/run/reject` | 멈춘 실행의 승인 · 거절 |
 | `/ops/mission/decide` | 작업의 결과물 적용 · 폐기, 이어서 시도, 다시 계획, 남은 작업 사본 지우기 |
 | `/result/apply`, `/result/discard` | 작업 기록 없이 끝난 결과물의 적용 · 폐기 |
-| `/result/open_worktree`, `/result/open_project` | 폴더 열기 |
+| `/result/open_worktree`, `/result/open_project` | 폴더 열기 (macOS는 Finder로만) |
+| `/result/clear` | 작업 기록 없이 적용한 결과물의 남은 작업 사본 지우기 |
+| `/ops/open-project` | 지금 프로젝트 폴더 열기 (화면은 경로를 보내지 않음) |
+| `/ops/run-plan`, `/ops/run-result` | 실행해 보기: 실행 계획(명령 · 장소), 확인한 그 계획만 실행 |
 | `/ops/roles`, `/ops/ai`, `/ops/ai/refresh`, `/ops/ai/account` | 역할 배정, 모델 설정, 한도 다시 조회, 로그인 · 계정 변경 · 로그아웃 창 열기 |
 | `/providers/refresh` | AI 상태 다시 확인 (모델을 부르지 않음) |
 | `/ops/missions/stop`, `/ops/shutdown` | 작업 정지, 콘솔 끄기 |

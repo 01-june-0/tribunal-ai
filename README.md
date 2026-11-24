@@ -6,7 +6,7 @@
 > **In English** — Tribunal AI is a local supervisor that runs three subscription AI coding CLIs (Claude Code, OpenAI Codex,
 > Google Antigravity) as **architect, maker and inspector**, and turns a one-line goal into code that has passed tests and an
 > independent review. Changes are made in an isolated git worktree and reach your project only when you apply them; the tests
-> are run by the program itself, not by an AI; no metered API is used. Verified on macOS only. The console has an English
+> are run by the program itself, not by an AI; no metered API is used. Verified on macOS (Linux checked headless in Docker). The console has an English
 > mode (the **EN** button); the documentation is in Korean.
 
 > **출처** — 이 프로젝트는 MIT 라이선스 오픈소스 [AI DEV DIRECTOR](https://github.com/digilogd-cmd/ai-dev-director) v3.1.8을
@@ -32,7 +32,11 @@
 - **테스트는 AI가 아니라 프로그램이** — 테스트 단계는 Tribunal 프로그램이 직접 명령을 실행하고 결과를 기록합니다.
 - **사람에게 묻는 것은 네 가지뿐** — 돈이 드는 일, 실제 계좌 주문, 실제 자격증명, 되돌릴 수 없는 외부 행동. 그 밖의 막힘은
   재시도 · 다른 AI로 교체 · 다시 계획으로 스스로 풉니다.
+- **AI가 빠져도 이어 감** — 한도 소진 · 로그인 풀림 · 응답 없음이면 그 AI를 기록하고 남은 AI로 역할을 옮깁니다. 쓸 수 있는 AI가
+  하나도 없을 때만 멈춰서 묻고, 돌아오면 멈춘 곳부터 이어 갑니다.
 - **콘솔** — 브라우저로 여는 화면에서 지시하고, 세 AI가 지금 무엇을 하는지 보고, 승인 · 거절 · 적용을 합니다.
+- **실행해 보기** — 끝난 결과(웹 페이지, 창이 뜨는 앱, 터미널 프로그램)를 새 터미널 창에서 바로 실행해 봅니다. 실행할 명령을
+  먼저 보여 주고, 적용 전 결과물은 임시 복사본에서 돌립니다.
 
 ## 지키는 것
 
@@ -51,7 +55,9 @@
 ## 요구 사항
 
 - **macOS** — 이 프로젝트를 실제로 돌리고 검증한 환경입니다.
-- Windows · Linux — 원본에서 물려받은 코드가 있지만 이 프로젝트에서는 **검증하지 않았습니다**.
+- Linux — Docker(화면 없음)에서 테스트 모음, 콘솔 켜고 끄기, 작업 흐름을 확인했습니다. 데스크톱 화면(폴더 선택 창 등)은 확인 전이고,
+  터미널 창을 여는 기능은 대신 실행할 명령을 보여 줍니다.
+- Windows — 원본에서 물려받은 코드가 있지만 이 프로젝트에서는 **검증하지 않았습니다**.
 - Python 3.9 이상, Git (테스트 모음은 3.9와 3.13에서 모두 통과)
 - 로그인된 CLI 중 최소 두 개: `claude`, `codex`, `agy`. 구독 로그인 세션을 그대로 씁니다. API 키는 필요 없고, 있어도 무시됩니다.
 
@@ -101,6 +107,8 @@ sh stop-companion.sh
 - 각 CLI의 구독 한도에 그대로 묶입니다. 한도가 끝나면 다른 CLI로 넘어갑니다.
 - 감리와 설계가 같은 AI로 몰리면 "감리 독립성 낮음"을 표시하고 진행합니다. 숨기지 않습니다.
 - 테스트 모음은 스텁 CLI로 돕니다. 실제 세 CLI를 끝까지 태우는 시험은 따로 선택해야 돌아갑니다.
+- 창이 뜨는 Python 앱(tkinter)을 실행해 보려면 그 Python에 tkinter가 있어야 합니다. Homebrew Python은 따로 설치합니다
+  (`brew install python-tk@3.13`). 없으면 확인 창이 미리 알려 줍니다.
 
 ## 라이선스
 
