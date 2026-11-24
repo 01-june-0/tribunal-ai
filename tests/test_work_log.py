@@ -259,9 +259,10 @@ def test_the_engine_writes_the_test_output_line_by_line(tmp_path, monkeypatch):
     # a line still being written is seen before its newline: the child waits for the observer's signal to go on
     go = tmp_path / "go"
     slow = tmp_path / "slow.py"
-    slow.write_text("import os, sys, time\nsys.stdout.write('a.py .'); sys.stdout.flush()\n"
+    # bytes, not text: in text mode Windows turns the "\n" of "\r\n" into "\r\n" again ("\r\r\n" = two line ends)
+    slow.write_text("import os, sys, time\nsys.stdout.buffer.write(b'a.py .'); sys.stdout.flush()\n"
                     "t = time.time()\nwhile not os.path.exists(sys.argv[1]) and time.time() - t < 10: time.sleep(.02)\n"
-                    "sys.stdout.write('.\\r\\nend\\n' if os.path.exists(sys.argv[1]) else 'NOT SEEN\\n'); sys.stdout.flush()\n", encoding="utf-8")
+                    "sys.stdout.buffer.write(b'.\\r\\nend\\n' if os.path.exists(sys.argv[1]) else b'NOT SEEN\\n'); sys.stdout.flush()\n", encoding="utf-8")
     pieces = []
 
     def see(phase, text):
