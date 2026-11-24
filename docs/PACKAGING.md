@@ -8,7 +8,8 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | 단계 | 상태 |
 |---|---|
 | 0. 기반 정리 | **끝남 (2026-11-24)** — `core/paths.py`, `core/pythons.py`, `pyproject.toml`, `tribunal` 명령. uv로 설치한 설치본(Python 3.9)이 저장소 없이 콘솔을 켜고 작업 하나를 끝까지 통과 |
-| 1~5 | 아직 |
+| 1. 세 운영체제 자동 시험 | 설정 준비됨(`.github/workflows/tests.yml`: macOS · Windows · Linux의 Python 3.13, Linux의 3.9, 패키지 설치 확인). GitHub에 올리면 처음 돎 |
+| 2~5 | 아직 |
 
 ## 1. 정한 것 (2026-11-24)
 
