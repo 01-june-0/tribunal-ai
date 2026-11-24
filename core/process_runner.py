@@ -289,9 +289,17 @@ class ProcessTreeRunner:
                 raw = pipe.buffer
                 decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")(errors="replace"), translate=True)
                 pending = ""                        # the line still being written: shown to the observer, not yet collected
+                held_cr = False                     # a piece ended in the \r of a \r\n (Windows): the decoder keeps it
                 while True:
                     data = raw.read1(8192)
                     text = decoder.decode(data, final=not data)
+                    # What the observer sees: that held line end is shown at once and not again when it arrives, so
+                    # the other stream's output can never be glued onto this line (seen on Windows). The collected
+                    # result below is untouched.
+                    shown = text[1:] if held_cr and text.startswith("\n") else text
+                    held_cr = bool(data) and data.endswith(b"\r")
+                    if held_cr:
+                        shown += "\n"
                     if text:
                         cut = text.rfind("\n") + 1
                         if cut:
@@ -300,11 +308,11 @@ class ProcessTreeRunner:
                             last_output_time[0] = time.time()      # as the line reader: a finished line counts as output
                         else:
                             pending += text
-                        if on_text:
-                            try:
-                                on_text(text)
-                            except Exception:
-                                on_text = None      # an observer must never disturb the run
+                    if shown and on_text:
+                        try:
+                            on_text(shown)
+                        except Exception:
+                            on_text = None          # an observer must never disturb the run
                     if not data:
                         if pending:
                             chunk_list.append(pending)

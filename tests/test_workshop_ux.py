@@ -64,7 +64,7 @@ def test_the_browser_labels_each_notice_the_way_the_server_does(page, tmp_path):
         "console.log(JSON.stringify(lines.map(function(l){for(var i=0;i<EVENT_LABELS.length;i++){if(EVENT_LABELS[i][0].test(l))return EVENT_LABELS[i][1];}return null;})));"
     path = tmp_path / "rules.js"
     path.write_text(script, encoding="utf-8")
-    got = json.loads(subprocess.run([node, str(path)], capture_output=True, text=True, check=True, timeout=30).stdout)
+    got = json.loads(subprocess.run([node, str(path)], capture_output=True, text=True, encoding="utf-8", check=True, timeout=30).stdout)
     want = [next((lab for pat, lab, cls in ds.EVENT_LABELS if re.search(pat, line)), None) for line in lines]
     assert got == want
     assert got[3] == got[4] == "ERROR" and "ERROR" not in (got[0], got[1], got[2], got[5])

@@ -33,6 +33,7 @@ dependencies = [
   "psutil>=5.9",
   "pytest>=8.0",
   "requests>=2.31",
+  "tzdata>=2024.1",          # Windows (and minimal Linux) ship no time-zone database; Claude reports limits in local zones
 ]
 
 [project.urls]

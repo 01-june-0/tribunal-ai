@@ -9,6 +9,8 @@ import pytest
 
 from core import run_preview as rp
 
+PY = rp._python(Path('.no-venv-here'))          # what a bare Python is called here: python3, or python on Windows
+
 
 def test_the_maker_run_field_is_kept_only_when_safe():
     ok = rp.clean_spec({"command": "npm run dev", "kind": "web", "url": "http://localhost:5173/", "open": ""})
@@ -40,11 +42,14 @@ def test_guessing_from_the_files(tmp_path):
     assert rp.guess(page) == {"command": "", "kind": "web", "url": "", "open": "public/index.html"}
     gui = _write(tmp_path / "gui", {"src/mines.py": "import tkinter\nif __name__ == '__main__':\n    pass\n",
                                     "src/util.py": "x = 1\n", "tests/test_mines.py": "if __name__ == '__main__': pass\n"})
-    assert rp.guess(gui) == {"command": "python3 -m src.mines", "kind": "gui", "url": "", "open": ""}
+    assert rp.guess(gui) == {"command": f"{PY} -m src.mines", "kind": "gui", "url": "", "open": ""}
     cli = _write(tmp_path / "cli", {"main.py": "def main(): pass\nif __name__ == \"__main__\":\n    main()\n"})
-    assert rp.guess(cli) == {"command": "python3 main.py", "kind": "terminal", "url": "", "open": ""}
-    (cli / ".venv" / "bin").mkdir(parents=True); (cli / ".venv" / "bin" / "python").write_text("")
-    assert rp.guess(cli)["command"] == ".venv/bin/python main.py"                  # the project's own environment
+    assert rp.guess(cli) == {"command": f"{PY} main.py", "kind": "terminal", "url": "", "open": ""}
+    import os
+    rel = (".venv", "Scripts", "python.exe") if os.name == "nt" else (".venv", "bin", "python")
+    (cli.joinpath(*rel[:-1])).mkdir(parents=True); cli.joinpath(*rel).write_text("")
+    sep = "\\" if os.name == "nt" else "/"
+    assert rp.guess(cli)["command"] == sep.join(rel) + " main.py"                  # the project's own environment
     assert rp.guess(_write(tmp_path / "lib", {"src/calc.py": "def add(a, b):\n    return a + b\n"})) is None
 
 
@@ -70,7 +75,7 @@ class _RM:
 def test_the_plan_runs_a_waiting_result_in_a_copy_and_an_applied_one_in_the_project(tmp_path):
     rm = _RM(tmp_path)
     p = rp.plan("RUN-1", rm=rm)
-    assert p["found"] and p["where"] == "copy" and p["command"] == "python3 main.py" and p["source"] == "guess"
+    assert p["found"] and p["where"] == "copy" and p["command"] == f"{PY} main.py" and p["source"] == "guess"
     _write(rm.runs / "RUN-0", {"maker.json": json.dumps({"run": {"command": "python3 main.py --big", "kind": "gui"}})})
     assert rp.plan("RUN-1", rm=rm)["command"] == "python3 main.py --big"           # an earlier step said how
     _write(rm.runs / "RUN-1", {"maker.json": json.dumps({"run": None})})
@@ -88,7 +93,7 @@ def test_a_static_page_is_served_on_a_free_local_port(tmp_path):
     rm = _RM(tmp_path)
     (rm.wt / "main.py").unlink(); _write(rm.wt, {"index.html": "<p>hi</p>"})
     p = rp.plan("RUN-1", rm=rm)
-    assert p["command"] == "python3 -m http.server --bind 127.0.0.1 <port>" and p["open"] == "index.html"
+    assert p["command"] == f"{PY} -m http.server --bind 127.0.0.1 <port>" and p["open"] == "index.html"
     seen = []
     out = rp.start("RUN-1", p["command"], launcher=lambda rid, folder, command, page: seen.append((folder, command, page)) or True, rm=rm)
     folder, command, page = seen[0]
@@ -102,15 +107,15 @@ def test_only_the_plan_that_was_shown_starts(tmp_path):
     started = []
     launcher = lambda *a: started.append(a) or True
     assert rp.start("RUN-1", "rm -rf ~", launcher=launcher, rm=rm)["status"] == "stale" and started == []
-    out = rp.start("RUN-1", "python3 main.py", launcher=launcher, rm=rm)
+    out = rp.start("RUN-1", f"{PY} main.py", launcher=launcher, rm=rm)
     assert out["status"] == "started" and out["where"] == "copy"
     copy = Path(out["folder"])
     assert copy != rm.wt and (copy / "main.py").is_file()
     (copy / "save.dat").write_text("x")                                            # what the program writes
     assert not (rm.wt / "save.dat").exists()                                        # never reaches the result
-    assert rp.start("RUN-1", "python3 main.py", launcher=lambda *a: False, rm=rm)["status"] == "manual"
+    assert rp.start("RUN-1", f"{PY} main.py", launcher=lambda *a: False, rm=rm)["status"] == "manual"
     rm.state = "DISCARDED"
-    assert rp.start("RUN-1", "python3 main.py", launcher=launcher, rm=rm)["status"] == "refused"
+    assert rp.start("RUN-1", f"{PY} main.py", launcher=launcher, rm=rm)["status"] == "refused"
 
 
 def test_the_terminal_script_runs_the_command_as_shown_and_waits(tmp_path):
@@ -119,7 +124,7 @@ def test_the_terminal_script_runs_the_command_as_shown_and_waits(tmp_path):
     assert lines[2] == f"cd '{tmp_path / 'my proj'}' || exit 1" and "npm run dev" in lines
     assert any(l.startswith("( sleep 3;") and "http://127.0.0.1:5173/" in l for l in lines) and lines[-1] == "read _"
     win = rp.windows_script(Path("C:/w/p"), "npm start", "")
-    assert 'cd /d "C:/w/p"' in win and "npm start" in win and win.rstrip().endswith("pause")
+    assert f'cd /d "{Path("C:/w/p")}"' in win and "npm start" in win and win.rstrip().endswith("pause")
 
 
 def test_the_maker_reply_carries_the_run_field():
@@ -134,9 +139,9 @@ def test_guessing_stays_away_from_scripts_docs_and_odd_names(tmp_path):
                                    "docs/index.html": "<p>docs</p>",
                                    "src/game_cli.py": "if __name__ == '__main__':\n    play()\n",
                                    "src/aaa_helper.py": "if __name__ == '__main__':\n    pass\n"})
-    assert rp.guess(proj)["command"] == "python3 -m src.game_cli"                   # an entry-point name first
+    assert rp.guess(proj)["command"] == f"{PY} -m src.game_cli"                   # an entry-point name first
     assert rp.guess(_write(tmp_path / "d", {"docs/index.html": "<p>", "scripts/x.py": "if __name__ == '__main__': pass\n"})) is None
-    assert rp.guess(_write(tmp_path / "j", {"package.json": "[]", "main.py": "if __name__ == '__main__': pass\n"}))["command"] == "python3 main.py"
+    assert rp.guess(_write(tmp_path / "j", {"package.json": "[]", "main.py": "if __name__ == '__main__': pass\n"}))["command"] == f"{PY} main.py"
     assert rp.guess(_write(tmp_path / "s", {"my app/run.py": "if __name__ == '__main__': pass\n"})) is None
     deep = _write(tmp_path / "n", {"node_modules/pkg/cli.py": "if __name__ == '__main__': pass\n",
                                    "a/b/c/main2.py": "if __name__ == '__main__': pass\n"})
@@ -159,7 +164,7 @@ def test_a_plan_that_moved_to_another_place_is_not_started(tmp_path):
 def test_the_windows_script_shows_the_command_without_running_it_twice():
     win = rp.windows_script(Path("C:/w/100% p"), "npm install && npm run dev > log.txt", "http://127.0.0.1:5173/")
     lines = win.split("\r\n")
-    assert lines[1] == 'cd /d "C:/w/100%% p"'
+    assert lines[1] == f'cd /d "{Path("C:/w/100%% p")}"'
     assert lines[2] == "echo [Tribunal AI] npm install ^&^& npm run dev ^> log.txt"       # shown, not run
     assert "npm install && npm run dev > log.txt" in lines and not any(l.startswith('start ""') for l in lines)
 
@@ -171,7 +176,7 @@ def test_a_tkinter_app_gets_a_python_that_has_tkinter(tmp_path, monkeypatch):
     monkeypatch.setattr(rp, "_has_tk", lambda python: python == "/usr/bin/python3")
     monkeypatch.setattr(rp, "_version", lambda python: tuple(rp.sys.version_info[:2]))
     monkeypatch.setattr(rp.shutil, "which", lambda name: None)
-    monkeypatch.setattr(rp.Path, "is_file", lambda self: True if str(self) == "/usr/bin/python3" else Path.exists(self) and not Path.is_dir(self))
+    monkeypatch.setattr(rp.Path, "is_file", lambda self: True if self.as_posix() == "/usr/bin/python3" else Path.exists(self) and not Path.is_dir(self))
     assert rp._with_tk("python3 app.py", app) == ("/usr/bin/python3 app.py", {"tk": "switched", "from": "python3", "to": "/usr/bin/python3"})
     assert rp._with_tk("npm start", app) == ("npm start", None)                     # not a bare python
     assert rp._with_tk(".venv/bin/python app.py", app) == (".venv/bin/python app.py", None)

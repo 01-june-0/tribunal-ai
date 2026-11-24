@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 v0.2.3.8 DASHBOARD UX HOTFIX — no full-page reload, read-only JSON polling, append-only chat,
 idempotent single-in-flight ARCHITECT chat submission.
@@ -188,7 +189,7 @@ def test_f_legacy_form_post_and_project_json(server, env, monkeypatch):
     monkeypatch.setattr(dashboard_server, "handle_chat_message", SlowArchitect(env, delay=0.0))
     code, _ = _post(server, "/chat", {"message": "legacy"}, json_mode=False)
     assert code == 200                                                  # urllib followed the 303 to '/'
-    code, j = _post(server, "/project", {"path": "C:/definitely/not/a/git/repo"})
+    code, j = _post(server, "/project", {"path": str(Path.home())})          # refused everywhere (C:/… is a real folder on Windows)
     assert code == 200 and j["status"] == "rejected" and "PROJECT_SELECTION_REJECTED" in j["message"]
     code, j = _post(server, "/chat", {"message": ""})
     assert code == 200 and j["status"] == "empty"

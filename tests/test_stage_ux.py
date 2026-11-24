@@ -97,7 +97,7 @@ let calls=0,release;const run=guarded(()=>{calls++;return new Promise(r=>{releas
   release();await a;console.log('ok '+calls);})();"""
     path = tmp_path / "guard.js"
     path.write_text(script, encoding="utf-8")
-    assert subprocess.run([node, str(path)], capture_output=True, text=True, check=True, timeout=30).stdout.strip() == "ok 2"
+    assert subprocess.run([node, str(path)], capture_output=True, text=True, encoding="utf-8", check=True, timeout=30).stdout.strip() == "ok 2"
 
 
 # ---------------------------------------------------------------- approval, "why it stopped" and the changes, on the stage
@@ -133,7 +133,7 @@ def _node(tmp_path, script):
         pytest.skip("node is not installed")
     path = tmp_path / "case.js"
     path.write_text(script, encoding="utf-8")
-    return subprocess.run([node, str(path)], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+    return subprocess.run([node, str(path)], capture_output=True, text=True, encoding="utf-8", check=True, timeout=30).stdout.strip()
 
 
 def test_which_block_the_card_shows_for_each_server_state(tmp_path):

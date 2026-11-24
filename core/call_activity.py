@@ -47,14 +47,26 @@ def _real(path: Optional[str]) -> str:
         return path or ""
 
 
+_FOLD = re.IGNORECASE if os.name == "nt" else 0       # Windows paths ignore case
+
+
+def _under(text: str, base: str) -> Optional[str]:
+    """What follows `base` in `text` when text is that folder or inside it, else None. Either separator counts: the
+    CLIs write `/` also on Windows, where the folder itself is reported with `\\`."""
+    b = base.rstrip("/\\")
+    m = re.match(re.escape(b) + r"(?:[/\\]|$)", text, _FOLD)
+    return text[m.end():] if b and m else None
+
+
 def _rel(path: Any, cwd: Optional[str]) -> str:
     """A path as the reader wants it: relative to the call's folder, else with the home folder as ~."""
     text = str(path or "")
     if text.startswith("file://"):
         text = text[7:]
     for base, prefix in ((_real(cwd), ""), (cwd or "", ""), (str(Path.home()), "~/")):
-        if base and (text == base or text.startswith(base.rstrip("/\\") + os.sep)):
-            rest = text[len(base):].lstrip("/\\")
+        rest = _under(text, base) if base else None
+        if rest is not None:
+            rest = rest.lstrip("/\\")
             return (prefix + rest) if rest else "."
     return text
 
@@ -64,8 +76,10 @@ def _tidy(text: Any, cwd: Optional[str]) -> str:
     text = str(text or "")
     for base in {_real(cwd), cwd or ""}:
         if base:
-            text = text.replace(base.rstrip("/\\") + os.sep, "").replace(base, ".")
-    return _short(text.replace(str(Path.home()) + os.sep, "~/"))
+            b = re.escape(base.rstrip("/\\"))
+            text = re.sub(b + r"[/\\]", "", text, flags=_FOLD)
+            text = re.sub(b, ".", text, flags=_FOLD)
+    return _short(re.sub(re.escape(str(Path.home())) + r"[/\\]", "~/", text, flags=_FOLD))
 
 
 def _event(at: Optional[str], kind: str, name: str = "", detail: str = "", error: bool = False) -> Dict[str, Any]:

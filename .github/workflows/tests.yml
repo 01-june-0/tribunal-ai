@@ -26,7 +26,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.13"]
         include:
-          - os: ubuntu-latest      # the oldest supported Python (pyproject: requires-python >= 3.9)
+          - os: ubuntu-22.04       # the oldest supported Python (pyproject: requires-python >= 3.9); newer images no longer carry 3.9
             python: "3.9"
     steps:
       - uses: actions/checkout@v4

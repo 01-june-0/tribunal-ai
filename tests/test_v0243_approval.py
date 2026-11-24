@@ -251,7 +251,7 @@ def test_i_dashboard_script_parses():
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
             f.write(src); path = f.name
         try:
-            r = subprocess.run([node, "--check", path], capture_output=True, text=True, timeout=30)
+            r = subprocess.run([node, "--check", path], capture_output=True, text=True, encoding="utf-8", timeout=30)
             assert r.returncode == 0, r.stderr
         finally:
             os.unlink(path)

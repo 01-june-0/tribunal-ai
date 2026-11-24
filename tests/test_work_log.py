@@ -329,3 +329,22 @@ def test_the_record_says_which_untracked_files_reached_the_worktree(run):
     end = next(r for r in work_log.rows() if r.get("event") == "end" and r["run_id"] == run.id)
     assert work_log.detail(end["key"])["snapshot"]["included_count"] == 2
     assert "function snapshotFacts(sn){" in JS and "if(d.snapshot)out.push(snapshotFacts(d.snapshot));" in JS
+
+
+def test_a_windows_line_end_split_across_two_pieces_never_glues_lines_together(tmp_path):
+    """Found on Windows: a piece ended in the \\r of \\r\\n, the decoder held it back, the other stream's line came first
+    and the observer saw "twothree". The collected result was always right; now the live view is too."""
+    import sys
+    from core.verifier import Verifier
+    seen = []
+    script = tmp_path / "t.py"
+    script.write_text(
+        "import sys, time\n"
+        "sys.stderr.buffer.write(b'two\\r'); sys.stderr.flush(); time.sleep(0.4)\n"
+        "sys.stdout.buffer.write(b'three\\n'); sys.stdout.flush(); time.sleep(0.4)\n"
+        "sys.stderr.buffer.write(b'\\n'); sys.stderr.flush()\n", encoding="utf-8")
+    out = Verifier.verify(worktree_path=str(tmp_path), test_cmd=[sys.executable, str(script)], git_checks=False,
+                          on_line=lambda phase, text: seen.append(text))
+    shown = "".join(seen)
+    assert out["passed"] and "twothree" not in shown and sorted(shown.split()) == ["three", "two"]
+    assert shown.count("\n") == 2                                       # the held line end is shown once, not twice

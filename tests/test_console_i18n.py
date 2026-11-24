@@ -94,7 +94,7 @@ const en=load('en'),ko=load('ko');
 console.log(JSON.stringify([en.lang,en.t('보내기'),en.t('도구 {0}회',3),en.t('없는 문구 {0}',1),ko.lang,ko.t('보내기'),ko.t('도구 {0}회',3),
   en.t('{0}단계 중 {1}단계 통과 · 최대 {2}단계',3,2,6),en.t('약 {0} 남음 (추정)','$&')]));
 """
-    out = subprocess.run(["node", "-e", script, str(CONSOLE / "i18n.js")], capture_output=True, text=True, timeout=30)
+    out = subprocess.run(["node", "-e", script, str(CONSOLE / "i18n.js")], capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout) == ["en", "Send", "3 tool calls", "없는 문구 1", "ko", "보내기", "도구 3회",
                                       "2 of 3 steps passed · up to 6 steps", "about $& left (estimate)"]

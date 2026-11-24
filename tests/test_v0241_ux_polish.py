@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 v0.2.4.1 DASHBOARD UX POLISH PASS 2 — New Chat (history preserved), UTF-8 end-to-end, mode hint,
 recovery summary, compact SYSTEM events, provider cards without clipping.
@@ -46,7 +47,7 @@ def test_new_chat_keeps_history_and_project(server, env, monkeypatch):
     assert _get_json(server, "/status")[1]["project_path"] == "C:/proj/x"
     monkeypatch.setattr(dashboard_server, "handle_chat_message", SlowArchitect(env, delay=0.0))
     # SlowArchitect writes to GLOBAL_SESSION_ID directly; the real handler resolves active_session_id() -> check via set_project path
-    dashboard_server.set_project("C:/definitely/not/a/repo")
+    dashboard_server.set_project(str(Path.home()))                # refused everywhere (C:/… is a real folder on Windows)
     msgs = env.get_messages(new_id)
     assert any("PROJECT_SELECTION_REJECTED" in m["content"] for m in msgs)
     assert env.get_messages(GLOBAL_SESSION_ID) == before                       # old session never written again

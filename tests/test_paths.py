@@ -24,8 +24,12 @@ def test_an_installed_copy_uses_the_platforms_data_folder(monkeypatch, tmp_path)
     monkeypatch.setattr(paths.Path, "home", staticmethod(lambda: tmp_path / "me"))
     monkeypatch.setattr(paths.sys, "platform", "darwin")
     assert paths.home() == tmp_path / "me" / "Library" / "Application Support" / "Tribunal AI"
+    if paths.os.name == "nt":                      # faking os.name breaks pathlib, so each platform checks its own rule
+        monkeypatch.setattr(paths.sys, "platform", "win32")
+        monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+        assert paths.home() == tmp_path / "roaming" / "Tribunal AI"
+        return
     monkeypatch.setattr(paths.sys, "platform", "linux")
-    monkeypatch.setattr(paths.os, "name", "posix")
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     assert paths.home() == tmp_path / "me" / ".local" / "share" / "tribunal-ai"
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))

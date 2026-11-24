@@ -279,3 +279,13 @@ def test_quiet_seconds_only_for_a_running_call(tmp_path, monkeypatch):
     assert 88 <= ca.activity(rid)["quiet_sec"] <= 95
     usage.call_finished(rid, ["claude"], "prompt", _Result(1))
     assert ca.activity(rid)["quiet_sec"] is None
+
+
+def test_paths_are_shortened_with_either_separator():
+    """Found on Windows: the CLIs write `/` while the folder is reported with `\\`, so nothing was shortened and the
+    reader saw the whole temp path."""
+    from core import call_activity as ca
+    assert ca._rel("C:\\work\\proj/src/a.py", "C:\\work\\proj") == "src/a.py"
+    assert ca._rel("C:\\work\\proj\\src\\a.py", "C:\\work\\proj") == "src\\a.py"
+    assert ca._rel("C:\\work\\project-other/a.py", "C:\\work\\proj") == "C:\\work\\project-other/a.py"   # not a prefix match
+    assert ca._tidy("cat C:\\work\\proj/a.py && ls C:\\work\\proj", "C:\\work\\proj") == "cat a.py && ls ."

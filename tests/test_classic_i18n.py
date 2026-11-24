@@ -29,7 +29,7 @@ def translate(texts):
         pytest.skip("node is not installed")
     script = ("global.window={};require(process.argv[1]);const tr=window.I18N_CLASSIC.tr;"
               "console.log(JSON.stringify(JSON.parse(require('fs').readFileSync(0,'utf8')).map(t=>tr(t))))")
-    out = subprocess.run(["node", "-e", script, str(CONSOLE / "i18n_classic.js")], input=json.dumps(texts), capture_output=True, text=True, timeout=30)
+    out = subprocess.run(["node", "-e", script, str(CONSOLE / "i18n_classic.js")], input=json.dumps(texts), capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
 

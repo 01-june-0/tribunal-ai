@@ -75,8 +75,8 @@ def reported_tokens(provider: str, stdout: str, stderr: str) -> Optional[Dict[st
 
 def _conn() -> sqlite3.Connection:
     from core.db_path import get_db_path
-    conn = sqlite3.connect(str(get_db_path()), timeout=10)
-    conn.row_factory = sqlite3.Row
+    from core.db_path import connect
+    conn = connect(get_db_path(), timeout=10)        # closed at the end of its `with` block (core/db_path.py)
     from core.role_names import migrate_db
     migrate_db(conn)                                 # role names written before the rename
     conn.execute("""CREATE TABLE IF NOT EXISTS ai_usage (

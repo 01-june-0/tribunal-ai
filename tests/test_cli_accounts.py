@@ -1,5 +1,6 @@
 """Accounts in the AI settings panel: who is signed in, and the CLI's own sign-in / switch / sign-out."""
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -145,7 +146,7 @@ def test_a_script_is_never_written_through_a_link(tmp_path, monkeypatch):
     monkeypatch.setattr("core.db_path.get_db_path", lambda: str(tmp_path / "data" / "director.db"))
     (tmp_path / "data").mkdir()
     path = acc._write_script("claude-login.command", "#!/bin/sh\n")
-    assert path.read_text() == "#!/bin/sh\n" and (path.stat().st_mode & 0o777) == 0o700
+    assert path.read_text() == "#!/bin/sh\n" and (os.name == "nt" or (path.stat().st_mode & 0o777) == 0o700)   # Windows has no mode bits
     victim = tmp_path / "victim.txt"; victim.write_text("keep")
     path.unlink(); path.symlink_to(victim)
     acc._write_script("claude-login.command", "#!/bin/sh\necho hi\n")

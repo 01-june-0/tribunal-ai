@@ -141,9 +141,8 @@ def resolve_db_path() -> Path:
 
 
 def get_db_conn():
-    conn = sqlite3.connect(str(resolve_db_path()))
-    conn.row_factory = sqlite3.Row
-    return conn
+    from core.db_path import connect
+    return connect(resolve_db_path())
 
 
 def _ensure_schema():

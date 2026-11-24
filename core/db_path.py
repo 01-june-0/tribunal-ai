@@ -11,6 +11,7 @@ call traces. It does NOT move runs/, role settings or the bridge token, so it is
 console; scripts/demo_console.py uses it, behind a read-only server, to show invented data.
 """
 import os
+import sqlite3
 from pathlib import Path
 
 from core.paths import CODE_ROOT as SOURCE_ROOT, data_dir
@@ -27,6 +28,24 @@ def get_db_path() -> Path:
             raise ValueError(f"TRIBUNAL_DB_PATH must be an absolute path, got {override!r}")
         return Path(override)
     return DEFAULT_DB_PATH
+
+
+class ClosingConnection(sqlite3.Connection):
+    """`with connect() as conn:` commits (or rolls back) AND closes. A plain sqlite3 connection only commits there and
+    stays open until the garbage collector gets to it - harmless on macOS and Linux, but on Windows an open file
+    cannot be deleted or replaced (found by the Windows test run: WinError 32 on the database)."""
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
+def connect(path, **kw) -> sqlite3.Connection:
+    """Every connection to Tribunal's database: rows by name, closed at the end of its `with` block."""
+    conn = sqlite3.connect(str(path), factory=ClosingConnection, **kw)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def get_lock_dir() -> Path:
