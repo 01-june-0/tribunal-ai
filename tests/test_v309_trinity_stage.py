@@ -87,3 +87,31 @@ def test_only_one_folder_dialog_at_a_time_and_cancel_is_an_empty_path(monkeypatc
     monkeypatch.setattr(companion_server.subprocess, "run", fake_run)
     assert companion_server.pick_folder("E:/start") == {"path": ""}
     assert seen["argv"][1].endswith("pick_folder.py") and seen["argv"][2] == "E:/start"
+
+
+def test_the_macos_folder_dialog_is_shown_by_system_events(monkeypatch):
+    """Found by hand: the console runs in the background, and macOS refused osascript's own dialog there
+    ("사용자 상호 작용이 허용되지 않습니다", -1713), so "폴더 선택…" always failed. System Events shows it instead;
+    a refused permission (-1743) is said as such."""
+    import subprocess
+    import sys as _sys
+    from pathlib import Path as _P
+    src = (_P(__file__).resolve().parents[1] / "scripts" / "pick_folder.py").read_text(encoding="utf-8")
+    assert '"  tell application \\"System Events\\"",' in src and '"    activate",' in src
+    import scripts.pick_folder as pf
+    monkeypatch.setattr(pf.sys, "platform", "darwin")
+    seen = []
+    def fake(argv, capture_output):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 1, b"", b"execution error: Not authorized (-1743)")
+    monkeypatch.setattr(subprocess, "run", fake)
+    try:
+        pf.pick_macos("")
+        raise AssertionError("expected exit 3")
+    except SystemExit as stop:
+        assert stop.code == 3
+    monkeypatch.setattr(subprocess, "run", lambda argv, capture_output: subprocess.CompletedProcess(argv, 1, b"", b"User canceled. (-128)"))
+    assert pf.pick_macos("") == ""
+    import companion_server
+    monkeypatch.setattr(companion_server.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 3, b"", b""))
+    assert "자동화" in companion_server.pick_folder("")["error"]

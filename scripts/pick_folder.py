@@ -12,14 +12,22 @@ def pick_macos(initial: str):
     it). Returns the chosen path, '' when cancelled, or None when the dialog could not be shown."""
     import os
     import subprocess
+    # The console runs in the background, where macOS refuses a dialog of osascript's own ("user interaction is not
+    # allowed", -1713). System Events shows it instead, in front of the other windows. The first time, macOS may ask
+    # to let this program control System Events.
     script = [
         "on run argv",
         "  set startDir to item 1 of argv",
         "  set dialogTitle to item 2 of argv",
-        "  if startDir is \"\" then",
-        "    return POSIX path of (choose folder with prompt dialogTitle)",
-        "  end if",
-        "  return POSIX path of (choose folder with prompt dialogTitle default location (POSIX file startDir))",
+        "  tell application \"System Events\"",
+        "    activate",
+        "    if startDir is \"\" then",
+        "      set chosen to choose folder with prompt dialogTitle",
+        "    else",
+        "      set chosen to choose folder with prompt dialogTitle default location (POSIX file startDir)",
+        "    end if",
+        "  end tell",
+        "  return POSIX path of chosen",
         "end run",
     ]
     argv = ["osascript"]
@@ -31,6 +39,9 @@ def pick_macos(initial: str):
     except OSError:
         return None
     if out.returncode != 0:
+        if b"-1743" in out.stderr:                           # not allowed to control System Events
+            sys.stderr.write("automation not allowed\n")
+            sys.exit(3)
         return "" if b"-128" in out.stderr else None          # -128 = the user pressed Cancel
     chosen = out.stdout.decode("utf-8", "replace").strip()
     return chosen.rstrip("/") or "/"
