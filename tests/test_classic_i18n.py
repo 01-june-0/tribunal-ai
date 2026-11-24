@@ -38,7 +38,7 @@ def test_every_korean_text_of_the_tables_has_its_english():
     words = exact()
     wanted = []
     for table in (K.UI_TEXT, K.STATUS_TEXT, K.STATE_TEXT, K.RESULT_TEXT, K.ROLE_TEXT, K.SPEAKER_TEXT, K.STAGE_TEXT, K.HELP_TEXT, K.NEXT_STEP,
-                  K.REASON_RECOMMENDATION):
+                  K.REASON_RECOMMENDATION, K.PROJECT_REJECT_TEXT, dict(enumerate(K.PROJECT_LINE_TEXT))):
         wanted += list(table.values())
     for title, why in K.REASON_TEXT.values():
         wanted += [title, why]
@@ -148,3 +148,16 @@ def test_the_ask_again_draft_comes_out_in_english():
     assert "src/app.py" in out[1]                                                 # the file name survives
     js = (CONSOLE / "console.js").read_text(encoding="utf-8")
     assert "'data-prompt'" in js[js.index("function english("):js.index("function setup(")]
+
+
+def test_the_project_picker_line_says_it_in_words_not_codes():
+    """The line under the project picker showed the raw `PROJECT_SELECTED: …` / `PROJECT_SELECTION_REJECTED: …`."""
+    assert K.project_text("PROJECT_SELECTED: /Users/me/proj") == "선택됨 · /Users/me/proj"
+    assert K.project_text("PROJECT_SELECTION_REJECTED: not a git repository: /tmp/x") == "선택할 수 없습니다 · git 저장소가 아닙니다"
+    assert (K.project_text("PROJECT_SELECTION_REJECTED: 프로젝트 루트로 사용할 수 없는 광범위/제어 경로입니다")
+            == "선택할 수 없습니다 · 프로젝트 루트로 사용할 수 없는 광범위/제어 경로입니다")
+    assert translate(["선택됨 · /Users/me/proj", "선택할 수 없습니다 · 프로젝트 루트로 사용할 수 없는 광범위/제어 경로입니다"]) == [
+        "Selected · /Users/me/proj", "Cannot be chosen · This folder is too broad or controls the system, so it cannot be a project root"]
+    server = (ROOT / "dashboard_server.py").read_text(encoding="utf-8")
+    assert '"text": I18N.project_text(message)' in server and "setText('project-result', j.text || j.message || '')" in server
+    assert "message:res.text||res.message||''" in (CONSOLE / "console.js").read_text(encoding="utf-8")

@@ -97,7 +97,7 @@ async function chooseProjectFolder(){
  if(picked.error)throw Error(picked.error);
  if(!picked.path)return null;
  const res=await fetch('/project',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8','Accept':'application/json'},body:new URLSearchParams({path:picked.path}).toString()}).then(r=>r.json());
- return {path:picked.path,ok:res.status==='ok',message:res.message||''};
+ return {path:picked.path,ok:res.status==='ok',message:res.text||res.message||''};       // text: the line in words, no internal code
 }
 function setupFolderPicker(){
  const old=doc.getElementById('project-change'),form=doc.getElementById('project-form');if(!old||!form)return;
@@ -106,7 +106,7 @@ function setupFolderPicker(){
  button.after(' ',manual);
  const note=doc.getElementById('project-result');
  button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const label=button.textContent;button.textContent=T('폴더 선택 창 열림…');
-  try{const r=await chooseProjectFolder();if(r){form.style.display='';if(note)note.textContent=r.ok?T('선택됨 · ')+r.path:r.message;if(r.ok){form.style.display='none';doc.getElementById('project-name').textContent=r.path.split(/[\/]/).filter(Boolean).pop();doc.getElementById('project-path').textContent=r.path;}}}
+  try{const r=await chooseProjectFolder();if(r){form.style.display='';if(note)note.textContent=r.message;if(r.ok){form.style.display='none';doc.getElementById('project-name').textContent=r.path.split(/[\/]/).filter(Boolean).pop();doc.getElementById('project-path').textContent=r.path;}}}
   catch(e){form.style.display='';if(note)note.textContent=T('폴더 선택 창을 열지 못했습니다. 경로를 직접 입력해 주세요. (')+e.message+')';}
   finally{button.disabled=false;button.textContent=label;refresh();}};
 }

@@ -195,6 +195,30 @@ _RETRY_TEMPLATES: Dict[str, str] = {   # code -> Korean draft message pre-filled
 }
 
 
+PROJECT_REJECT_TEXT: Dict[str, str] = {   # why a folder cannot be the project (validate_project_path, core/bootstrap.py)
+    "empty path": "경로가 비어 있습니다",
+    "unresolvable path": "경로를 읽을 수 없습니다",
+    "not a directory": "폴더가 아닙니다",
+    "not a git repository": "git 저장소가 아닙니다",
+    "the TRIBUNAL AI repository itself": "Tribunal AI 자체 폴더는 고를 수 없습니다",
+}
+PROJECT_LINE_TEXT = ("선택됨", "선택할 수 없습니다")   # the two heads of that line ("<head> · <path or reason>")
+
+
+def project_text(message: str) -> str:
+    """The line shown under the project picker: 'PROJECT_SELECTED: /path' -> '선택됨 · /path', a rejection -> its reason in
+    Korean. The raw codes stay in the chat record (event_ko turns those into their own line)."""
+    raw = str(message or "")
+    if raw.startswith("PROJECT_SELECTED:"):
+        return PROJECT_LINE_TEXT[0] + " · " + raw.split(":", 1)[1].strip()
+    why = raw.split(":", 1)[1].strip() if raw.startswith("PROJECT_SELECTION_REJECTED:") else raw
+    for start, text in PROJECT_REJECT_TEXT.items():
+        if why.startswith(start):
+            why = text
+            break
+    return PROJECT_LINE_TEXT[1] + " · " + why          # core/bootstrap.py already says its reasons in Korean
+
+
 def reason_recommendation(code: str) -> str:
     from core.role_names import canon_codes
     return REASON_RECOMMENDATION.get(canon_codes(str(code or "").upper()), _DEFAULT_RECOMMENDATION)

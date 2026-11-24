@@ -359,7 +359,16 @@ const EXACT={
  "ARCHITECT 대리 처리:": "Handled by the ARCHITECT for you:",
  "정지할 실행 중 작업이 없습니다. (대기 상태)": "No task is running, so there is nothing to stop. (idle)",
  "5시간": "5h",
- "주간": "week"
+ "주간": "week",
+ "경로가 비어 있습니다": "The path is empty",
+ "경로를 읽을 수 없습니다": "The path cannot be read",
+ "폴더가 아닙니다": "Not a folder",
+ "git 저장소가 아닙니다": "Not a git repository",
+ "Tribunal AI 자체 폴더는 고를 수 없습니다": "Tribunal AI's own folder cannot be chosen",
+ "선택됨": "Selected",
+ "선택할 수 없습니다": "Cannot be chosen",
+ "프로젝트 경로가 필요합니다": "A project path is needed",
+ "프로젝트 루트로 사용할 수 없는 광범위/제어 경로입니다": "This folder is too broad or controls the system, so it cannot be a project root"
 };
 const RULES=[["^(.+?)가 요청을 분석하고 있습니다$", "$1 is analysing the request"], ["^(.+?)가 코드를 작성하고 있습니다$", "$1 is writing the code"], ["^(.+?)가 변경 내용을 검토하고 있습니다$", "$1 is reviewing the changes"], ["^(.+?)가 최종 판단을 내리고 있습니다$", "$1 is making the final decision"], ["^(\\d+(?:\\.\\d+)?)초$", "$1s"], ["^(.+)은\\(는\\) 수정하지 말고, (.+) 부분을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘\\.$", "Do not change {1}, and plan the request again without the part that caused this: {2}."], ["^수정하지 말고, (.+) 부분을 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘\\.$", "Plan the request again without the part that caused this: {1}."], ["^(.+)은\\(는\\) 수정하지 말고, (.+)[을를] 작업 범위에서 제외한 뒤 기존 요청을 다시 계획해줘\\.$", "Do not change {1}; leave {2} out of the scope and plan the request again."], ["^(.+?) \\((.+)\\) 문제를 해결해서 기존 요청을 다시 계획해줘\\.$", "Plan the request again, solving this problem: {1} ($2)."], ["^(.+?) 문제를 해결해서 기존 요청을 다시 계획해줘\\.$", "Plan the request again, solving this problem: {1}."], ["^결과물 (\\d+)건$", "Results ($1)"], ["^승인 대기 (\\d+)건$", "Awaiting approval ($1)"], ["^적용 대기 결과물 (\\d+)건$", "$1 result(s) waiting to be applied"], ["^나머지 (\\d+)건 보기$", "Show the other $1"], ["^(\\d+)건$", "$1"], ["^다음 단계: (.+)$", "Next step: {1}"], ["^(.+) 복구 중$", "$1 recovering"], ["^5시간 (.+)$", "5h $1"], ["^주간 (.+)$", "week $1"], ["^요금제 (.+)$", "plan $1"], ["^변경 파일 (\\d+)개$", "$1 changed file(s)"], ["^(.+) 변경 승인 필요$", "$1: the change needs approval"], ["^(.+) 승인 필요$", "{1}: approval needed"], ["^※ 아직 적용하지 않은 이전 결과물 (\\d+)건의 변경도 함께 적용됩니다$", "※ the changes of $1 earlier result(s) not applied yet are applied with it"], ["^\\(상세 코드: (.+)\\)$", "(detail code: $1)"], ["^(.+) \\(읽기 전용\\)$", "{1} (read-only)"], ["^승인: (.+)$", "Approve: {1}"], ["^거절: (.+)$", "Reject: {1}"], ["^적용: (.+)$", "Apply: {1}"], ["^폐기: (.+)$", "Discard: {1}"], ["^프로젝트: (.+)$", "Project: $1"], ["^작업: (.+)$", "Task: $1"], ["^이 작업의 변경 파일: (\\d+)개$", "Files changed by this run: $1"], ["^새 대화를 시작하지 못했습니다 · (.*)$", "Could not start a new chat · $1"], ["^새 대화 요청 실패 · (.*)$", "The new-chat request failed · $1"], ["^(.+?)\\s+(\\d+)개\\s+\\(추가 (\\d+) / 수정 (\\d+) / 삭제 (\\d+)\\)$", "{1} $2 (added $3 / modified $4 / deleted $5)"]].map(([p,r])=>[new RegExp(p),r]);
 const WHOLE=[["^([A-Z]+(?: · [A-Z]+)*) \\((.+)\\)$", "$1 ({2})"]].map(([p,r])=>[new RegExp(p),r]);

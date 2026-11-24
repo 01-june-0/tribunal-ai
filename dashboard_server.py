@@ -2159,7 +2159,7 @@ DASHBOARD_JS = r"""
     fetch('/project', { method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
       body: new URLSearchParams({ path: path }).toString() })
-    .then(function (r) { return r.json(); }).then(function (j) { setText('project-result', j.message || ''); if (j.status === 'ok') { pform.style.display = 'none'; pin.value = ''; } })
+    .then(function (r) { return r.json(); }).then(function (j) { setText('project-result', j.text || j.message || ''); if (j.status === 'ok') { pform.style.display = 'none'; pin.value = ''; } })
     .catch(function (e) { setText('project-result', 'Failed: ' + e); })
     .then(function () { pbtn.disabled = false; pollStatus(); pollMessages(); });
   });
@@ -3043,7 +3043,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             path = params.get('path', [''])[0]
             message = set_project(path) if path else "PROJECT_SELECTION_REJECTED: empty path"
             if wants_json:
-                self._send_json({"status": "ok" if message.startswith("PROJECT_SELECTED") else "rejected", "message": message})
+                self._send_json({"status": "ok" if message.startswith("PROJECT_SELECTED") else "rejected", "message": message,
+                                 "text": I18N.project_text(message)})
             else:
                 self._redirect_home()
         elif self.path == '/run/approve':

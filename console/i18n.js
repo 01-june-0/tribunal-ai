@@ -673,7 +673,6 @@ const EN={
   "폴더 선택…": "Choose folder…",
   "경로 직접 입력": "Type a path",
   "폴더 선택 창 열림…": "Folder dialog open…",
-  "선택됨 · ": "Selected · ",
   "폴더 선택 창을 열지 못했습니다. 경로를 직접 입력해 주세요. (": "Could not open the folder dialog. Type the path instead. (",
   "<div><strong></strong><p class=\"veil-detail\"></p><p>다시 켜려면 <code>start-companion.sh</code>(맥·리눅스) 또는 <code>start-companion.ps1</code>(윈도우)을 실행하세요.</p></div>": "<div><strong></strong><p class=\"veil-detail\"></p><p>To turn it back on, run <code>start-companion.sh</code> (macOS / Linux) or <code>start-companion.ps1</code> (Windows).</p></div>",
   "Tribunal AI가 꺼져 있습니다": "Tribunal AI is off",
