@@ -1,0 +1,61 @@
+# Tribunal AI as an installable package (docs/PACKAGING.md, phase 0).
+#   uv tool install .          (or, once published: uv tool install tribunal-ai)
+#   tribunal                   start the console and open it in the browser
+# Running from this checkout (start-companion.sh, director.py) keeps working as before.
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tribunal-ai"
+version = "3.2.0.dev0"
+description = "Runs Claude Code, Codex and Antigravity CLIs as architect, maker and inspector, and turns a goal into tested, independently reviewed code"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "박준영 (dev.june)" }]
+keywords = ["ai", "coding-agent", "claude-code", "codex", "orchestrator"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Environment :: Web Environment",
+]
+# pytest is a runtime dependency on purpose: Tribunal runs a project's tests itself, also for a project without
+# its own environment (core/pythons.py).
+dependencies = [
+  "pyyaml>=6.0",
+  "click>=8.1",
+  "pydantic>=2.0",
+  "psutil>=5.9",
+  "pytest>=8.0",
+  "requests>=2.31",
+]
+
+[project.urls]
+Homepage = "https://github.com/01-june-0/tribunal-ai"
+Source = "https://github.com/01-june-0/tribunal-ai"
+
+[project.scripts]
+tribunal = "tribunal_cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "agents", "schemas"]
+
+# Top-level modules and the files that ship with the code (core/paths.py CODE_ROOT is where they land).
+[tool.hatch.build.targets.wheel.force-include]
+"director.py" = "director.py"
+"dashboard_server.py" = "dashboard_server.py"
+"dashboard_i18n.py" = "dashboard_i18n.py"
+"companion_server.py" = "companion_server.py"
+"tribunal_cli.py" = "tribunal_cli.py"
+"config.yaml" = "config.yaml"
+"companion.json" = "companion.json"
+"console" = "console"
+"scripts/pick_folder.py" = "scripts/pick_folder.py"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/runs", "/data/*.db", "/design", "/.venv", "/.director_worktrees"]
