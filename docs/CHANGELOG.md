@@ -211,6 +211,8 @@ Codex 로그아웃 → 로그인, 계정 변경, 작업 중 로그아웃 거절.
     tkinter가 있는 Python으로 바꾼 명령을 보여 주고, 바꾼 사실을 확인 창에 적음. 제작 AI는 Tribunal의 Python(3.13)에 맞춰
     코드를 쓰므로 그만큼 새 Python을 먼저 고르고, 더 오래된 것(예: macOS의 `/usr/bin/python3` 3.9)밖에 없으면 시작하자마자 오류가
     날 수 있다는 경고와 해결 명령(`brew install python-tk@3.13`)을 함께 보여 줌(실제로 3.9에서 `float | None` 오류로 확인).
+  - 창이 뜨는 앱도 실제 작업으로 확인함(2026-11-24): tkinter 계산기 작업에서 제작 AI가 `run`(gui, `python -m gui.calculator`)을
+    적었고, python-tk@3.13을 설치한 뒤 적용 전 결과물을 실행해 보기로 열어 계산기 창이 뜨는 것을 사용자가 확인함.
 
 ### 이름
 
