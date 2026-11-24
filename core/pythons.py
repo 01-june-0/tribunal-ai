@@ -38,21 +38,35 @@ def project_venv_python(root: Path) -> Optional[str]:
 
 
 def has_module(python: str, module: str) -> bool:
-    """Whether that interpreter can import the module (asked once per process)."""
+    """Whether that interpreter can import the module. A yes is remembered; a no is asked again next time, so a
+    module installed into the project's environment later counts without restarting the console."""
     key = (python, module)
-    if key not in _MODULE:
-        try:
-            _MODULE[key] = subprocess.run([python, "-c", f"import {module}"], capture_output=True, timeout=20,
-                                          stdin=subprocess.DEVNULL).returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
-            _MODULE[key] = False
-    return _MODULE[key]
+    if _MODULE.get(key):
+        return True
+    try:
+        found = subprocess.run([python, "-c", f"import {module}"], capture_output=True, timeout=20,
+                               stdin=subprocess.DEVNULL).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        found = False
+    if found:
+        _MODULE[key] = True
+    return found
+
+
+def original_project(path: Path) -> Path:
+    """The project a working copy belongs to. A run's working copy is always <project>/.director_worktrees/<run>, and
+    the project's virtual environment is not in it (it is not tracked by git), so every check of the run - baseline,
+    each round, the inspector's copy, the apply in the project - and the Maker's prompt look at the same project."""
+    parts = Path(path).resolve().parts
+    if ".director_worktrees" in parts:
+        return Path(*parts[:parts.index(".director_worktrees")])
+    return Path(path)
 
 
 def project_python(root: Path, needs: Optional[str] = None) -> str:
     """The Python a project's own command should run with. `needs` (e.g. "pytest"): use the project's environment
     only if it has that module, so a project venv without pytest does not turn a passing test run into a failure."""
-    own = project_venv_python(root)
+    own = project_venv_python(original_project(root))
     if own and (needs is None or has_module(own, needs)):
         return own
     return tribunal_python()

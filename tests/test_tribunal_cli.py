@@ -73,3 +73,47 @@ def test_the_package_ships_what_core_paths_expects():
     wanted = {line.split(">")[0].split("=")[0].strip().lower() for line in
               (Path(__file__).resolve().parents[1] / "requirements.txt").read_text().splitlines() if line.strip()}
     assert deps == wanted                                                     # one list of dependencies, not two
+
+
+def test_a_running_console_that_answers_slowly_is_never_started_twice(monkeypatch, tmp_path):
+    """critic: a console alive but slow to answer got a second one started over its pid file, and `stop` lost it."""
+    import os
+    import click
+    import pytest
+    monkeypatch.setenv("TRIBUNAL_HOME", str(tmp_path))
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "companion.pid").write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(tribunal_cli, "_ours", lambda pid: pid == 4242)
+    monkeypatch.setattr(tribunal_cli, "_url", lambda: None)
+    started = []
+    monkeypatch.setattr(tribunal_cli.subprocess, "Popen", lambda *a, **k: started.append(a))
+    with pytest.raises(click.ClickException):
+        tribunal_cli.start_console(wait=1)
+    assert started == [] and (tmp_path / "data" / "companion.pid").read_text() == "4242"
+
+
+def test_stop_finds_the_console_through_its_port_record_too(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRIBUNAL_HOME", str(tmp_path))
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "companion.port").write_text('{"port": 1, "pid": 5151}', encoding="utf-8")   # `tribunal serve`
+    monkeypatch.setattr(tribunal_cli, "_ours", lambda pid: pid == 5151)
+    assert tribunal_cli._running_pid() == 5151
+
+
+def test_on_windows_the_console_starts_without_a_window_and_keeps_one_for_its_children(monkeypatch):
+    monkeypatch.setattr(tribunal_cli.os, "name", "nt")
+    for name, value in (("CREATE_NEW_PROCESS_GROUP", 0x200), ("CREATE_NO_WINDOW", 0x8000000), ("DETACHED_PROCESS", 0x8)):
+        monkeypatch.setattr(tribunal_cli.subprocess, name, value, raising=False)
+    flags = tribunal_cli._spawn_flags()["creationflags"]
+    assert flags & 0x8000000 and flags & 0x200 and not flags & 0x8
+
+
+def test_tribunals_records_folder_is_refused_as_a_project(monkeypatch, tmp_path):
+    import subprocess
+    import dashboard_server
+    home = tmp_path / "home"
+    (home / "data").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(home / "data")], check=True)
+    monkeypatch.setenv("TRIBUNAL_HOME", str(home))
+    ok, why = dashboard_server.validate_project_path(str(home / "data"))
+    assert ok is False

@@ -91,6 +91,14 @@ sh stop-companion.sh
 .venv/bin/python scripts/demo_console.py      # http://127.0.0.1:8190
 ```
 
+설치본으로 써 보기(개발 중인 미리보기, [uv](https://docs.astral.sh/uv/) 필요). 기록은 저장소가 아니라 사용자 데이터 폴더
+(macOS `~/Library/Application Support/Tribunal AI`, Windows `%APPDATA%\Tribunal AI`, Linux `~/.local/share/tribunal-ai`)에 쌓입니다.
+
+```bash
+uv tool install .          # 저장소 폴더에서. `tribunal` 명령이 생깁니다
+tribunal                   # 콘솔을 켜고 브라우저로 엽니다 (tribunal stop / doctor / do …)
+```
+
 명령줄에서 바로 한 번 돌리기:
 
 ```bash

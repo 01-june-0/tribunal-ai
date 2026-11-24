@@ -12,7 +12,8 @@ class Verifier:
     """Orchestrator-driven verification executing build, test, and git checks."""
 
     @staticmethod
-    def _execute_cmd(cmd_str: Optional[Union[str, List[str]]], cwd: Path, timeout: float = 120.0, on_line=None) -> Dict[str, Any]:
+    def _execute_cmd(cmd_str: Optional[Union[str, List[str]]], cwd: Path, timeout: float = 120.0, on_line=None,
+                     python_root: Optional[str] = None) -> Dict[str, Any]:
         if not cmd_str:
             return {"command": None, "executed": False, "passed": True, "output": "No command specified"}
         
@@ -51,8 +52,17 @@ class Verifier:
             # there), else Tribunal's interpreter as before (core/pythons.py)
             if argv[0] in ("python", "python3"):
                 from core.pythons import project_python
-                needs = argv[2] if len(argv) > 2 and argv[1] == "-m" else None
-                argv[0] = project_python(Path(cwd_str), needs=needs)
+                needs = None                    # `python [-B -u …] -m pytest …` or `-mpytest`: the module it runs
+                for i, tok in enumerate(argv[1:], start=1):
+                    if tok == "-m" and i + 1 < len(argv):
+                        needs = argv[i + 1]
+                        break
+                    if tok.startswith("-m") and len(tok) > 2:
+                        needs = tok[2:]
+                        break
+                    if not tok.startswith("-"):
+                        break                   # a script file: whatever follows are its own arguments
+                argv[0] = project_python(Path(python_root or cwd_str), needs=needs)
             else:
                 resolved = shutil.which(argv[0])
                 if resolved:
@@ -103,10 +113,12 @@ class Verifier:
         lint_cmd: Optional[str] = None,
         timeout: float = 120.0,
         git_checks: bool = True,
-        on_line=None
+        on_line=None,
+        python_root: Optional[str] = None
     ) -> Dict[str, Any]:
         """`on_line(phase, text)` observes the commands' output while they run (phase: build / test / lint). The text
-        comes in pieces as it arrives, not necessarily whole lines."""
+        comes in pieces as it arrives, not necessarily whole lines. `python_root`: where to look for the project's
+        Python when the commands run somewhere else (the inspector's throw-away copy)."""
         def watch(phase):
             return (lambda line: on_line(phase, line)) if on_line is not None else None
 
@@ -120,13 +132,13 @@ class Verifier:
             git_status, git_diff = "", ""
 
         # 2. Run build
-        build_res = cls._execute_cmd(build_cmd, wt, timeout=timeout, on_line=watch("build"))
+        build_res = cls._execute_cmd(build_cmd, wt, timeout=timeout, on_line=watch("build"), python_root=python_root)
 
         # 3. Run test
-        test_res = cls._execute_cmd(test_cmd, wt, timeout=timeout, on_line=watch("test"))
+        test_res = cls._execute_cmd(test_cmd, wt, timeout=timeout, on_line=watch("test"), python_root=python_root)
 
         # 4. Run lint
-        lint_res = cls._execute_cmd(lint_cmd, wt, timeout=timeout, on_line=watch("lint"))
+        lint_res = cls._execute_cmd(lint_cmd, wt, timeout=timeout, on_line=watch("lint"), python_root=python_root)
 
         # Overall verification pass condition:
         # Build must pass (if executed)

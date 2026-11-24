@@ -45,12 +45,23 @@ def _ours(pid: int) -> bool:
         return False
 
 
-def _running_pid() -> Optional[int]:
+def _recorded_pids() -> list:
+    """The console's process number as recorded: data/companion.pid (written when it starts in the background) and
+    data/companion.port (written by the console itself, also when started with `tribunal serve`)."""
+    pids = []
     try:
-        pid = int(_pid_file().read_text(encoding="utf-8").strip())
+        pids.append(int(_pid_file().read_text(encoding="utf-8").strip()))
     except (OSError, ValueError):
-        return None
-    return pid if _ours(pid) else None
+        pass
+    try:
+        pids.append(int(json.loads((data_dir() / "companion.port").read_text(encoding="utf-8"))["pid"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return list(dict.fromkeys(pids))
+
+
+def _running_pid() -> Optional[int]:
+    return next((pid for pid in _recorded_pids() if _ours(pid)), None)
 
 
 def _url() -> Optional[str]:
@@ -68,50 +79,61 @@ def _url() -> Optional[str]:
     return None
 
 
+def _spawn_flags() -> dict:
+    if os.name == "nt":
+        # A new process group, no window - but not DETACHED_PROCESS: a console-less server would make every git,
+        # CLI and test run it starts open a console window of its own (CREATE_NO_WINDOW is ignored with it).
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    return {"start_new_session": True}             # outlives this command and the terminal it was typed in
+
+
 def start_console(wait: float = 30.0) -> str:
-    """Start the console in the background unless it already runs; returns its address."""
-    if _running_pid() and _url():
-        return _url() or ""
+    """Start the console in the background unless it already runs; returns its address. A console that runs but is
+    slow to answer is waited for, never started twice."""
+    running = _running_pid()
+    if running:
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            url = _url()
+            if url:
+                return url
+            time.sleep(0.5)
+        raise click.ClickException(f"콘솔이 켜져 있지만(PID {running}) 응답하지 않습니다. `tribunal stop` 뒤에 다시 시작하세요.")
     data_dir().mkdir(parents=True, exist_ok=True)
     log, err = data_dir() / "companion.log", data_dir() / "companion.err"
-    kw = {}
-    if os.name == "nt":
-        kw["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0) \
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    else:
-        kw["start_new_session"] = True              # outlives this command and the terminal it was typed in
     with open(log, "w", encoding="utf-8") as out, open(err, "a", encoding="utf-8") as errs:
         proc = subprocess.Popen([tribunal_python(), str(CODE_ROOT / "companion_server.py")], cwd=str(home()),
-                                stdout=out, stderr=errs, stdin=subprocess.DEVNULL, **kw)
-    _pid_file().write_text(str(proc.pid), encoding="utf-8")
+                                stdout=out, stderr=errs, stdin=subprocess.DEVNULL, **_spawn_flags())
     deadline = time.time() + wait
     while time.time() < deadline:
         text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
         found = READY.search(text)
         if found:
-            if "already running" in found.group(0):          # another start won: that one is the console
-                _pid_file().unlink(missing_ok=True)
+            if "already running" not in found.group(0):     # ours: record it (a lost race leaves the other's record)
+                _pid_file().write_text(str(proc.pid), encoding="utf-8")
             return found.group(1)
         if proc.poll() is not None:
             tail = (err.read_text(encoding="utf-8", errors="replace")[-600:] if err.exists() else "").strip()
-            _pid_file().unlink(missing_ok=True)
             raise click.ClickException("콘솔을 시작하지 못했습니다 / the console did not start:\n" + (tail or text[-600:]))
         time.sleep(0.3)
     raise click.ClickException(f"콘솔이 {int(wait)}초 안에 준비되지 않았습니다. 기록: {log}")
 
 
 def stop_console() -> bool:
+    import psutil
     pid = _running_pid()
     if not pid:
         _pid_file().unlink(missing_ok=True)
         return False
-    import psutil
-    proc = psutil.Process(pid)
-    proc.terminate()
     try:
-        proc.wait(timeout=10)
-    except psutil.TimeoutExpired:
-        proc.kill()
+        proc = psutil.Process(pid)
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except psutil.TimeoutExpired:
+            proc.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass                                        # ended meanwhile, or not ours to end
     for name in ("companion.pid", "companion.port"):
         (data_dir() / name).unlink(missing_ok=True)
     return True

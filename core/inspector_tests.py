@@ -219,7 +219,7 @@ def run(orch, run_id: str, review, worktree_path: Optional[str], verification: O
             (sandbox / rel).write_text(content, encoding="utf-8")
             written.append(rel)
         result = Verifier.verify(worktree_path=str(sandbox), build_cmd=None, test_cmd=test_cmd, lint_cmd=None, git_checks=False,
-                                 timeout=orch._verification_timeout())
+                                 timeout=orch._verification_timeout(), python_root=str(worktree_path or sandbox))
     finally:
         shutil.rmtree(holder, ignore_errors=True)
     test = result.get("test") or {}

@@ -88,7 +88,7 @@ class ProposalMaker(AntigravityMaker):
         """The version the project's tests and programs will run with (its own environment, else Tribunal's), so
         the Maker does not write for a newer Python than the one that runs the code."""
         from core.pythons import project_python, version_of
-        return version_of(project_python(root)) or sys.version.split()[0]
+        return version_of(project_python(root, needs="pytest")) or sys.version.split()[0]   # the one its tests run with
 
     def run(self, order, worktree_path, maker_fn=None):
         if maker_fn is not None:

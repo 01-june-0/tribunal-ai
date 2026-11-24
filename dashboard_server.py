@@ -172,9 +172,10 @@ def validate_project_path(path: str):
         return False, f"not a directory: {p}"
     if not (p / ".git").exists():
         return False, f"not a git repository: {p}"
-    root = DIRECTOR_ROOT.resolve()
-    if p == root or root in p.parents:
-        return False, "the TRIBUNAL AI repository itself cannot be selected as a chat target"
+    from core.paths import home as tribunal_home
+    for root in (DIRECTOR_ROOT.resolve(), tribunal_home().resolve()):   # its code, and where an installed copy keeps records
+        if p == root or root in p.parents:
+            return False, "the TRIBUNAL AI repository itself cannot be selected as a chat target"
     return True, str(p)
 
 

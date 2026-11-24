@@ -53,3 +53,54 @@ def test_tribunals_own_helpers_use_its_interpreter():
     for rel in ("companion_server.py", "core/role_checks.py", "agents/antigravity_maker.py"):
         src = (Path(__file__).resolve().parents[1] / rel).read_text(encoding="utf-8")
         assert "tribunal_python()" in src and "sys.executable" not in src.replace("tribunal_python", ""), rel
+
+
+def test_every_check_of_a_run_uses_the_projects_environment(tmp_path, monkeypatch):
+    """critic: the working copy has no .venv (git does not track it), so the rounds ran on Tribunal's Python and only
+    the apply on the project's - a pass could turn into a rollback. The working copy now points at its project."""
+    proj = tmp_path / "proj"
+    py = _venv(proj)
+    wt = proj / ".director_worktrees" / "RUN-1"
+    wt.mkdir(parents=True)
+    monkeypatch.setattr(pythons, "has_module", lambda python, module: True)
+    assert pythons.original_project(wt / "src") == proj.resolve()
+    assert pythons.project_python(wt, needs="pytest") == str(proj.resolve() / py.relative_to(proj))
+    copy = tmp_path / "inspector-copy"                              # the inspector's throw-away copy: told where it came from
+    copy.mkdir()
+    assert pythons.project_python(copy) == sys.executable
+    from core.verifier import Verifier
+    from core import process_runner
+    seen = []
+    monkeypatch.setattr(process_runner.ProcessTreeRunner, "run", staticmethod(lambda argv, **kw: seen.append(argv)))
+    for cmd in ("python -m pytest -q", "python -B -m pytest", "python3 -mpytest"):
+        try:
+            Verifier._execute_cmd(cmd, copy, python_root=str(wt))
+        except Exception:
+            pass
+    assert [a[0] for a in seen] == [str(proj.resolve() / py.relative_to(proj))] * 3
+    src = (Path(__file__).resolve().parents[1] / "core" / "inspector_tests.py").read_text(encoding="utf-8")
+    assert "python_root=str(worktree_path or sandbox)" in src
+
+
+def test_the_module_named_after_dash_m_is_the_one_checked(tmp_path, monkeypatch):
+    from core.verifier import Verifier
+    from core import process_runner
+    _venv(tmp_path)
+    asked = []
+    monkeypatch.setattr(pythons, "has_module", lambda python, module: asked.append(module) or False)
+    monkeypatch.setattr(process_runner.ProcessTreeRunner, "run", staticmethod(lambda argv, **kw: None))
+    for cmd in ("python -u -m pytest", "python -mpytest -q", "python run.py -m x"):
+        try:
+            Verifier._execute_cmd(cmd, tmp_path)
+        except Exception:
+            pass
+    assert asked == ["pytest", "pytest"]                            # a script's own -m is not Python's
+
+
+def test_a_missing_module_is_asked_again(monkeypatch):
+    calls = []
+    import subprocess
+    monkeypatch.setattr(pythons.subprocess, "run", lambda *a, **k: calls.append(1) or subprocess.CompletedProcess(a, 1))
+    pythons._MODULE.pop(("/x/python", "pytest"), None)
+    assert not pythons.has_module("/x/python", "pytest") and not pythons.has_module("/x/python", "pytest")
+    assert len(calls) == 2                                          # installed later: seen without a restart

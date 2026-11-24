@@ -74,7 +74,7 @@ def bridge_target_ok(path: str) -> tuple:
     except (OSError, ValueError):
         return False, '경로를 해석할 수 없습니다'
     roots = [Path(r).expanduser().resolve() for r in (cfg.get('allowed_roots') or [])]
-    denied = [Path(x).expanduser().resolve() for x in (cfg.get('denied') or [])] + [ROOT.resolve()]
+    denied = [Path(x).expanduser().resolve() for x in (cfg.get('denied') or [])] + [ROOT.resolve(), tribunal_home().resolve()]
     if not any(target == r or r in target.parents for r in roots):
         return False, '허용된 폴더 밖입니다 (config.yaml bridge.allowed_roots)'
     # Denied folders are matched without regard to case too: on a case-insensitive disk (macOS, Windows) another
