@@ -152,6 +152,7 @@ def test_acknowledgement_and_who_sees_the_helper_by_itself(home):
 
 def test_practice_folder_never_takes_over_a_folder_in_use(monkeypatch, tmp_path):
     monkeypatch.setattr(setup, "system", lambda: "mac")
+    monkeypatch.setattr(setup, "_git", lambda: setup.shutil.which("git"))      # a Linux /usr/bin/git is no Mac stub
     monkeypatch.setattr(setup.Path, "home", classmethod(lambda cls: tmp_path))
     assert setup.practice_folder("ko") == tmp_path / "Tribunal 연습"
     (tmp_path / "Tribunal 연습").mkdir(); (tmp_path / "Tribunal 연습" / "notes.txt").write_text("mine", encoding="utf-8")
