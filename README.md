@@ -88,7 +88,8 @@ powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/01-
 ```
 
 - 하는 일: uv가 없으면 설치 → Tribunal AI 설치(`tribunal` 명령) → 바로 가기(macOS 응용 프로그램 폴더의 `Tribunal AI`, Windows
-  시작 메뉴와 바탕화면, Linux 앱 메뉴) → 콘솔을 브라우저로 엽니다.
+  시작 메뉴와 바탕화면, Linux 앱 메뉴) → 콘솔을 엽니다. macOS · Windows는 창 하나로(`tribunal app`), Linux는 브라우저로 엽니다.
+  창이 켠 콘솔은 창을 닫으면 꺼지고, 작업 중이면 먼저 묻습니다.
 - 처음 열면 **시작하기 도우미**가 비용 안내, git, AI CLI 설치, 로그인, 연습 폴더에서의 첫 작업을 차례로 안내합니다. 설치 명령은
   각 회사의 공식 명령을 그대로 보여 주고 확인을 받은 뒤에만 실행합니다. 나중에는 **AI 설정 → 시작하기 도우미**로 다시 엽니다.
 - 같은 한 줄을 다시 붙여 넣으면 최신 버전으로 바뀝니다. 기록은 그대로입니다.
@@ -126,7 +127,7 @@ sh stop-companion.sh
 .venv/bin/python scripts/demo_console.py      # http://127.0.0.1:8190
 ```
 
-저장소 폴더를 설치본으로 써 보기: `uv tool install .` 뒤에 `tribunal`(콘솔 켜고 열기), `tribunal stop`, `tribunal doctor`,
+저장소 폴더를 설치본으로 써 보기: `uv tool install .` 뒤에 `tribunal`(콘솔 켜고 열기), `tribunal app`(창으로), `tribunal stop`, `tribunal doctor`,
 `tribunal shortcut`(바로 가기, `--remove`로 지움).
 
 명령줄에서 바로 한 번 돌리기:

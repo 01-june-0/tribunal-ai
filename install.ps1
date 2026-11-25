@@ -7,7 +7,7 @@
 #      uv also fetches the Python that Tribunal runs on, so no Python needs to be installed first.
 #   2. Tribunal AI itself: `uv tool install` puts tribunal.exe in %USERPROFILE%\.local\bin.
 #   3. Icons in the Start menu and on the Desktop (`tribunal shortcut`).
-#   4. Opens the console in the browser; its start-up helper guides through git, the AI CLIs and signing in.
+#   4. Opens the console (its own window on macOS and Windows, the browser on Linux); its start-up helper guides through git, the AI CLIs and signing in.
 # Running it again updates Tribunal to the newest version; records stay. Remove it again with uninstall.ps1.
 #
 # For checks only: TRIBUNAL_SOURCE (what to install instead of the GitHub archive), TRIBUNAL_NO_OPEN=1 (do not open
@@ -100,7 +100,7 @@ function Install-TribunalAI {
     if (-not $env:TRIBUNAL_NO_OPEN) {
         Write-Host ''
         Write-Host 'Opening the console...'
-        & $tribunal open
+        & $tribunal app --detach
         if ($LASTEXITCODE -ne 0) {
             Write-Host 'Could not open the console. Try `tribunal` in a new window.' -ForegroundColor Yellow
         }

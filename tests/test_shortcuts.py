@@ -66,7 +66,7 @@ def test_the_shortcut_command_is_this_environment(monkeypatch, tmp_path):
     assert shortcuts.launch_command("windows")[0] == str(exe)                      # no pythonw: the plain one
     (tmp_path / "Scripts" / "pythonw.exe").write_text("")
     assert shortcuts.launch_command("windows") == [str(tmp_path / "Scripts" / "pythonw.exe"), "-I", "-m",
-                                                   "tribunal_cli", "open", "--from-shortcut"]
+                                                   "tribunal_cli", "app", "--from-shortcut"]
     assert shortcuts.launch_command("mac")[0] == str(exe)
 
 

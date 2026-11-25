@@ -1,6 +1,7 @@
 """`tribunal` — the command an installed Tribunal AI is used with (docs/PACKAGING.md).
 
     tribunal            start the console if it is not running, and open it in the browser
+    tribunal app        the same in a window of its own (macOS, Windows); closing it turns the console off
     tribunal start      start the console in the background (prints its address)
     tribunal stop       stop it (records and working copies stay)
     tribunal serve      run the console in this window (Ctrl+C stops it)
@@ -166,6 +167,89 @@ def open_cmd(from_shortcut=False):
         shortcuts.show_error("Tribunal AI를 열지 못했습니다 / could not open Tribunal AI.\n\n"
                              f"{detail[:800]}\n\n기록 / log: {data_dir()}")
         sys.exit(1)
+
+
+def _detach_app() -> None:
+    """Start `tribunal app` on its own and return at once (the installers use it: the terminal must not wait for the
+    window). It is the icon's own command, so a failure shows a dialog too."""
+    from core import shortcuts
+    subprocess.Popen(shortcuts.launch_command(), cwd=str(Path.home()), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, **_spawn_flags())
+
+
+@cli.command()
+@click.option("--from-shortcut", is_flag=True, hidden=True)
+@click.option("--detach", is_flag=True, help="Start it and return at once")
+@click.option("--smoke", is_flag=True, hidden=True, envvar="TRIBUNAL_APP_SMOKE")      # the installer check (CI)
+def app(from_shortcut=False, detach=False, smoke=False):
+    """Open the console in its own window (macOS, Windows; Linux opens the browser). Closing the last window turns
+    the console off, if a window started it."""
+    from core import app_window, shortcuts
+    if detach:
+        if app_window.unavailable():                 # Linux: no window to wait for - open as before, the address shows
+            open_cmd.callback()
+        else:
+            _detach_app()
+        return
+    try:
+        if from_shortcut:
+            shortcuts.widen_path()
+        reason = app_window.unavailable()
+        if reason:
+            url = start_console()
+            click.echo(f"{reason}\nTribunal AI: {url}")
+            if smoke:
+                sys.exit(3)                          # the installer check: this system falls back to the browser
+            webbrowser.open(url)
+            return
+        _run_app_window(smoke)
+    except Exception as exc:
+        if not from_shortcut or smoke or isinstance(exc, SystemExit):
+            raise                                    # a check never waits on a dialog nobody will close
+        detail = exc.format_message() if isinstance(exc, click.ClickException) else f"{type(exc).__name__}: {exc}"
+        shortcuts.show_error("Tribunal AI를 열지 못했습니다 / could not open Tribunal AI.\n\n"
+                             f"{detail[:800]}\n\n기록 / log: {data_dir()}")
+        sys.exit(1)
+
+
+def _run_app_window(smoke: bool) -> None:
+    from core import app_window
+    already = _running_pid()
+    me = os.getpid()
+    if already and not app_window.other_windows(me):
+        app_window.release()                         # an owner record left by a window that ended without cleaning up
+    url = start_console()
+    if not already:
+        app_window.claim(_running_pid())             # this window started it: the last window to close turns it off
+    app_window.register(me)
+    shown = False
+    state: dict = {}
+    try:
+        state = app_window.show(url, lambda: app_window.owned(_running_pid()) and not app_window.other_windows(me),
+                                smoke=smoke)
+        shown = True
+    except Exception as exc:                         # no window after all (WebView2 missing, …): the browser instead
+        if smoke:
+            raise
+        click.echo(f"창을 열지 못해 브라우저로 엽니다 / no window, opening the browser: {type(exc).__name__}: {exc}")
+        webbrowser.open(url)
+        if not already and not app_window.other_windows(me):
+            app_window.release()                     # the browser uses it now: nobody turns it off by closing
+    finally:
+        last = not app_window.other_windows(me)
+        app_window.unregister(me)
+    if shown and last and app_window.owned(_running_pid()):
+        # Work still running (a quit that bypassed the question, or no answer when it was asked) is stopped the clean
+        # way first: turning the console off alone would leave its AI processes running.
+        if not state.get("stopped_work") and app_window.busy(url) is not False and not app_window.stop_work(url):
+            click.echo("작업을 정지하지 못해 콘솔을 켜 둡니다 / could not stop the work; the console stays on.")
+            app_window.release()
+        else:
+            stop_console()
+            app_window.release()
+    if smoke:
+        click.echo(f"smoke: {state.get('smoke')!r}")
+        sys.exit(0 if state.get("smoke") else 1)
 
 
 @cli.command()

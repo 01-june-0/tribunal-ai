@@ -8,7 +8,7 @@
 #      uv also fetches the Python that Tribunal runs on, so no Python needs to be installed first.
 #   2. Tribunal AI itself: `uv tool install` puts the `tribunal` command in ~/.local/bin.
 #   3. An icon: macOS ~/Applications/Tribunal AI.app, Linux the application menu (`tribunal shortcut`).
-#   4. Opens the console in the browser; its start-up helper guides through git, the AI CLIs and signing in.
+#   4. Opens the console (its own window on macOS and Windows, the browser on Linux); its start-up helper guides through git, the AI CLIs and signing in.
 # Running it again updates Tribunal to the newest version; records stay. Remove it again with uninstall.sh.
 #
 # For checks only: TRIBUNAL_SOURCE (what to install instead of the GitHub archive), TRIBUNAL_NO_OPEN=1 (do not open
@@ -70,7 +70,7 @@ main() {
     if [ -z "${TRIBUNAL_NO_OPEN:-}" ]; then
         say ""
         say "콘솔을 엽니다 / opening the console…"
-        "$tribunal" open || say "콘솔을 열지 못했습니다. 새 터미널에서 tribunal 을 실행해 보세요 / could not open; run: tribunal"
+        "$tribunal" app --detach || say "콘솔을 열지 못했습니다. 새 터미널에서 tribunal 을 실행해 보세요 / could not open; run: tribunal"
     fi
 }
 

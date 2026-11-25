@@ -4,8 +4,8 @@
     Windows  Start menu and Desktop: Tribunal AI.lnk
     Linux    ~/.local/share/applications/tribunal-ai.desktop   (the desktop's application menu)
 
-Each one runs `<this Python> -I -m tribunal_cli open --from-shortcut`: start the console if needed, open it in the browser,
-and show a dialog instead of a terminal message when something goes wrong. Every shortcut carries MARK, and removing
+Each one runs `<this Python> -I -m tribunal_cli app --from-shortcut`: start the console if needed, open it in a window
+(phase 4; the browser on Linux), and show a dialog instead of a terminal message when something goes wrong. Every shortcut carries MARK, and removing
 only ever touches a file with that mark, so a file of the same name made by someone else is left alone.
 
 TRIBUNAL_SHORTCUTS_HOME (an absolute path) puts every shortcut under that folder instead - for the tests and the
@@ -81,7 +81,7 @@ def launch_command(sysname: Optional[str] = None) -> List[str]:
             python = quiet
     # -I: never the current folder, PYTHONPATH or the user's site folder - a tribunal_cli.py or yaml.py lying in the
     # folder an icon starts in (the home folder) must not be imported instead of the installed code.
-    return [str(python), "-I", "-m", "tribunal_cli", "open", "--from-shortcut"]
+    return [str(python), "-I", "-m", "tribunal_cli", "app", "--from-shortcut"]
 
 
 def _sh_quote(text: str) -> str:

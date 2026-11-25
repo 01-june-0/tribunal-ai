@@ -59,8 +59,9 @@ jobs:
           tribunal doctor
         shell: bash
 
-  # Phase 3: the install one-liners, run for real on clean runners against this commit. Each runs twice (the second
-  # time is an update), the icon is started with the short PATH an icon gets, then everything is removed again.
+  # Phase 3 and 4: the install one-liners, run for real on clean runners against this commit. Each runs twice (the
+  # second time is an update), the icon is started with the short PATH an icon gets - a real window on macOS and Windows
+  # (TRIBUNAL_APP_SMOKE: it checks the console drew, then closes) - then everything is removed again.
   installer:
     name: installer · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -81,24 +82,29 @@ jobs:
           sh install.sh
           sh install.sh
 
-      - name: The icon opens the console
+      - name: The icon opens the console (macOS a window, Linux the browser)
         if: runner.os != 'Windows'
         run: |
           set -eu
           tribunal="$HOME/.local/bin/tribunal"
           "$tribunal" doctor
           if [ "$RUNNER_OS" = "macOS" ]; then
+            # The window opens, the console draws in it, the window closes and the console it started goes off.
             launcher="$HOME/Applications/Tribunal AI.app/Contents/MacOS/tribunal-launch"
             test -x "$launcher"
-            env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin BROWSER=true "$launcher"
+            env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin TRIBUNAL_APP_SMOKE=1 "$launcher"
+            "$tribunal" doctor --json | python3 -c "import json, sys; r = json.load(sys.stdin); assert r['installed'] and not r['console'], r"
           else
+            # No window library here: the icon opens the console in the browser (the check says so with exit 3).
             entry="$HOME/.local/share/applications/tribunal-ai.desktop"
             test -f "$entry"
             command="$(sed -n 's/^Exec=//p' "$entry")"
-            env -i HOME="$HOME" PATH=/usr/bin:/bin BROWSER=true sh -c "$command"
+            status=0
+            env -i HOME="$HOME" PATH=/usr/bin:/bin BROWSER=true TRIBUNAL_APP_SMOKE=1 sh -c "$command" || status=$?
+            test "$status" -eq 3
+            "$tribunal" doctor --json | python3 -c "import json, sys; r = json.load(sys.stdin); print(r['console']); assert r['console'] and r['installed']"
+            "$tribunal" stop
           fi
-          "$tribunal" doctor --json | python3 -c "import json, sys; r = json.load(sys.stdin); print(r['console']); assert r['console'] and r['installed']"
-          "$tribunal" stop
 
       - name: Uninstall removes the program and the icon, keeps the records
         if: runner.os != 'Windows'
@@ -123,7 +129,7 @@ jobs:
           Get-Content -Raw install.ps1 | Invoke-Expression
           if ($LASTEXITCODE -ne 0) { throw "update failed" }
 
-      - name: The icon opens the console (Windows)
+      - name: The icon opens the console in a window (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
@@ -135,13 +141,16 @@ jobs:
           $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($menu)
           Write-Host "$($lnk.TargetPath) $($lnk.Arguments)"
           if (-not ($lnk.TargetPath -like '*pythonw.exe')) { throw "the icon should start the window-less Python" }
+          # The window opens (Edge WebView2), the console draws in it, the window closes and the console goes off.
+          $env:TRIBUNAL_APP_SMOKE = '1'
           $proc = Start-Process -FilePath $lnk.TargetPath -ArgumentList $lnk.Arguments -PassThru
-          $proc.WaitForExit()
-          if ($proc.ExitCode -ne 0) { throw "the icon's program ended with $($proc.ExitCode)" }
+          if (-not $proc.WaitForExit(240000)) { $proc.Kill(); throw "the window did not close by itself" }
+          if ($proc.ExitCode -ne 0) {
+            & $tribunal app --smoke                    # the same with a console, so the log shows why
+            throw "the icon's program ended with $($proc.ExitCode)"
+          }
           $report = (& $tribunal doctor --json | Out-String) | ConvertFrom-Json
-          if (-not $report.console) { throw "the console is not running" }
-          Write-Host $report.console
-          & $tribunal stop
+          if ($report.console) { throw "the console the window started should be off: $($report.console)" }
 
       - name: Uninstall removes the program and the icons, keeps the records (Windows)
         if: runner.os == 'Windows'
