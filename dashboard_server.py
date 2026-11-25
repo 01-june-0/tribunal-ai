@@ -1825,7 +1825,7 @@ DASHBOARD_JS = r"""
         + (p.source === 'guess' ? '\n\n실행 방법은 파일을 보고 짐작한 것입니다.' : '')
         + (p.note && p.note.tk === 'switched' ? '\n\n이 컴퓨터의 ' + p.note.from + '에는 tkinter가 없어, tkinter가 있는 Python으로 바꿨습니다: ' + p.note.to
            : p.note && p.note.tk === 'old' ? '\n\n이 컴퓨터의 ' + p.note.from + '에는 tkinter가 없습니다. tkinter가 있는 Python은 ' + p.note.to + ' (Python ' + p.note.version + ')뿐인데, 앱은 Python ' + p.note.wants + '에 맞춰 만들어져 시작하자마자 오류가 날 수 있습니다.' + (p.note.fix ? '\n확실하게 하려면 터미널에서: ' + p.note.fix : '')
-           : p.note && p.note.tk === 'missing' ? '\n\n이 컴퓨터의 ' + p.note.from + '에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.' + (p.note.fix ? '\n확실하게 하려면 터미널에서: ' + p.note.fix : '') : '');
+           : p.note && p.note.tk === 'missing' ? '\n\n이 컴퓨터의 ' + p.note.from + '에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.' + (p.note.fix ? '\n확실하게 하려면 터미널에서: ' + p.note.fix : '') : p.note && p.note.python === 'switched' ? '\n\n이 컴퓨터에는 실행할 수 있는 ' + p.note.from + ' 명령이 없어(설치되지 않았거나 Microsoft Store 바로 가기뿐), Tribunal의 Python으로 실행합니다: ' + p.note.to : '');
       if (!window.confirm(ask)) return;
       return post('/ops/run-result', { run_id: runId, command: p.command, place: p.where + ':' + p.folder }).then(function (out) {
         if (out.status === 'started') setText('result-status', '터미널 창에서 실행했습니다.');

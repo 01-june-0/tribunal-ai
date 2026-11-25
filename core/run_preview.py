@@ -16,6 +16,7 @@ import re
 import shlex
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -199,7 +200,9 @@ def plan(run_id: str, rm=None) -> Dict[str, Any]:
     if not spec:
         return {"found": False, "reason": "nothing to start", "where": where, "folder": str(root)}
     command = spec["command"] or f"{_python(root)} -m http.server --bind 127.0.0.1 {PORT}"
-    command, note = _with_tk(command, root)
+    command, note = _real_python(command, root)
+    if not note:
+        command, note = _with_tk(command, root)
     return {"found": True, "command": command, "kind": spec["kind"], "url": spec["url"], "open": spec["open"],
             "where": where, "folder": str(root), "source": source, "note": note}
 
@@ -250,6 +253,57 @@ def _tk_fix(wanted: tuple) -> str:
     if sys.platform == "darwin" and shutil.which("brew"):
         return f"brew install python-tk@{wanted[0]}.{wanted[1]}"
     return "sudo apt install python3-tk" if sys.platform.startswith("linux") else ""
+
+
+_RUNS: Dict[str, bool] = {}
+
+
+def _runs(python: str) -> bool:
+    """Does this interpreter really start? Windows' Microsoft Store stand-in (WindowsApps\\python.exe on a PC without
+    Python) only prints "Python" and ends; a Python installed from the Store sits in the same folder and does run, so
+    the folder alone does not tell. Asked once per console process."""
+    if python not in _RUNS:
+        try:
+            _RUNS[python] = subprocess.run([python, "-c", "import sys"], capture_output=True, timeout=15,
+                                           stdin=subprocess.DEVNULL).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            _RUNS[python] = False
+    return _RUNS[python]
+
+
+_PY_START = re.compile(r"(^|&&|\|\||;)(\s*)(python3|python|py)(?=\s)((?:\s+-(?:3(?:\.\d+)?|V:\S+))*)")
+
+
+def _real_python(command: str, root: Path):
+    """Each `python` / `python3` / `py` that starts the command (or a part after && || ;) and that this machine cannot
+    run (not installed, or only the Store stand-in) becomes the project's environment or Tribunal's own Python, which
+    every install has; the `py` launcher's version options (-3, -3.12, -V:...) go with it. The change is said in the
+    plan. Anything else is left exactly as it was."""
+    if not _PY_START.search(command):
+        return command, None
+    from core.pythons import project_python
+    other = project_python(root)
+    if os.name == "nt":
+        quoted = '"' + other.replace("%", "%%") + '"'          # a .cmd file expands %NAME% even inside quotes
+    else:
+        quoted = shlex.quote(other)
+    switched = []
+
+    def swap(m):
+        name = m.group(3)
+        found = shutil.which(name)
+        if found and _runs(found):
+            return m.group(0)
+        switched.append(name)
+        return m.group(1) + m.group(2) + quoted
+
+    command = _PY_START.sub(swap, command)
+    if not switched:
+        return command, None
+    note = {"python": "switched", "from": switched[0], "to": other}
+    if _uses_tk(root) and not _has_tk(other):
+        note.update(tk="missing", fix=_tk_fix(tuple(sys.version_info[:2])))
+    return command, note
 
 
 def _with_tk(command: str, root: Path):

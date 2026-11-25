@@ -193,3 +193,57 @@ def test_a_tkinter_app_gets_a_python_that_has_tkinter(tmp_path, monkeypatch):
                                                          "wants": want, "fix": "brew install python-tk@" + want}
     monkeypatch.setattr(rp, "_has_tk", lambda python: False)
     assert rp._with_tk("python3 app.py", app) == ("python3 app.py", {"tk": "missing", "from": "python3", "fix": "brew install python-tk@" + want})
+
+
+# ------------------------------------------------------------------ a `python` that is not really there
+
+STUB = r"C:\Users\u\AppData\Local\Microsoft\WindowsApps\python.exe"
+
+
+def _no_python(monkeypatch, which=lambda name: STUB):
+    from core import run_preview, pythons
+    monkeypatch.setattr(run_preview.shutil, "which", which)
+    monkeypatch.setattr(run_preview, "_runs", lambda python: False)          # the stand-in prints "Python" and ends
+    monkeypatch.setattr(run_preview, "_uses_tk", lambda root: False)
+    monkeypatch.setattr(pythons, "project_python", lambda root, needs=None: "/tribunal/bin/python")
+    return run_preview
+
+
+def test_a_python_that_cannot_run_is_replaced_by_tribunals_own(tmp_path, monkeypatch):
+    # seen on Windows: "실행해 보기" ran `python -m http.server`, the Store stand-in printed "Python" and it ended
+    rp = _no_python(monkeypatch)
+    command, note = rp._real_python("python -m http.server --bind 127.0.0.1 <port>", tmp_path)
+    assert command.endswith(" -m http.server --bind 127.0.0.1 <port>") and "/tribunal/bin/python" in command
+    assert note == {"python": "switched", "from": "python", "to": "/tribunal/bin/python"}
+    rp = _no_python(monkeypatch, which=lambda name: None)                     # not installed at all
+    assert rp._real_python("python3 app.py", tmp_path)[1]["from"] == "python3"
+
+
+def test_every_part_and_the_py_launcher_options_are_handled(tmp_path, monkeypatch):
+    rp = _no_python(monkeypatch)
+    command, _ = rp._real_python("python -m pip install -r requirements.txt && python app.py", tmp_path)
+    assert "python " not in command.replace("/tribunal/bin/python", "") and command.count("/tribunal/bin/python") == 2
+    command, _ = rp._real_python("py -3.12 app.py", tmp_path)
+    assert command.endswith(" app.py") and "-3.12" not in command
+
+
+def test_a_python_that_runs_is_kept_even_from_the_store_folder(tmp_path, monkeypatch):
+    # a Python installed from the Microsoft Store lives in WindowsApps too, and does run
+    from core import run_preview
+    monkeypatch.setattr(run_preview.shutil, "which", lambda name: STUB)
+    monkeypatch.setattr(run_preview, "_runs", lambda python: True)
+    assert run_preview._real_python("python app.py", tmp_path) == ("python app.py", None)
+
+
+def test_other_commands_are_left_alone(tmp_path, monkeypatch):
+    rp = _no_python(monkeypatch, which=lambda name: None)
+    assert rp._real_python("npm start", tmp_path) == ("npm start", None)
+    assert rp._real_python("python", tmp_path) == ("python", None)
+    assert rp._real_python("mypython app.py", tmp_path) == ("mypython app.py", None)
+
+
+def test_runs_asks_the_interpreter_itself():
+    import sys
+    from core.run_preview import _runs
+    assert _runs(sys.executable) is True
+    assert _runs("/nonexistent/python") is False

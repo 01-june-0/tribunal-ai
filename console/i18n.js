@@ -167,6 +167,7 @@ const EN={
   "이 컴퓨터의 {0}에는 tkinter가 없습니다. tkinter가 있는 Python은 {1} (Python {2})뿐인데, 앱은 Python {3}에 맞춰 만들어져 시작하자마자 오류가 날 수 있습니다.": "{0} on this computer has no tkinter. The only Python with tkinter is {1} (Python {2}), but the app was written for Python {3} and may fail at start.",
   "확실하게 하려면 터미널에서: {0}": "To be sure, run in a terminal: {0}",
   "이 컴퓨터의 {0}에는 tkinter가 없어, tkinter가 있는 Python으로 바꿨습니다: {1}": "{0} on this computer has no tkinter, so a Python that has it is used: {1}",
+  "이 컴퓨터에는 실행할 수 있는 {0} 명령이 없어(설치되지 않았거나 Microsoft Store 바로 가기뿐), Tribunal의 Python으로 실행합니다: {1}": "There is no usable {0} command on this computer (not installed, or only the Microsoft Store shortcut), so Tribunal's Python runs it: {1}",
   "이 컴퓨터의 {0}에는 tkinter가 없고, tkinter가 있는 Python도 찾지 못했습니다. 창이 뜨지 않고 오류가 날 수 있습니다.": "{0} on this computer has no tkinter, and no Python with tkinter was found. The window may not open and an error may show.",
   "작업 사본 남음": "working copy kept",
   "이 결과물의 작업 사본을 지울까요? 건너뛴 파일의 AI 버전도 함께 사라집니다. 원본 프로젝트는 바뀌지 않습니다.": "Remove the working copy of this result? The AIs' version of the skipped files goes with it. The project does not change.",
