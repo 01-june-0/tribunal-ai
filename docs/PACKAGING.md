@@ -11,7 +11,7 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | 1. 세 운영체제 자동 시험 | **끝남 (2026-11-24)** — `.github/workflows/tests.yml`: macOS · Windows · Linux(3.13)와 Linux(3.9)에서 테스트 모음 통과, 패키지를 만들어 설치하고 `tribunal doctor` 실행. 첫 Windows 실행의 실패 40개를 고침(제품 문제: SQLite 연결이 닫히지 않음, 경로 줄이기, 시간대 정보, 출력 인코딩) |
 | 2. 처음 실행 도우미 | **만듦 (2026-11-24)** — `core/setup.py`, `console/setup.js`. 이 맥에서 실제 상태와 바꾼 응답(설치 안 됨 · npm 없음)으로 화면을 확인. 끝났다고 볼 기준(아무것도 없는 계정에서 도우미만 따라 첫 작업까지)은 아직 확인하지 않음 |
 | 3. 설치 한 줄 + 바로 가기 | **만듦 (2026-11-25)** — `install.sh` · `install.ps1` · `uninstall.sh` · `uninstall.ps1`, `core/shortcuts.py`(`tribunal shortcut`). 이 맥에서 임시 폴더에 설치 · 다시 설치(업데이트) · 짧은 PATH로 아이콘 실행 · 지우기를 확인. GitHub Actions `installer` 작업이 깨끗한 macOS · Windows · Linux에서 설치 두 번 · 짧은 PATH로 아이콘 실행(Windows는 창 없는 `pythonw.exe`) · 콘솔 응답 · 지우기(기록은 남음)까지 통과(2026-11-25). 사람이 실제 화면에서 아이콘을 눌러 본 적은 아직 없음 |
-| 4. 앱 창 | **만듦 (2026-11-25)** — `tribunal app`(`core/app_window.py`, pywebview). 바로 가기와 설치 마지막 단계가 창으로 엶. 이 맥에서 창 열기 · 콘솔 그리기 · 닫기 버튼과 Cmd+Q로 닫으면 콘솔도 꺼짐 · 다시 열어도 페이지 설정이 남음을 확인. Windows는 GitHub Actions `installer` 작업으로 확인(올린 뒤 결과 확인). Linux는 브라우저로 엶 |
+| 4. 앱 창 | **만듦 (2026-11-25)** — `tribunal app`(`core/app_window.py`, pywebview). 바로 가기와 설치 마지막 단계가 창으로 엶. 이 맥에서 창 열기 · 콘솔 그리기 · 닫기 버튼과 Cmd+Q로 닫으면 콘솔도 꺼짐 · 다시 열어도 페이지 설정이 남음을 확인. GitHub Actions `installer` 작업에서 깨끗한 macOS · Windows가 아이콘으로 실제 창(Windows는 Edge WebView2)을 열어 콘솔이 그려지고 닫히면 콘솔도 꺼짐, Linux는 브라우저로 엶까지 통과(2026-11-25). 사람이 Windows 화면에서 직접 써 본 적과, 작업 중에 닫을 때의 확인 창을 실제 작업으로 띄워 본 적은 아직 없음 |
 | 5 | 아직 |
 
 ## 1. 정한 것 (2026-11-24)
