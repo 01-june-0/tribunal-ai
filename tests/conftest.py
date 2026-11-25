@@ -83,6 +83,7 @@ def isolate_provider_db(request, monkeypatch, tmp_path):
 
     monkeypatch.setenv("DIRECTOR_TESTING", "1")
     monkeypatch.setenv("TEST_DB_PATH", str(db_path))
+    monkeypatch.setenv("TRIBUNAL_NO_UPDATE_CHECK", "1")       # never ask GitHub from a test (core/updates.py)
 
     from core.db_path import get_db_path
     assert get_db_path() == db_path.resolve(), "test must never touch the production DB"

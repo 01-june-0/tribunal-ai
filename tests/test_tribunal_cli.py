@@ -130,3 +130,15 @@ def test_korean_output_never_stops_a_command_on_a_narrow_code_page(monkeypatch):
     print("준비됨 ✓")
     narrow.flush()
     assert raw.getvalue().decode("utf-8").strip() == "준비됨 ✓"
+
+
+def test_an_appimage_console_counts_as_ours(monkeypatch):
+    import psutil
+
+    class Proc:
+        def __init__(self, pid): self.pid = pid
+        def cmdline(self):
+            return {1: ["python3.13", "-I", "-B", "-m", "tribunal_cli", "app", "--from-shortcut", "--foreground"],
+                    2: ["python3", "companion_server.py"], 3: ["python3", "-m", "tribunal_cli", "app"]}[self.pid]
+    monkeypatch.setattr(psutil, "Process", Proc)
+    assert tribunal_cli._ours(1) and tribunal_cli._ours(2) and not tribunal_cli._ours(3)

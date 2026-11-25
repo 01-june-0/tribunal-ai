@@ -106,6 +106,9 @@ curl -LsSf https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/uninstal
 powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/uninstall.ps1 | iex"
 ```
 
+두 번 눌러 설치하는 설치 파일(macOS `.dmg`, Windows 설치 파일, Linux AppImage)도 만들 수 있게 준비했습니다. 아직 공개 릴리스는
+없고, 서명이 없어 처음 열 때 경고가 나옵니다([docs/PACKAGING.md](docs/PACKAGING.md) 8절).
+
 ## 저장소에서 돌리기 (개발용)
 
 ```bash

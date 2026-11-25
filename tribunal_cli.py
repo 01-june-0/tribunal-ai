@@ -39,10 +39,12 @@ def _pid_file() -> Path:
 
 
 def _ours(pid: int) -> bool:
-    """Whether that process is a Tribunal console (never stop or trust any other program by its number alone)."""
+    """Whether that process is a Tribunal console (never stop or trust any other program by its number alone): the
+    server script, or an AppImage running the console in its own process (`tribunal_cli app --foreground`)."""
     try:
         import psutil
-        return any("companion_server.py" in part for part in psutil.Process(pid).cmdline())
+        line = psutil.Process(pid).cmdline()
+        return any("companion_server.py" in part for part in line) or ("tribunal_cli" in line and "--foreground" in line)
     except Exception:
         return False
 
@@ -186,7 +188,8 @@ def _detach_app() -> None:
 @click.option("--from-shortcut", is_flag=True, hidden=True)
 @click.option("--detach", is_flag=True, help="Start it and return at once")
 @click.option("--smoke", is_flag=True, hidden=True, envvar="TRIBUNAL_APP_SMOKE")      # the installer check (CI)
-def app(from_shortcut=False, detach=False, smoke=False):
+@click.option("--foreground", is_flag=True, hidden=True)   # the Linux AppImage: the console must live in this process
+def app(from_shortcut=False, detach=False, smoke=False, foreground=False):
     """Open the console in its own window (macOS, Windows; Linux opens the browser). Closing the last window turns
     the console off, if a window started it."""
     from core import app_window, shortcuts
@@ -200,6 +203,12 @@ def app(from_shortcut=False, detach=False, smoke=False):
         if from_shortcut:
             shortcuts.widen_path()
         reason = app_window.unavailable()
+        if reason and foreground and smoke:
+            click.echo(reason)
+            sys.exit(3)                              # the AppImage check: browser fallback, nothing left running
+        if reason and foreground and not _running_pid():
+            _serve_and_open()
+            return
         if reason:
             url = start_console()
             click.echo(f"{reason}\nTribunal AI: {url}")
@@ -215,6 +224,27 @@ def app(from_shortcut=False, detach=False, smoke=False):
         shortcuts.show_error("Tribunal AI를 열지 못했습니다 / could not open Tribunal AI.\n\n"
                              f"{detail[:800]}\n\n기록 / log: {data_dir()}")
         sys.exit(1)
+
+
+def _serve_and_open() -> None:
+    """Run the console in this process and open it in the browser once it answers. An AppImage's files exist only
+    while the process that mounted them runs, so a console started in the background would lose its own code."""
+    import threading
+
+    def open_when_ready() -> None:
+        for _ in range(120):
+            url = _url()
+            if url:
+                webbrowser.open(url)
+                return
+            time.sleep(0.5)
+    threading.Thread(target=open_when_ready, name="tribunal-open-browser", daemon=True).start()
+    sys.path.insert(0, str(CODE_ROOT))
+    import companion_server
+    companion_server.run()
+    url = _url()                                 # it was already running after all (a race): just open that one
+    if url:
+        webbrowser.open(url)
 
 
 def _run_app_window(smoke: bool) -> None:
@@ -319,11 +349,16 @@ def doctor(as_json):
         report["clis"][name] = _version(exe) if exe else None
     ready = sum(1 for v in report["clis"].values() if v)
     report["ready"] = bool(report["git"]) and ready >= 2
+    from core import updates
+    report["version"] = updates.check()
     if as_json:
         click.echo(json.dumps(report, ensure_ascii=False, indent=2))
         return
     ok, no = "✓", "✗"
-    click.echo(f"Tribunal AI · Python {report['python']} · {'설치본' if report['installed'] else '저장소에서 실행'}")
+    version = report["version"]
+    click.echo(f"Tribunal AI {version['current']} · Python {report['python']} · {'설치본' if report['installed'] else '저장소에서 실행'}")
+    if version.get("newer"):
+        click.echo(f"  새 버전이 있습니다 / a newer release: {version['latest']} · {version['url']}")
     click.echo(f"  기록 위치 / records : {report['home']}")
     click.echo(f"  콘솔 / console      : {report['console'] or '꺼져 있음 / not running'}")
     click.echo(f"  {ok if report['git'] else no} git        {report['git'] or '없음 — git을 설치하세요 / install git'}")

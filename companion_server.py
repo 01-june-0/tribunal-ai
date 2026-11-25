@@ -155,6 +155,9 @@ class CompanionHandler(d.DashboardHandler):
             return self._send_json({'settings': settings, 'options': cli_settings.options(), 'limits': limits,
                                     'accounts': cli_accounts.snapshot(limits),
                                     'alerts': cli_limits.alerts(limits, {c: settings[c]['warn_percent'] for c in cli_settings.CLIS})})
+        if path == '/ops/version':              # this copy's version and whether a newer release exists (core/updates.py)
+            from core import updates
+            return self._send_json(updates.check())
         if path == '/ops/setup':                # first-run helper: what this machine still needs (core/setup.py)
             from core import setup
             return self._send_json(setup.status())

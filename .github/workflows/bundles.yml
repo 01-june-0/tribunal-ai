@@ -1,0 +1,130 @@
+# Phase 5 of docs/PACKAGING.md: the double-click installers, built and tried on clean runners.
+# Unsigned for now (no paid certificates). Nothing is published from here: the files are kept as workflow artifacts
+# for a week. A GitHub release is a separate, deliberate step.
+name: bundles
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/build_bundle.py
+      - .github/workflows/bundles.yml
+      - pyproject.toml
+      - tribunal_cli.py
+      - core/app_window.py
+      - core/updates.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundles-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIBUNAL_NO_UPDATE_CHECK: "1"
+
+jobs:
+  bundle:
+    name: bundle · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
+
+      - name: appimagetool (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+
+      - name: Build
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          python scripts/build_bundle.py --out dist --appimagetool "$RUNNER_TEMP/appimagetool" --iscc "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          ls -la dist
+
+      - name: Try the app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/mnt" "$RUNNER_TEMP/apps"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/mnt" dist/*.dmg
+          cp -R "$RUNNER_TEMP/mnt/Tribunal AI.app" "$RUNNER_TEMP/apps/"
+          hdiutil detach "$RUNNER_TEMP/mnt"
+          app="$RUNNER_TEMP/apps/Tribunal AI.app"
+          codesign --verify --deep --strict "$app"
+          test -s "$app/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+          touch "$RUNNER_TEMP/stamp"; sleep 1
+          env -i HOME="$HOME" PATH=/usr/bin:/bin TRIBUNAL_APP_SMOKE=1 TRIBUNAL_NO_UPDATE_CHECK=1 "$app/Contents/MacOS/tribunal-launch"
+          written="$(find "$app" -newer "$RUNNER_TEMP/stamp" -type f | wc -l | tr -d ' ')"
+          echo "files written inside the app: $written"
+          test "$written" = "0"
+          codesign --verify --deep --strict "$app"
+
+      - name: Install, open, uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $setup = Get-ChildItem dist\*-setup.exe | Select-Object -First 1
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER' -PassThru
+          if (-not $p.WaitForExit(300000)) { throw "the installer did not finish" }
+          if ($p.ExitCode -ne 0) { throw "the installer ended with $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Tribunal AI'
+          foreach ($f in @('python\pythonw.exe', 'python\python.exe', 'tribunal.ico', 'THIRD-PARTY-NOTICES.txt', 'unins000.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $app $f))) { throw "missing after install: $f" }
+          }
+          $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Tribunal AI.lnk'
+          $desk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Tribunal AI.lnk'
+          foreach ($l in @($menu, $desk)) { if (-not (Test-Path -LiteralPath $l)) { throw "missing shortcut: $l" } }
+          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($menu)
+          Write-Host "$($lnk.TargetPath) $($lnk.Arguments)"
+          $env:TRIBUNAL_APP_SMOKE = '1'
+          $run = Start-Process -FilePath $lnk.TargetPath -ArgumentList $lnk.Arguments -PassThru
+          if (-not $run.WaitForExit(240000)) { $run.Kill(); throw "the window did not close by itself" }
+          if ($run.ExitCode -ne 0) {
+            & (Join-Path $app 'python\python.exe') -I -B -m tribunal_cli app --smoke
+            throw "the icon's program ended with $($run.ExitCode)"
+          }
+          Remove-Item Env:TRIBUNAL_APP_SMOKE
+          $u = Start-Process -FilePath (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru
+          if (-not $u.WaitForExit(300000)) { throw "the uninstaller did not finish" }
+          Start-Sleep -Seconds 5
+          if (Test-Path -LiteralPath (Join-Path $app 'python')) { throw "the program is still there after uninstall" }
+          foreach ($l in @($menu, $desk)) { if (Test-Path -LiteralPath $l) { throw "shortcut left behind: $l" } }
+          if (-not (Test-Path "$env:APPDATA\Tribunal AI\data")) { throw "the records should stay" }
+
+      - name: Try the AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -u
+          image="$(ls dist/*.AppImage)"
+          chmod +x "$image"
+          status=0
+          APPIMAGE_EXTRACT_AND_RUN=1 TRIBUNAL_APP_SMOKE=1 "$image" || status=$?
+          echo "exit $status"
+          test "$status" -eq 3          # no window library on Linux: the browser, as intended
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tribunal-ai-${{ matrix.os }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
