@@ -15,6 +15,7 @@ from core.process_runner import ProcessTreeRunner
 from schemas.order import OrderSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.provenance import AgentProvenanceRecord
+from core.evidence_rules import INSPECTOR_RULE
 
 class CodexInspector:
     """
@@ -135,7 +136,8 @@ class CodexInspector:
             "2. Baseline & Behavior Preservation: Check whether existing functions, classes, or tests were removed or replaced.\n"
             "3. If any existing function or test was deleted without permission in allowed_deletions, you MUST classify it as P0 or P1.\n"
             "4. Check for code correctness, edge cases, and test assertions.\n"
-            "5. File-count and diff-size limits are enforced by Tribunal, not by you: never report them as findings.\n\n"
+            "5. File-count and diff-size limits are enforced by Tribunal, not by you: never report them as findings.\n"
+            f"6. {INSPECTOR_RULE}\n\n"
             f"GOAL: {order.goal}\n"
             f"ACCEPTANCE CRITERIA: {json.dumps(order.acceptance_criteria)}\n"
             f"ALLOWED DELETIONS: {json.dumps(order.allowed_deletions)}\n"

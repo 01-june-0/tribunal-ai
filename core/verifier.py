@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import shlex
 import shutil
@@ -134,8 +135,19 @@ class Verifier:
         # 2. Run build
         build_res = cls._execute_cmd(build_cmd, wt, timeout=timeout, on_line=watch("build"), python_root=python_root)
 
-        # 3. Run test
+        # 3. Run test: the configured command, then the project's own Node tests when it has some (a JavaScript game
+        # or site would otherwise be judged on the Python smoke test alone, its real tests never run)
         test_res = cls._execute_cmd(test_cmd, wt, timeout=timeout, on_line=watch("test"), python_root=python_root)
+        test_counts = cls._parse_test_counts(test_res.get("output", "")) if test_res.get("executed") else \
+            {"passed": 0, "failed": 0, "total": 0}
+        node_cmd, node_note = (None, None) if cls._runs_node_already(test_cmd) else cls.node_test_command(wt)
+        node_info: Dict[str, Any] = {"command": None, "note": node_note}
+        if node_cmd:
+            node_res = cls._execute_cmd(node_cmd, wt, timeout=timeout, on_line=watch("test"))
+            node_counts = cls._parse_node_counts(node_res.get("output", ""))
+            node_info.update(command=node_res.get("command"), passed=node_res["passed"], test_counts=node_counts)
+            test_res = cls._join_tests(test_res, node_res)
+            test_counts = {k: test_counts.get(k, 0) + node_counts.get(k, 0) for k in ("passed", "failed", "total")}
 
         # 4. Run lint
         lint_res = cls._execute_cmd(lint_cmd, wt, timeout=timeout, on_line=watch("lint"), python_root=python_root)
@@ -154,10 +166,11 @@ class Verifier:
         if lint_res["executed"]:
             summary_parts.append(f"Lint: {'PASS' if lint_res['passed'] else 'FAIL'}")
         
+        if node_info["command"]:
+            summary_parts.append(f"Node tests: {'PASS' if node_info['passed'] else 'FAIL'}")
+        elif node_note:
+            summary_parts.append(f"Node tests not run: {node_note}")
         summary = " | ".join(summary_parts) if summary_parts else "No build/test commands configured"
-
-        # Parse test metrics (e.g. 4 passed, Ran 4 tests)
-        test_counts = cls._parse_test_counts(test_res.get("output", ""))
 
         return {
             "passed": overall_passed,
@@ -166,9 +179,122 @@ class Verifier:
             "test": test_res,
             "lint": lint_res,
             "test_counts": test_counts,
+            "node_tests": node_info,
             "git_status": git_status,
             "git_diff": git_diff
         }
+
+    # Folders never searched for Node tests: dependencies, version control, Tribunal's own records, build output.
+    _NODE_SKIP_DIRS = {"node_modules", ".git", ".director_worktrees", ".venv", "venv", "__pycache__", "dist", "build",
+                       "coverage", ".next", ".cache"}
+    _NODE_TEST_NAME = re.compile(r"(\.test|\.spec|[-_]test)\.(js|mjs|cjs)$|^test[-_].*\.(js|mjs|cjs)$", re.I)
+    _NODE_TEST_IMPORT = re.compile(r"""(require\(\s*|from\s+|import\s*\(\s*)['"]node:test['"]""")
+    _NODE_MAX_FILES = 200
+
+    @classmethod
+    def node_test_command(cls, wt: Path):
+        """(argv or None, note). `node --test` over the test files written for Node's built-in runner (they import
+        node:test) when there are any; otherwise the project's declared `npm test` when package.json has a real test
+        script (and its dependencies are installed, or it has none). Files for the built-in runner always run this
+        way, so a changed test script cannot hide them. Jest, Mocha and the like run only through a test script: run
+        by `node --test` they would fail for reasons that have nothing to do with the code."""
+        import json
+        files = cls._node_test_files(wt)
+        if files:
+            node = shutil.which("node")
+            if not node:
+                return None, f"{len(files)} Node test file(s) found but node is not installed"
+            return [node, "--test", *files], None
+        package = wt / "package.json"
+        script, deps = "", False
+        if package.is_file():
+            try:
+                data = json.loads(package.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    scripts = data.get("scripts")
+                    script = str((scripts if isinstance(scripts, dict) else {}).get("test") or "").strip()
+                    deps = bool(data.get("dependencies") or data.get("devDependencies"))
+            except (OSError, ValueError):
+                script = ""
+        if not script or "no test specified" in script:
+            return None, None
+        if deps:
+            # Tribunal's copies of a project never hold node_modules (it installs nothing), so a test script that needs
+            # packages could only run when applying into the user's folder: a first, late run that could undo a passed
+            # result. It never runs, here or there, and the summary says why.
+            return None, "package.json test script needs dependencies, which Tribunal does not install"
+        npm = shutil.which("npm")
+        if not npm:
+            return None, "package.json has a test script but npm is not installed"
+        return [npm, "test"], None
+
+    @classmethod
+    def _node_test_files(cls, wt: Path) -> List[str]:
+        found: List[str] = []
+        for root, dirs, names in os.walk(wt):
+            dirs[:] = sorted(d for d in dirs if d not in cls._NODE_SKIP_DIRS and not d.startswith("."))
+            for name in sorted(names):
+                if not cls._NODE_TEST_NAME.search(name):
+                    continue
+                path = Path(root) / name
+                try:
+                    if path.is_symlink() or path.stat().st_size > 1_000_000:
+                        continue
+                    if not cls._NODE_TEST_IMPORT.search(path.read_text(encoding="utf-8", errors="replace")):
+                        continue
+                except OSError:
+                    continue
+                found.append(path.relative_to(wt).as_posix())
+                if len(found) >= cls._NODE_MAX_FILES:
+                    return found
+        return found
+
+    @staticmethod
+    def _runs_node_already(test_cmd) -> bool:
+        """The configured command is itself a Node test run (`npm test`, `node --test`, `npx jest` ...): running the
+        Node tests again would double their count and their time."""
+        if not test_cmd:
+            return False
+        tokens = list(test_cmd) if isinstance(test_cmd, list) else shlex.split(str(test_cmd), posix=False)
+        first = Path(str(tokens[0]).strip("\"'")).name.lower() if tokens else ""
+        return first in ("npm", "npm.cmd", "npx", "npx.cmd", "node", "node.exe", "yarn", "yarn.cmd", "pnpm", "pnpm.cmd") \
+            or "--test" in tokens
+
+    @staticmethod
+    def _join_tests(first: Dict[str, Any], node: Dict[str, Any]) -> Dict[str, Any]:
+        """One test result out of the configured command's and the Node tests'; the Node part comes last, under a
+        heading, so the end of the output shows its summary."""
+        if not first.get("executed"):
+            return node
+        codes = [c for c in (first.get("exit_code"), node.get("exit_code")) if c not in (None, 0)]
+        return {
+            "command": f"{first.get('command')} ; {node.get('command')}",
+            "executed": True,
+            "passed": bool(first.get("passed")) and bool(node.get("passed")),
+            "exit_code": codes[0] if codes else 0,
+            "output": f"{first.get('output') or ''}\n\n===== Node tests: {node.get('command')} =====\n{node.get('output') or ''}",
+        }
+
+    @staticmethod
+    def _parse_node_counts(output: str) -> Dict[str, int]:
+        """node:test summaries ("ℹ pass 18" spec, "# pass 18" TAP; every summary is added, a script may run several),
+        then the "Tests:" line of Jest/Vitest (the line before it counts files or suites), then Mocha ("18 passing")."""
+        counts = {"passed": 0, "failed": 0, "total": 0}
+        if not output:
+            return counts
+        own = re.findall(r"^\s*(?:#|ℹ)\s*pass\s+(\d+)\s*$", output, re.M)
+        if own:
+            counts["passed"] = sum(int(n) for n in own)
+            counts["failed"] = sum(int(n) for n in re.findall(r"^\s*(?:#|ℹ)\s*fail\s+(\d+)\s*$", output, re.M))
+        else:
+            line = next((l for l in output.splitlines() if re.match(r"^\s*Tests:?\s", l)), None)
+            text = line if line is not None else output
+            passed = re.search(r"(\d+)\s+pass(?:ed|ing)\b", text)
+            failed = re.search(r"(\d+)\s+fail(?:ed|ing)\b", text)
+            counts["passed"] = int(passed.group(1)) if passed else 0
+            counts["failed"] = int(failed.group(1)) if failed else 0
+        counts["total"] = counts["passed"] + counts["failed"]
+        return counts
 
     @staticmethod
     def _parse_test_counts(output: str) -> Dict[str, int]:

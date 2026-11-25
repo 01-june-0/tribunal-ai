@@ -6,6 +6,7 @@ from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 
 from schemas.provenance import AgentProvenanceRecord
+from core.evidence_rules import CRITERIA_RULE
 
 class BaseArchitect(ABC):
     """
@@ -100,6 +101,7 @@ class BaseArchitect(ABC):
             "reference_paths ONLY for absolute paths of external documents the user supplied (repo files are always "
             "given to the Maker; never list them there); "
             "risk_level HIGH only for the escalation categories, an ambitious goal is MEDIUM.\n"
+            + CRITERIA_RULE + "\n"
             "Before you answer, check your ORDER against itself: every file in required_outputs must be inside "
             "allowed_paths and must NOT match protected_paths (a wildcard such as data/*.json also protects a new "
             "data/x.json).\n\n"

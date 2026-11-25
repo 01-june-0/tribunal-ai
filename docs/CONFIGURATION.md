@@ -71,6 +71,14 @@ verification:
 
 프로젝트마다 다른 명령이 필요하면 프로젝트 안이 아니라 여기에 둡니다. MAKER가 검증을 약하게 바꿀 수 없게 하기 위해서입니다.
 
+**Node 테스트는 따로 설정하지 않아도 함께 돕니다.** `test_command`를 돌린 뒤, 프로젝트에 Node 내장 테스트 실행기용 파일
+(`*.test.js` · `*-test.js` · `test-*.js` 같은 이름에, `node:test`를 가져오는 파일)이 있으면 `node --test <그 파일들>`을,
+그런 파일이 없고 `package.json`에 실제 `test` 스크립트가 있으면 `npm test`를 돌립니다. 두 결과를 합쳐 통과 여부와 테스트 수를
+정합니다. `test_command`가 이미 `npm` · `node` · `npx` 명령이면 따로 돌리지 않습니다. `node`나 `npm`이 없거나, `test` 스크립트가
+패키지(`dependencies` · `devDependencies`)를 필요로 하면 돌리지 않고 검증 요약에 그 이유를 적습니다. Tribunal은 패키지를 설치하지
+않아 작업 사본에 `node_modules`가 없기 때문입니다. 그래서 Jest · Mocha 테스트는 지금은 돌지 않고, 그런 프로젝트는
+`test_command`에 직접 명령을 적어야 합니다.
+
 ```yaml
 projects:
   "/absolute/path/to/my_service":

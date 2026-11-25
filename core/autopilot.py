@@ -317,6 +317,9 @@ def only_preexisting_failures(baseline: Optional[dict], verification: Optional[d
         return None
     if verification.get("required_outputs_missing"):
         return None
+    # Node failures are not named in a form failing_tests() reads, so a failing Node run is never "unchanged"
+    if (verification.get("node_tests") or {}).get("passed") is False:
+        return None
     base, post = failing_tests(baseline), failing_tests(verification)
     if not post or not base or not post.issubset(base):
         return None

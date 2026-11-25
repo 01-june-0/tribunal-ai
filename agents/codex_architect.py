@@ -17,6 +17,7 @@ from schemas.maker_result import MakerResultSchema
 from schemas.review_result import ReviewResultSchema
 from schemas.decision import DecisionSchema
 from schemas.provenance import AgentProvenanceRecord
+from core.evidence_rules import CRITERIA_RULE, DECIDE_RULE
 
 class CodexArchitect(BaseArchitect):
     """
@@ -166,6 +167,7 @@ class CodexArchitect(BaseArchitect):
             "2. Define minimal 'allowed_paths' necessary to achieve the goal.\n"
             "3. Include critical files/directories in 'protected_paths' that must not be modified.\n"
             "4. Define clear, testable 'acceptance_criteria'. Include required_outputs: exact project-relative deliverable file paths, including required behavior tests. Include reference_paths for explicit user-supplied absolute document paths.\n"
+            f"   {CRITERIA_RULE}\n"
             "5. Specify realistic 'max_files_changed' (<=15) and 'max_diff_lines' (<=800).\n"
             "6. 'allowed_deletions': Must be empty [] unless the user explicitly requested deleting specific functions, classes, tests, or files.\n"
             "7. Explicitly remind the maker to preserve all existing functions, classes, and tests alongside new ones.\n\n"
@@ -225,6 +227,7 @@ class CodexArchitect(BaseArchitect):
             "   - NO baseline test regressions occurred.\n"
             "   - Inspector reported NO P0/P1 issues and did NOT report accidental deletion of existing behaviors.\n"
             "   - Inspector verdict is pass, OR the inspector reported only P2 (minor) findings: then PASS and list those P2 items in next_steps as follow-ups. Any P0/P1 needs FAIL with concrete corrections.\n"
+            f"   - {DECIDE_RULE}\n"
             "2. 'HUMAN_REQUIRED': MUST be returned if:\n"
             "   - Any existing function, test, or behavior was removed without explicit order permission.\n"
             "   - External authority, credentials, spending or live deployment is required (start the rationale with USER_DECISION:).\n"
@@ -259,6 +262,7 @@ class CodexArchitect(BaseArchitect):
             "}\n\n"
             "If it's a DEV_TASK, output a strict ORDER JSON as well:\n"
             "All allowed_paths must be narrow project-relative files/subtrees (e.g. src/**, tests/**, README.md). Never put the absolute project directory or a whole-project wildcard in allowed_paths. Include required_outputs listing exact deliverable file paths and reference_paths listing user-supplied absolute document paths.\n"
+            f"{CRITERIA_RULE}\n"
             "{\n"
             '  "type": "DEV_TASK",\n'
             '  "message": "I will proceed with this task.",\n'
