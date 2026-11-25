@@ -7,13 +7,18 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - scripts/build_bundle.py
-      - .github/workflows/bundles.yml
-      - pyproject.toml
-      - tribunal_cli.py
-      - core/app_window.py
-      - core/updates.py
+    # The installers carry the whole app, so any change to it rebuilds them; only changes that cannot reach an
+    # installer are skipped (a push touching nothing else builds nothing).
+    paths-ignore:
+      - docs/**
+      - design/**
+      - tests/**
+      - '**/*.md'
+      - .github/workflows/tests.yml
+      - install.sh
+      - install.ps1
+      - uninstall.sh
+      - uninstall.ps1
 
 permissions:
   contents: read
