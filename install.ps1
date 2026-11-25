@@ -41,8 +41,14 @@ function Install-TribunalAI {
     if (-not $uv) {
         Write-Host ''
         Write-Host '1/3 Installing uv (installer for Python programs, https://docs.astral.sh/uv)'
+        # Astral's installer runs in its own PowerShell with ExecutionPolicy Bypass for that process only: run as a plain
+        # `irm ... | iex` under the default (Restricted) policy it refuses to start, and its `exit` closed the user's
+        # window. The machine's policy is never changed.
         try {
-            Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+            $shell = (Get-Process -Id $PID).Path
+            if (-not $shell) { $shell = 'powershell.exe' }
+            & $shell -NoProfile -ExecutionPolicy Bypass -Command 'Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression'
+            if ($LASTEXITCODE -ne 0) { throw "the uv installer ended with code $LASTEXITCODE" }
         } catch {
             Write-Host "Error: uv did not install: $_" -ForegroundColor Red
             $global:LASTEXITCODE = 1

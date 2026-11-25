@@ -204,6 +204,9 @@ Codex 로그아웃 → 로그인, 계정 변경, 작업 중 로그아웃 거절.
 - 배포 3단계(설치 한 줄 + 바로 가기): `install.sh`(macOS · Linux, `curl … | sh`)와 `install.ps1`(Windows, `irm … | iex`)이 uv가
   없으면 설치하고, GitHub 압축본에서 Tribunal을 설치하고(git 불필요, Python은 uv가 받음), 바로 가기를 만들고 콘솔을 엶. 다시 붙여
   넣으면 업데이트. `uninstall.sh` · `uninstall.ps1`은 콘솔을 끄고 바로 가기와 프로그램만 지우고 기록은 남김.
+  - Windows에서 `ExecutionPolicy ByPass` 없이 `irm … | iex`로만 실행하면, 기본 실행 정책 때문에 uv 설치기가 시작을 거부하고
+    창까지 닫혔음(실제 PC에서 확인). 이제 uv 설치기만 그 프로세스에 한해 Bypass로 띄운 별도 PowerShell에서 돌림. PC의 실행
+    정책은 바꾸지 않음.
   `tribunal shortcut [--remove]`(`core/shortcuts.py`): macOS 응용 프로그램 폴더의 앱, Windows 시작 메뉴 · 바탕화면, Linux 앱 메뉴.
   아이콘으로 열 때는 로그인 셸의 PATH를 더하고, 실패하면 오류 창으로 알림. 이 맥에서 임시 폴더로 설치 · 업데이트 · 짧은 PATH로
   아이콘 실행 · 지우기를 확인했고, 세 운영체제의 깨끗한 환경은 GitHub Actions `installer` 작업으로 확인함. critic 지적 3건 반영
