@@ -71,7 +71,41 @@
   AI 설정에서 볼 수 있습니다.
 - 요금과 한도는 각 회사가 정하고 바꿉니다. 각 서비스의 이용 약관을 따르세요.
 
-## 빠른 시작
+## 설치
+
+터미널에 한 줄을 붙여 넣습니다. Python을 따로 설치할 필요는 없습니다([uv](https://docs.astral.sh/uv/)가 함께 받아 옵니다).
+
+macOS · Linux (터미널):
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/install.ps1 | iex"
+```
+
+- 하는 일: uv가 없으면 설치 → Tribunal AI 설치(`tribunal` 명령) → 바로 가기(macOS 응용 프로그램 폴더의 `Tribunal AI`, Windows
+  시작 메뉴와 바탕화면, Linux 앱 메뉴) → 콘솔을 브라우저로 엽니다.
+- 처음 열면 **시작하기 도우미**가 비용 안내, git, AI CLI 설치, 로그인, 연습 폴더에서의 첫 작업을 차례로 안내합니다. 설치 명령은
+  각 회사의 공식 명령을 그대로 보여 주고 확인을 받은 뒤에만 실행합니다. 나중에는 **AI 설정 → 시작하기 도우미**로 다시 엽니다.
+- 같은 한 줄을 다시 붙여 넣으면 최신 버전으로 바뀝니다. 기록은 그대로입니다.
+- 기록은 사용자 데이터 폴더(macOS `~/Library/Application Support/Tribunal AI`, Windows `%APPDATA%\Tribunal AI`, Linux
+  `~/.local/share/tribunal-ai`)에 쌓입니다.
+- 지우기: 같은 주소의 `uninstall.sh`(macOS · Linux), `uninstall.ps1`(Windows). 프로그램과 바로 가기만 지우고 기록 · 프로젝트 ·
+  uv · AI CLI는 남깁니다.
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/uninstall.sh | sh
+```
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/uninstall.ps1 | iex"
+```
+
+## 저장소에서 돌리기 (개발용)
 
 ```bash
 python3 -m venv .venv
@@ -92,16 +126,8 @@ sh stop-companion.sh
 .venv/bin/python scripts/demo_console.py      # http://127.0.0.1:8190
 ```
 
-설치본으로 써 보기(개발 중인 미리보기, [uv](https://docs.astral.sh/uv/) 필요). 기록은 저장소가 아니라 사용자 데이터 폴더
-(macOS `~/Library/Application Support/Tribunal AI`, Windows `%APPDATA%\Tribunal AI`, Linux `~/.local/share/tribunal-ai`)에 쌓입니다.
-
-```bash
-uv tool install .          # 저장소 폴더에서. `tribunal` 명령이 생깁니다
-tribunal                   # 콘솔을 켜고 브라우저로 엽니다 (tribunal stop / doctor / do …)
-```
-
-처음 열면 **시작하기 도우미**가 비용 안내, git, AI CLI 설치, 로그인, 연습 폴더에서의 첫 작업을 차례로 안내합니다. 설치 명령은
-각 회사의 공식 명령을 그대로 보여 주고 확인을 받은 뒤에만 실행합니다. 나중에는 **AI 설정 → 시작하기 도우미**로 다시 엽니다.
+저장소 폴더를 설치본으로 써 보기: `uv tool install .` 뒤에 `tribunal`(콘솔 켜고 열기), `tribunal stop`, `tribunal doctor`,
+`tribunal shortcut`(바로 가기, `--remove`로 지움).
 
 명령줄에서 바로 한 번 돌리기:
 

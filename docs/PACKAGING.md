@@ -10,7 +10,8 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | 0. 기반 정리 | **끝남 (2026-11-24)** — `core/paths.py`, `core/pythons.py`, `pyproject.toml`, `tribunal` 명령. uv로 설치한 설치본(Python 3.9)이 저장소 없이 콘솔을 켜고 작업 하나를 끝까지 통과 |
 | 1. 세 운영체제 자동 시험 | **끝남 (2026-11-24)** — `.github/workflows/tests.yml`: macOS · Windows · Linux(3.13)와 Linux(3.9)에서 테스트 모음 통과, 패키지를 만들어 설치하고 `tribunal doctor` 실행. 첫 Windows 실행의 실패 40개를 고침(제품 문제: SQLite 연결이 닫히지 않음, 경로 줄이기, 시간대 정보, 출력 인코딩) |
 | 2. 처음 실행 도우미 | **만듦 (2026-11-24)** — `core/setup.py`, `console/setup.js`. 이 맥에서 실제 상태와 바꾼 응답(설치 안 됨 · npm 없음)으로 화면을 확인. 끝났다고 볼 기준(아무것도 없는 계정에서 도우미만 따라 첫 작업까지)은 아직 확인하지 않음 |
-| 3~5 | 아직 |
+| 3. 설치 한 줄 + 바로 가기 | **만듦 (2026-11-25)** — `install.sh` · `install.ps1` · `uninstall.sh` · `uninstall.ps1`, `core/shortcuts.py`(`tribunal shortcut`). 이 맥에서 임시 폴더에 설치 · 다시 설치(업데이트) · 짧은 PATH로 아이콘 실행 · 지우기를 확인. 세 운영체제의 깨끗한 환경 확인은 GitHub Actions `installer` 작업(올린 뒤 결과 확인) |
+| 4~5 | 아직 |
 
 ## 1. 정한 것 (2026-11-24)
 
@@ -21,7 +22,7 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | 운영체제 | macOS, Windows, Linux |
 | 바탕 | `uv`로 설치하는 패키지 하나(`tribunal` 명령). 그 위에 설치 한 줄, 처음 실행 도우미, 나중에 앱 설치 파일 |
 | AI CLI 안내 | 공식 설치 명령을 보여 주고, 사용자가 확인한 뒤 새 터미널 창에서 실행. 로그인도 같은 방식(이미 있는 AI 설정의 로그인 기능) |
-| 비용 안내 | 처음 실행 도우미의 첫 화면과 README에 분명히 적음 (6절) |
+| 비용 안내 | 처음 실행 도우미의 첫 화면과 README에 분명히 적음 (7절) |
 | 저장소 | 공개(`github.com/01-june-0/tribunal-ai`). MIT 라이선스 유지 |
 
 ## 2. 구조
@@ -50,7 +51,7 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | **0. 기반 정리** | 데이터 위치 분리, 실행 파일 경로 정리, 패키지 구조 (4절) | 이 맥에서 `uv tool install`로 설치한 `tribunal`이 저장소 없이 동작하고, 저장소에서 돌리는 지금 방식도 그대로 동작 | 전체 테스트 + 설치본으로 가짜 CLI 작업 한 번 |
 | **1. 세 운영체제 자동 시험** | GitHub Actions로 macOS · Windows · Linux에서 테스트 모음 실행 | 세 운영체제에서 모두 통과(또는 실패 원인을 고침) | Actions 결과 |
 | **2. 처음 실행 도우미** | 점검 화면: 비용 안내 → git → AI CLI 설치 → 로그인 → 연습 프로젝트 (5절) | 아무것도 없는 사용자 계정에서 도우미만 따라 첫 작업까지 갈 수 있음 | 새 macOS 사용자 계정 · Linux 컨테이너 · (가능하면) Windows |
-| **3. 설치 한 줄 + 바로 가기** | 운영체제별 설치 스크립트(uv 설치 → Tribunal 설치 → 바로 가기), 지우기 스크립트 | 한 줄 붙여 넣기로 설치하고 아이콘으로 열림, 지우기도 한 줄 | 깨끗한 환경에서 설치 · 실행 · 삭제 |
+| **3. 설치 한 줄 + 바로 가기** | 운영체제별 설치 스크립트(uv 설치 → Tribunal 설치 → 바로 가기), 지우기 스크립트 (6절) | 한 줄 붙여 넣기로 설치하고 아이콘으로 열림, 지우기도 한 줄 | 깨끗한 환경에서 설치 · 실행 · 삭제 |
 | **4. 앱 창** | `tribunal app` (pywebview). 창을 닫으면 서버도 끝남 | 브라우저 없이 같은 화면이 창으로 열림 | 세 운영체제 |
 | **5. 설치 파일과 서명** | `.dmg` · Windows 설치 파일 · AppImage, 서명과 공증, 자동 업데이트, 동봉 고지문 | 경고 없이 설치되고 새 버전을 알려 줌 | 사용자가 생긴 뒤 진행 (Apple 개발자 계정 연 $99 필요) |
 
@@ -103,7 +104,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 단계별 화면입니다. 처음 받은 사본(비용 안내를 읽은 기록도, 실행 기록도 없음)에서는 콘솔이 열릴 때 스스로 나오고, 그 뒤에는
 **AI 설정 → 시작하기 도우미**로 엽니다. 일부러 AI 둘만 쓰는 사람에게 매번 뜨지 않도록, 빠진 것이 있다고 스스로 열리지는 않습니다.
 
-1. **비용 안내** — 6절의 내용. "이해했습니다"를 눌러야 다음으로.
+1. **비용 안내** — 7절의 내용. "이해했습니다"를 눌러야 다음으로.
 2. **git** — 있으면 통과. 없으면 운영체제별 공식 설치 방법을 보여 주고 확인 뒤 실행(Windows는 Git for Windows).
 3. **AI CLI** — 셋 각각 설치 여부와 버전. 없으면 그 회사의 공식 설치 명령을 보여 주고, 확인을 받은 뒤 새 터미널 창에서 실행.
    설치 명령은 회사가 바꿀 수 있으므로 코드 한 곳(`core/setup.py`의 `COMMANDS`)에 모아 두고, 공식 안내 페이지 링크를 함께 보여 줌.
@@ -119,7 +120,30 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 
 원칙: Tribunal은 사용자의 확인 없이 아무것도 설치하지 않고, 실행할 명령은 그대로 보여 주며, 비밀번호 · 토큰을 묻거나 읽지 않습니다.
 
-## 6. 비용 안내 (도우미 첫 화면과 README에 들어갈 내용)
+## 6. 설치 한 줄과 바로 가기 (3단계)
+
+| | macOS · Linux | Windows |
+|---|---|---|
+| 한 줄 | `curl -LsSf https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/install.sh \| sh` | `powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/01-june-0/tribunal-ai/main/install.ps1 \| iex"` |
+| 바로 가기 | macOS `~/Applications/Tribunal AI.app`(Spotlight · Launchpad), Linux `~/.local/share/applications/tribunal-ai.desktop`(앱 메뉴) | 시작 메뉴와 바탕화면의 `Tribunal AI.lnk` |
+| 지우기 | 같은 주소의 `uninstall.sh` | 같은 주소의 `uninstall.ps1` |
+
+- 순서: uv가 없으면 Astral의 공식 설치기로 설치 → `uv tool install --force --reinstall --managed-python --python 3.13 <GitHub 압축본>`
+  (git 없이 받음, Python도 uv가 받음) → `tribunal shortcut` → 콘솔 열기. 다시 붙여 넣으면 켜진 콘솔을 끄고 최신 버전으로 바꿉니다.
+- 바로 가기는 설치본의 Python으로 `-I -m tribunal_cli open --from-shortcut`을 실행합니다. `-I`는 아이콘이 시작되는 폴더(홈 폴더)의
+  같은 이름 파일을 불러오지 않게 합니다. Windows는 창 없는 `pythonw.exe`로 시작하고, 콘솔 서버는 `python.exe`로 띄웁니다.
+- 아이콘으로 연 프로그램은 짧은 PATH를 받으므로(macOS `/usr/bin:/bin:/usr/sbin:/sbin`), 시작하기 전에 로그인 셸의 PATH와 설치기가
+  쓰는 폴더를 더합니다. 실패하면 터미널 대신 오류 창(macOS 알림 창, Windows 메시지 창, Linux zenity · kdialog · notify-send)에
+  이유와 기록 위치를 보여 줍니다.
+- 지우기는 콘솔 끄기 → 바로 가기 지우기 → `uv tool uninstall tribunal-ai` 순서이고, 기록 · 프로젝트 · 연습 폴더 · uv · AI CLI는
+  남깁니다. 바로 가기는 Tribunal 표시가 있는 파일만 지우고, 같은 이름의 다른 파일은 건드리지 않습니다.
+- Windows 스크립트는 `irm | iex`와 Windows PowerShell 5.1에서 읽히도록 영어(ASCII)로 씁니다. 두 설치 스크립트 모두 내용 전체를
+  함수에 넣고 마지막 줄에서 부르므로, 내려받다 끊긴 스크립트는 아무것도 실행하지 않습니다.
+- 확인 방법: GitHub Actions의 `installer` 작업이 세 운영체제에서 이 커밋으로 설치(두 번) → 짧은 PATH로 아이콘 실행 → 콘솔 응답 →
+  지우기 → 바로 가기 · 명령이 없어지고 기록은 남는지까지 봅니다.
+- 아이콘 그림은 아직 없습니다(운영체제 기본 그림). 시안을 보고 정합니다.
+
+## 7. 비용 안내 (도우미 첫 화면과 README에 들어갈 내용)
 
 - **Tribunal AI는 무료입니다**(MIT 라이선스). 종량제 API 요금을 쓰지 않습니다.
 - **대신 AI 회사의 구독이 필요합니다.** Tribunal은 각 회사의 코딩 CLI를 사용자의 구독 로그인으로 부립니다.
@@ -131,7 +155,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
   볼 수 있습니다.
 - **요금과 한도는 각 회사가 정하고 바꿉니다.** Tribunal에 적힌 금액은 없고, 각 회사의 요금 안내를 따릅니다.
 
-## 7. 라이선스와 공개 (2026-11-24 점검)
+## 8. 라이선스와 공개 (2026-11-24 점검)
 
 - **라이선스**: MIT. 원본 AI DEV DIRECTOR의 저작권 표시(DAVZD)와 이 프로젝트의 저작권 줄이 `LICENSE`에 함께 있습니다.
 - **함께 쓰는 패키지**: PyYAML · pydantic · pytest · urllib3 등 MIT, click · psutil · idna 등 BSD, requests Apache-2.0, certifi MPL-2.0.
@@ -142,7 +166,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
   안내에 "각 서비스의 이용 약관을 따르세요"로 적습니다.
 - **공개 전 점검**: 추적 파일과 커밋 기록 전체에 비밀 값 · 이 컴퓨터의 경로 · 실제 이메일 없음. 커밋 작성자 이메일은 공개(사용자 결정).
 
-## 8. 열린 위험
+## 9. 열린 위험
 
 - **Windows는 아직 한 번도 실제로 돌려 보지 않았습니다.** 1단계의 자동 시험이 첫 확인입니다.
 - **AI CLI의 설치 방법과 로그인 방식은 회사가 바꿀 수 있습니다.** 도우미의 안내 문구와 명령은 한곳에 모아 고치기 쉽게 둡니다.

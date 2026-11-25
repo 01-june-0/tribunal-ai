@@ -23,6 +23,11 @@ _VERSION: Dict[str, Optional[str]] = {}
 def tribunal_python() -> str:
     if getattr(sys, "frozen", False):              # a bundled app: its own executable is not a Python
         return shutil.which("python3") or shutil.which("python") or sys.executable
+    exe = Path(sys.executable)
+    if exe.name.lower() == "pythonw.exe" and exe.with_name("python.exe").is_file():
+        # Started from a Windows icon (core/shortcuts.py). The console must run under python.exe: a window-less parent
+        # would make every git, CLI and test run it starts open a console window of its own.
+        return str(exe.with_name("python.exe"))
     return sys.executable
 
 

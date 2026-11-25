@@ -5,6 +5,7 @@
     tribunal stop       stop it (records and working copies stay)
     tribunal serve      run the console in this window (Ctrl+C stops it)
     tribunal doctor     what is installed, signed in, and where the records are
+    tribunal shortcut   make the icons that open it (--remove takes them away)
     tribunal do / mission / run / status / resume / clean-worktrees   the same commands as `director.py`
 
 The same on macOS, Windows and Linux: no shell script is involved. Run from a source checkout it manages the same
@@ -148,11 +149,44 @@ def cli(ctx):
 
 
 @cli.command("open")
-def open_cmd():
+@click.option("--from-shortcut", is_flag=True, hidden=True)
+def open_cmd(from_shortcut=False):
     """Start the console if needed and open it in the browser."""
-    url = start_console()
-    click.echo(f"Tribunal AI: {url}")
-    webbrowser.open(url)
+    if not from_shortcut:
+        url = start_console()
+        click.echo(f"Tribunal AI: {url}")
+        webbrowser.open(url)
+        return
+    from core import shortcuts                      # opened from an icon: no terminal, and the system's short PATH
+    try:
+        shortcuts.widen_path()
+        webbrowser.open(start_console())
+    except Exception as exc:                        # a ClickException or anything else: say it on the screen
+        detail = exc.format_message() if isinstance(exc, click.ClickException) else f"{type(exc).__name__}: {exc}"
+        shortcuts.show_error("Tribunal AI를 열지 못했습니다 / could not open Tribunal AI.\n\n"
+                             f"{detail[:800]}\n\n기록 / log: {data_dir()}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--remove", is_flag=True, help="Take the shortcuts away again")
+def shortcut(remove):
+    """Make the icons that open Tribunal AI (macOS: Applications, Windows: Start menu and Desktop, Linux: app menu)."""
+    from core import shortcuts
+    if remove:
+        done = shortcuts.remove()
+        for path in done["removed"]:
+            click.echo(f"지움 / removed: {path}")
+        for path in done["kept"]:
+            click.echo(f"Tribunal이 만든 것이 아니라 두었습니다 / not ours, kept: {path}")
+        if not done["removed"] and not done["kept"]:
+            click.echo("지울 바로 가기가 없습니다 / no shortcuts to remove.")
+        return
+    done = shortcuts.create()
+    for path in done["made"]:
+        click.echo(f"바로 가기 / shortcut: {path}")
+    for path in done["skipped"]:
+        click.echo(f"같은 이름의 다른 파일이 있어 건너뜀 / something else has this name, skipped: {path}")
 
 
 @cli.command()

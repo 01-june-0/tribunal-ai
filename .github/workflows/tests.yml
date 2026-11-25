@@ -58,3 +58,100 @@ jobs:
           python -m pip install --force-reinstall dist/*.whl
           tribunal doctor
         shell: bash
+
+  # Phase 3: the install one-liners, run for real on clean runners against this commit. Each runs twice (the second
+  # time is an update), the icon is started with the short PATH an icon gets, then everything is removed again.
+  installer:
+    name: installer · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      TRIBUNAL_SOURCE: ${{ github.workspace }}
+      TRIBUNAL_NO_OPEN: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install, then install again as an update
+        if: runner.os != 'Windows'
+        run: |
+          sh install.sh
+          sh install.sh
+
+      - name: The icon opens the console
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          tribunal="$HOME/.local/bin/tribunal"
+          "$tribunal" doctor
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            launcher="$HOME/Applications/Tribunal AI.app/Contents/MacOS/tribunal-launch"
+            test -x "$launcher"
+            env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin BROWSER=true "$launcher"
+          else
+            entry="$HOME/.local/share/applications/tribunal-ai.desktop"
+            test -f "$entry"
+            command="$(sed -n 's/^Exec=//p' "$entry")"
+            env -i HOME="$HOME" PATH=/usr/bin:/bin BROWSER=true sh -c "$command"
+          fi
+          "$tribunal" doctor --json | python3 -c "import json, sys; r = json.load(sys.stdin); print(r['console']); assert r['console'] and r['installed']"
+          "$tribunal" stop
+
+      - name: Uninstall removes the program and the icon, keeps the records
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          sh uninstall.sh
+          test ! -e "$HOME/.local/bin/tribunal"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            test ! -e "$HOME/Applications/Tribunal AI.app"
+            test -d "$HOME/Library/Application Support/Tribunal AI/data"
+          else
+            test ! -e "$HOME/.local/share/applications/tribunal-ai.desktop"
+            test -d "$HOME/.local/share/tribunal-ai/data"
+          fi
+
+      - name: Install, then install again as an update (Windows PowerShell 5.1, as pasted)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          if ($LASTEXITCODE -ne 0) { throw "update failed" }
+
+      - name: The icon opens the console (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $tribunal = "$env:USERPROFILE\.local\bin\tribunal.exe"
+          & $tribunal doctor
+          $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Tribunal AI.lnk'
+          $desk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Tribunal AI.lnk'
+          foreach ($p in @($menu, $desk)) { if (-not (Test-Path -LiteralPath $p)) { throw "missing $p" } }
+          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($menu)
+          Write-Host "$($lnk.TargetPath) $($lnk.Arguments)"
+          if (-not ($lnk.TargetPath -like '*pythonw.exe')) { throw "the icon should start the window-less Python" }
+          $proc = Start-Process -FilePath $lnk.TargetPath -ArgumentList $lnk.Arguments -PassThru
+          $proc.WaitForExit()
+          if ($proc.ExitCode -ne 0) { throw "the icon's program ended with $($proc.ExitCode)" }
+          $report = (& $tribunal doctor --json | Out-String) | ConvertFrom-Json
+          if (-not $report.console) { throw "the console is not running" }
+          Write-Host $report.console
+          & $tribunal stop
+
+      - name: Uninstall removes the program and the icons, keeps the records (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Get-Content -Raw uninstall.ps1 | Invoke-Expression
+          if ($LASTEXITCODE -ne 0) { throw "uninstall failed" }
+          if (Test-Path "$env:USERPROFILE\.local\bin\tribunal.exe") { throw "tribunal.exe is still there" }
+          foreach ($folder in @('Programs', 'Desktop')) {
+            $p = Join-Path ([Environment]::GetFolderPath($folder)) 'Tribunal AI.lnk'
+            if (Test-Path -LiteralPath $p) { throw "still there: $p" }
+          }
+          if (-not (Test-Path "$env:APPDATA\Tribunal AI\data")) { throw "the records should stay" }
