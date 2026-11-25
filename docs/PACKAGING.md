@@ -10,7 +10,7 @@ Tribunal AI를 저장소를 받아 돌리는 프로젝트에서, **처음 바이
 | 0. 기반 정리 | **끝남 (2026-11-24)** — `core/paths.py`, `core/pythons.py`, `pyproject.toml`, `tribunal` 명령. uv로 설치한 설치본(Python 3.9)이 저장소 없이 콘솔을 켜고 작업 하나를 끝까지 통과 |
 | 1. 세 운영체제 자동 시험 | **끝남 (2026-11-24)** — `.github/workflows/tests.yml`: macOS · Windows · Linux(3.13)와 Linux(3.9)에서 테스트 모음 통과, 패키지를 만들어 설치하고 `tribunal doctor` 실행. 첫 Windows 실행의 실패 40개를 고침(제품 문제: SQLite 연결이 닫히지 않음, 경로 줄이기, 시간대 정보, 출력 인코딩) |
 | 2. 처음 실행 도우미 | **만듦 (2026-11-24)** — `core/setup.py`, `console/setup.js`. 이 맥에서 실제 상태와 바꾼 응답(설치 안 됨 · npm 없음)으로 화면을 확인. 끝났다고 볼 기준(아무것도 없는 계정에서 도우미만 따라 첫 작업까지)은 아직 확인하지 않음 |
-| 3. 설치 한 줄 + 바로 가기 | **만듦 (2026-11-25)** — `install.sh` · `install.ps1` · `uninstall.sh` · `uninstall.ps1`, `core/shortcuts.py`(`tribunal shortcut`). 이 맥에서 임시 폴더에 설치 · 다시 설치(업데이트) · 짧은 PATH로 아이콘 실행 · 지우기를 확인. 세 운영체제의 깨끗한 환경 확인은 GitHub Actions `installer` 작업(올린 뒤 결과 확인) |
+| 3. 설치 한 줄 + 바로 가기 | **만듦 (2026-11-25)** — `install.sh` · `install.ps1` · `uninstall.sh` · `uninstall.ps1`, `core/shortcuts.py`(`tribunal shortcut`). 이 맥에서 임시 폴더에 설치 · 다시 설치(업데이트) · 짧은 PATH로 아이콘 실행 · 지우기를 확인. GitHub Actions `installer` 작업이 깨끗한 macOS · Windows · Linux에서 설치 두 번 · 짧은 PATH로 아이콘 실행(Windows는 창 없는 `pythonw.exe`) · 콘솔 응답 · 지우기(기록은 남음)까지 통과(2026-11-25). 사람이 실제 화면에서 아이콘을 눌러 본 적은 아직 없음 |
 | 4~5 | 아직 |
 
 ## 1. 정한 것 (2026-11-24)
