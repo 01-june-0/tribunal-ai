@@ -139,7 +139,9 @@ if missing:
     sys.exit("no licence file in: " + ", ".join(missing))
 print("\n\n".join(parts))
 '''
-    done = subprocess.run([str(python_exe(py)), "-I", "-c", script], capture_output=True, text=True, encoding="utf-8")
+    # -X utf8: the licence texts come back as UTF-8 on every system (Windows would print them in its code page)
+    done = subprocess.run([str(python_exe(py)), "-I", "-X", "utf8", "-c", script], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
     if done.returncode != 0:
         sys.exit(done.stderr.strip() or "could not collect the licences")
     python_licence = next((p for p in (py / "lib" / f"python{PYTHON_VERSION}" / "LICENSE.txt", py / "LICENSE.txt",
