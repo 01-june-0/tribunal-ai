@@ -247,3 +247,46 @@ def test_runs_asks_the_interpreter_itself():
     from core.run_preview import _runs
     assert _runs(sys.executable) is True
     assert _runs("/nonexistent/python") is False
+
+
+def test_the_page_opens_only_once_the_server_answers():
+    """Reported on Windows: the window only printed the address. Tribunal now opens the page itself, and only after
+    the server accepts a connection, so a slow start never shows an error page."""
+    import socket as _s
+    import threading as _t
+    opened = []
+    with _s.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    page = f"http://127.0.0.1:{port}/index.html"
+    assert rp._open_when_up(page, wait=0.6, opener=opened.append) is False and opened == []   # nothing there: not opened
+    server = _s.socket()
+    server.bind(("127.0.0.1", port))
+    timer = _t.Timer(0.4, server.listen)                                                    # comes up a moment later
+    timer.start()
+    try:
+        assert rp._open_when_up(page, wait=10, opener=opened.append) is True and opened == [page]
+    finally:
+        timer.join()
+        server.close()
+    assert rp._open_when_up("not a url", wait=0.1, opener=opened.append) is False and len(opened) == 1
+
+
+def test_the_windows_window_says_the_browser_opens_by_itself():
+    win = rp.windows_script(Path("C:/w/p"), "python -m http.server", "http://127.0.0.1:5052/index.html")
+    assert "echo [Tribunal AI] the browser opens once the server is up; if not, open: http://127.0.0.1:5052/index.html" in win
+
+
+def test_a_page_already_served_by_something_else_is_not_opened(tmp_path, monkeypatch):
+    """critic: a fixed port another program already uses would open that program's page, not the result's."""
+    calls, threads = [], []
+    monkeypatch.setattr(rp.os, "name", "nt")
+    monkeypatch.setattr(rp.sys, "platform", "win32")
+    monkeypatch.setattr(rp.subprocess, "Popen", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(rp.threading, "Thread", lambda *a, **k: threads.append(k) or type("T", (), {"start": lambda self: None})())
+    import core.cli_accounts as ca
+    monkeypatch.setattr(ca, "_write_script", lambda name, text, folder: tmp_path / name)
+    monkeypatch.setattr(rp, "_answers", lambda page: True)
+    assert rp._open_terminal("RUN-1", tmp_path, "npm run dev", "http://localhost:3000/") and calls and threads == []
+    monkeypatch.setattr(rp, "_answers", lambda page: False)
+    assert rp._open_terminal("RUN-1", tmp_path, "npm run dev", "http://localhost:3000/") and len(threads) == 1

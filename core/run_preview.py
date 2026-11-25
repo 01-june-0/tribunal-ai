@@ -19,6 +19,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional
@@ -26,6 +27,7 @@ from typing import Any, Callable, Dict, List, Optional
 KINDS = ("web", "gui", "terminal")
 MAX_COMMAND = 300
 MAX_COPY_FILES = 20_000
+OPEN_WAIT = 180.0                   # seconds a try-out server may take (npm install first) before the page is not opened
 PORT = "<port>"                     # the free port a static page is served on, chosen when it starts
 LOCAL_URL = re.compile(r"^http://(127\.0\.0\.1|localhost)(:\d{1,5})?(/[^\s\"'`$\\]*)?$")
 GUI_MODULES = ("tkinter", "pygame", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "kivy", "flet", "arcade", "pyglet")
@@ -390,8 +392,8 @@ def _cmd_text(text: str) -> str:
 
 def windows_script(folder: Path, command: str, page: str) -> str:
     body = ["@echo off", "chcp 65001 >nul", 'cd /d "' + str(folder).replace("%", "%%") + '"', "echo [Tribunal AI] " + _cmd_text(command), "echo."]
-    if page:                                         # no reliable delayed open in cmd: the address is shown instead
-        body.append("echo [Tribunal AI] " + _cmd_text("open in a browser: " + page))
+    if page:                                         # Tribunal opens it once the server answers (_open_when_up)
+        body.append("echo [Tribunal AI] " + _cmd_text("the browser opens once the server is up; if not, open: " + page))
     body += [command, "echo.", "pause"]
     return "\r\n".join(body) + "\r\n"
 
@@ -430,6 +432,49 @@ def _open_terminal(run_id: str, folder: Path, command: str, page: str) -> bool:
         return True
     if os.name == "nt":
         path = _write_script(name + ".cmd", windows_script(folder, command, page), folder="run-scripts")
+        taken = bool(page) and _answers(page)        # something else already serves there: never open its page
         subprocess.Popen(["cmd", "/c", "start", "", "cmd", "/k", str(path)], stdin=subprocess.DEVNULL)
+        if page and not taken:                       # cmd has no reliable delayed open, so Tribunal opens the page
+            threading.Thread(target=_open_when_up, args=(page,), daemon=True, name="try-open-page").start()
         return True
     return False
+
+
+def _address(page: str):
+    import urllib.parse
+    try:
+        url = urllib.parse.urlsplit(page)
+        host, port = url.hostname, url.port or (443 if url.scheme == "https" else 80)
+    except ValueError:
+        return None
+    return (host, port) if host else None
+
+
+def _answers(page: str) -> bool:
+    """Whether a server accepts a connection at the page's address right now."""
+    where = _address(page)
+    if where is None:
+        return False
+    try:
+        socket.create_connection(where, timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def _open_when_up(page: str, wait: float = OPEN_WAIT, opener: Optional[Callable[[str], Any]] = None) -> bool:
+    """Open the page in the default browser once its server accepts a connection, so an install step or a slow start
+    never shows a blank error page. Gives up quietly after `wait` seconds: the window shows what went wrong."""
+    import webbrowser
+    if _address(page) is None:
+        return False
+    deadline = time.monotonic() + wait
+    while not _answers(page):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+    try:
+        (opener or webbrowser.open)(page)
+    except Exception:                                # no browser to open: the address is in the window
+        return False
+    return True
