@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Tribunal AI app icon (design/app-icon-mockup, candidate C): one AI on each corner - Claude, Antigravity,
+       Codex - checking each other, the work in the middle. The plate follows the macOS icon grid (824 of 1024).
+       scripts/make_icons.py turns this file into the .icns, .ico and .png files next to it. -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#18223a"/><stop offset="1" stop-color="#05070e"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".22"/><stop offset=".5" stop-color="#ffffff" stop-opacity=".04"/><stop offset="1" stop-color="#ffffff" stop-opacity=".1"/>
+    </linearGradient>
+    <radialGradient id="dotC" cx=".38" cy=".34" r=".7"><stop offset="0" stop-color="#ffd9c7"/><stop offset=".45" stop-color="#ff8a5c"/><stop offset="1" stop-color="#d4502a"/></radialGradient>
+    <radialGradient id="dotA" cx=".38" cy=".34" r=".7"><stop offset="0" stop-color="#dbe9ff"/><stop offset=".45" stop-color="#6aa5ff"/><stop offset="1" stop-color="#2f62d0"/></radialGradient>
+    <radialGradient id="dotX" cx=".38" cy=".34" r=".7"><stop offset="0" stop-color="#d4fff1"/><stop offset=".45" stop-color="#3df2c0"/><stop offset="1" stop-color="#14a982"/></radialGradient>
+    <radialGradient id="core" cx=".42" cy=".38" r=".65"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#e6efff"/><stop offset="1" stop-color="#9fb4d8"/></radialGradient>
+    <radialGradient id="coreHalo"><stop offset="0" stop-color="#eef3ff" stop-opacity=".6"/><stop offset="1" stop-color="#eef3ff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="edgeCA" gradientUnits="userSpaceOnUse" x1="512" y1="242" x2="746" y2="647"><stop offset="0" stop-color="#ff8a5c"/><stop offset="1" stop-color="#6aa5ff"/></linearGradient>
+    <linearGradient id="edgeAX" gradientUnits="userSpaceOnUse" x1="746" y1="647" x2="278" y2="647"><stop offset="0" stop-color="#6aa5ff"/><stop offset="1" stop-color="#3df2c0"/></linearGradient>
+    <linearGradient id="edgeXC" gradientUnits="userSpaceOnUse" x1="278" y1="647" x2="512" y2="242"><stop offset="0" stop-color="#3df2c0"/><stop offset="1" stop-color="#ff8a5c"/></linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <g stroke-width="46" stroke-linecap="round">
+    <line x1="512" y1="242" x2="746" y2="647" stroke="url(#edgeCA)"/>
+    <line x1="746" y1="647" x2="278" y2="647" stroke="url(#edgeAX)"/>
+    <line x1="278" y1="647" x2="512" y2="242" stroke="url(#edgeXC)"/>
+  </g>
+  <circle cx="512" cy="512" r="150" fill="url(#coreHalo)" opacity=".7"/>
+  <circle cx="512" cy="512" r="70" fill="url(#core)"/>
+  <circle cx="512" cy="242" r="84" fill="url(#dotC)"/>
+  <circle cx="746" cy="647" r="84" fill="url(#dotA)"/>
+  <circle cx="278" cy="647" r="84" fill="url(#dotX)"/>
+</svg>

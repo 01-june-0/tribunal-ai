@@ -92,12 +92,14 @@ jobs:
             # The window opens, the console draws in it, the window closes and the console it started goes off.
             launcher="$HOME/Applications/Tribunal AI.app/Contents/MacOS/tribunal-launch"
             test -x "$launcher"
+            test -s "$HOME/Applications/Tribunal AI.app/Contents/Resources/tribunal.icns"
             env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin TRIBUNAL_APP_SMOKE=1 "$launcher"
             "$tribunal" doctor --json | python3 -c "import json, sys; r = json.load(sys.stdin); assert r['installed'] and not r['console'], r"
           else
             # No window library here: the icon opens the console in the browser (the check says so with exit 3).
             entry="$HOME/.local/share/applications/tribunal-ai.desktop"
             test -f "$entry"
+            test -s "$(sed -n 's/^Icon=//p' "$entry")"
             command="$(sed -n 's/^Exec=//p' "$entry")"
             status=0
             env -i HOME="$HOME" PATH=/usr/bin:/bin BROWSER=true TRIBUNAL_APP_SMOKE=1 sh -c "$command" || status=$?
@@ -141,6 +143,9 @@ jobs:
           $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($menu)
           Write-Host "$($lnk.TargetPath) $($lnk.Arguments)"
           if (-not ($lnk.TargetPath -like '*pythonw.exe')) { throw "the icon should start the window-less Python" }
+          if (-not ($lnk.IconLocation -like '*tribunal.ico,0')) { throw "the shortcut should carry the app icon: $($lnk.IconLocation)" }
+          # the shell may hand the path back folded into %APPDATA%: unfold it before looking
+          if (-not (Test-Path -LiteralPath ([Environment]::ExpandEnvironmentVariables(($lnk.IconLocation -replace ',\d+$', ''))))) { throw "the icon file is missing" }
           # The window opens (Edge WebView2), the console draws in it, the window closes and the console goes off.
           $env:TRIBUNAL_APP_SMOKE = '1'
           $proc = Start-Process -FilePath $lnk.TargetPath -ArgumentList $lnk.Arguments -PassThru

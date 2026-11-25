@@ -16,7 +16,7 @@ from core.paths import home as tribunal_home, data_dir   # noqa: E402 - this mac
 # The console is a fixed allowlist of local files: nothing outside console/ is ever served.
 STATIC_FILES = {'/': 'index.html', '/console.js': 'console.js', '/console.css': 'console.css',
                 '/stage.css': 'stage.css', '/trinity.js': 'trinity.js', '/stage.js': 'stage.js', '/i18n.js': 'i18n.js', '/i18n_classic.js': 'i18n_classic.js',
-                '/setup.js': 'setup.js'}
+                '/setup.js': 'setup.js', '/icon.svg': 'icons/tribunal.svg'}
 
 
 _PICK_LOCK = threading.Lock()
@@ -164,7 +164,7 @@ class CompanionHandler(d.DashboardHandler):
             name = STATIC_FILES[path]
             body = (ROOT / 'console' / name).read_bytes()
             self.send_response(200)
-            self.send_header('Content-Type', {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css'}[name.rsplit('.', 1)[1]] + '; charset=utf-8')
+            self.send_header('Content-Type', {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'svg': 'image/svg+xml'}[name.rsplit('.', 1)[1]] + '; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')

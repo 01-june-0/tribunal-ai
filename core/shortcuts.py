@@ -26,6 +26,12 @@ BUNDLE_ID = "io.github.01-june-0.tribunal-ai"
 LAUNCHER = "tribunal-launch"            # the program inside the macOS app
 
 
+def icon(kind: str) -> Path:
+    """The app icon that ships with the code (console/icons, made by scripts/make_icons.py): icns, ico or png."""
+    from core.paths import code_file
+    return code_file("console", "icons", {"icns": "tribunal.icns", "ico": "tribunal.ico", "png": "tribunal-512.png"}[kind])
+
+
 def system() -> str:
     if sys.platform == "darwin":
         return "mac"
@@ -107,6 +113,7 @@ def mac_files(command: List[str]) -> Dict[str, str]:
   <key>CFBundleDisplayName</key><string>{NAME}</string>
   <key>CFBundleIdentifier</key><string>{BUNDLE_ID}</string>
   <key>CFBundleExecutable</key><string>{LAUNCHER}</string>
+  <key>CFBundleIconFile</key><string>tribunal</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -118,10 +125,11 @@ def mac_files(command: List[str]) -> Dict[str, str]:
     return {"Contents/Info.plist": plist, f"Contents/MacOS/{LAUNCHER}": script}
 
 
-def desktop_entry(command: List[str]) -> str:
+def desktop_entry(command: List[str], icon_path: Optional[Path] = None) -> str:
     return ("[Desktop Entry]\n"
             "Type=Application\n"
             f"Name={NAME}\n"
+            + (f"Icon={icon_path}\n" if icon_path else "") +
             "Comment=Claude Code, Codex and Antigravity as one coding team\n"
             "Comment[ko]=Claude Code · Codex · Antigravity를 한 팀으로 부리는 코딩 도구\n"
             "Exec=" + " ".join(_desktop_quote(part) for part in command) + "\n"
@@ -148,8 +156,11 @@ def _write_lnk(path: Path, command: List[str]) -> None:
     is ever pasted into PowerShell code."""
     script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:TRIBUNAL_LNK); "
               "$s.TargetPath = $env:TRIBUNAL_LNK_TARGET; $s.Arguments = $env:TRIBUNAL_LNK_ARGS; "
-              "$s.WorkingDirectory = $env:USERPROFILE; $s.Description = $env:TRIBUNAL_LNK_MARK; $s.Save()")
+              "$s.WorkingDirectory = $env:USERPROFILE; $s.Description = $env:TRIBUNAL_LNK_MARK; "
+              "if ($env:TRIBUNAL_LNK_ICON) { $s.IconLocation = $env:TRIBUNAL_LNK_ICON + ',0' }; $s.Save()")
+    ico = icon("ico")
     env = dict(os.environ, TRIBUNAL_LNK=str(path), TRIBUNAL_LNK_TARGET=command[0],
+               TRIBUNAL_LNK_ICON=str(ico) if ico.is_file() else "",
                TRIBUNAL_LNK_ARGS=subprocess.list2cmdline(command[1:]), TRIBUNAL_LNK_MARK=f"{NAME} ({MARK})")
     shell = shutil.which("powershell") or shutil.which("pwsh") or "powershell"
     done = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", script], env=env, capture_output=True,
@@ -176,12 +187,16 @@ def create(sysname: Optional[str] = None) -> Dict[str, List[str]]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(text, encoding="utf-8")
             (path / "Contents" / "MacOS" / LAUNCHER).chmod(0o755)
+            if icon("icns").is_file():
+                (path / "Contents" / "Resources").mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(icon("icns"), path / "Contents" / "Resources" / "tribunal.icns")
+            os.utime(path)                       # Finder and the Dock read the icon again
         elif sysname == "windows":
             if path.exists():
                 path.unlink()
             _write_lnk(path, command)
         else:
-            path.write_text(desktop_entry(command), encoding="utf-8")
+            path.write_text(desktop_entry(command, icon("png") if icon("png").is_file() else None), encoding="utf-8")
             path.chmod(0o755)
         made.append(str(path))
     return {"made": made, "skipped": skipped}

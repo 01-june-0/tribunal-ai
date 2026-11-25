@@ -142,7 +142,9 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
   함수에 넣고 마지막 줄에서 부르므로, 내려받다 끊긴 스크립트는 아무것도 실행하지 않습니다.
 - 확인 방법: GitHub Actions의 `installer` 작업이 세 운영체제에서 이 커밋으로 설치(두 번) → 짧은 PATH로 아이콘 실행 → 콘솔 응답 →
   지우기 → 바로 가기 · 명령이 없어지고 기록은 남는지까지 봅니다.
-- 아이콘 그림은 아직 없습니다(운영체제 기본 그림). 시안을 보고 정합니다.
+- 아이콘: 시안 C(삼각형, 2026-11-25 사용자 결정). 원본 `console/icons/tribunal.svg`에서 `scripts/make_icons.py`(맥에서, Chrome · sips ·
+  iconutil)로 `tribunal.icns` · `tribunal.ico` · `tribunal-512.png`를 만들어 함께 커밋합니다. macOS 앱 번들의 `CFBundleIconFile`,
+  Windows `.lnk`의 아이콘 위치, Linux `.desktop`의 `Icon=`, 앱 창(Dock · 작업 표시줄), 콘솔 탭(`/icon.svg`)에 씁니다.
 
 ## 7. 앱 창 (4단계)
 
@@ -151,11 +153,11 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 
 | | 창 | 비고 |
 |---|---|---|
-| macOS | WebKit (pywebview + pyobjc) | 메뉴 막대는 "Tribunal AI"와 편집(복사 · 붙여넣기) · 보기 메뉴. Dock과 앱 전환기에는 아직 "Python"으로 보임 |
+| macOS | WebKit (pywebview + pyobjc) | 메뉴 막대는 "Tribunal AI"와 편집(복사 · 붙여넣기) · 보기 메뉴. Dock 그림은 앱 아이콘(pywebview 6.2부터), 이름은 아직 "Python" |
 | Windows | Edge WebView2 (pywebview + pythonnet) | WebView2가 없으면 창 대신 브라우저로 엶(그때 pywebview는 IE로 넘어가는데, 콘솔이 돌지 않기 때문) |
 | Linux | 없음 → 브라우저 | 창 라이브러리가 시스템의 GTK · Qt를 써야 하는데 설치본(uv가 만든 환경)에서는 보이지 않음 |
 
-- pywebview는 macOS · Windows에서만 설치됩니다(`pyproject.toml`의 운영체제 조건).
+- pywebview(6.2 이상)는 macOS · Windows에서만 설치됩니다(`pyproject.toml`의 운영체제 조건). 6.2부터 Dock · 창 아이콘을 씁니다.
 - **누가 콘솔을 끄나**: 창이 콘솔을 켰으면 그 창이 주인입니다(`data/app-owner.json`). 마지막 앱 창이 닫힐 때 주인이면 콘솔을
   끕니다. 이미 켜져 있던 콘솔(브라우저 · `tribunal start`로 켬)은 그대로 둡니다. 비정상 종료로 남은 주인 기록은 다음 창이 지웁니다.
 - **작업 중에 닫으면**(사용자 결정, 2026-11-25): "작업이 진행 중입니다. 창을 닫으면 작업을 정지하고 콘솔을 끕니다" 확인 창. 확인하면
@@ -166,7 +168,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 - 페이지 설정(언어 · 시작 연출을 본 기록 등)은 창을 다시 열어도 남습니다(`private_mode=False`).
 - 자동 시험: `tribunal app --smoke`(또는 `TRIBUNAL_APP_SMOKE=1`)는 창을 열어 콘솔이 그려졌는지 확인하고 스스로 닫습니다. 콘솔의
   보안 정책(CSP)이 `eval`을 막아 pywebview의 `evaluate_js` 대신 `run_js`로 읽습니다. 3분이 지나면 스스로 끝납니다.
-- 남은 것: 아이콘 그림, Dock의 이름, 창 두 개를 거의 동시에 닫으면 콘솔이 켜진 채 남을 수 있음(드묾, 다음에 열고 닫으면 꺼짐).
+- 남은 것: Dock · 앱 전환기의 이름("Python"), 창 두 개를 거의 동시에 닫으면 콘솔이 켜진 채 남을 수 있음(드묾, 다음에 열고 닫으면 꺼짐).
 
 ## 8. 비용 안내 (도우미 첫 화면과 README에 들어갈 내용)
 

@@ -35,7 +35,7 @@ dependencies = [
   "requests>=2.31",
   "tzdata>=2024.1",          # Windows (and minimal Linux) ship no time-zone database; Claude reports limits in local zones
   # `tribunal app` (core/app_window.py): WebKit on macOS, Edge WebView2 on Windows. Linux opens the browser instead.
-  "pywebview>=6.0; sys_platform == 'darwin' or sys_platform == 'win32'",
+  "pywebview>=6.2; sys_platform == 'darwin' or sys_platform == 'win32'",
 ]
 
 [project.urls]

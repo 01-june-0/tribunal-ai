@@ -91,6 +91,7 @@ def test_a_quiet_close_just_closes_and_the_page_keeps_its_storage(home, monkeypa
     assert kw["width"] >= 960 and kw["height"] >= 640 and kw["min_size"] == (960, 640)
     assert fake.started["private_mode"] is False
     assert fake.started["storage_path"] == str(home / "data" / "app-window")
+    assert fake.started["icon"].endswith(("tribunal.icns", "tribunal.ico"))      # the Dock / taskbar icon
 
 
 def test_closing_while_working_asks_then_stops_the_work(home, monkeypatch):
@@ -325,7 +326,7 @@ def test_detach_starts_the_icons_command_and_returns(monkeypatch):
 
 
 def test_the_window_library_is_installed_only_where_it_is_used():
-    line = "pywebview>=6.0; sys_platform == 'darwin' or sys_platform == 'win32'"
+    line = "pywebview>=6.2; sys_platform == 'darwin' or sys_platform == 'win32'"
     assert line in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert line in (ROOT / "requirements.txt").read_text(encoding="utf-8")
     for name in ("install.sh", "install.ps1"):

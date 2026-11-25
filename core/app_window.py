@@ -171,6 +171,13 @@ def _name_the_mac_app() -> None:
         pass
 
 
+def _icon() -> Dict[str, str]:
+    """The Dock icon on macOS (otherwise Python's), the window and taskbar icon on Windows."""
+    from core.shortcuts import icon
+    path = icon("icns" if sys.platform == "darwin" else "ico")
+    return {"icon": str(path)} if path.is_file() else {}
+
+
 def show(url: str, will_stop_console: Callable[[], bool], smoke: bool = False,
          webview_module: Any = None) -> Dict[str, Any]:
     """Show the console in a window until it is closed. Returns {"stopped_work": bool, "smoke": result or None}.
@@ -240,7 +247,7 @@ def show(url: str, will_stop_console: Callable[[], bool], smoke: bool = False,
         watchdog.daemon = True
         watchdog.start()
     try:
-        webview.start(smoke_check if smoke else None, private_mode=False, storage_path=str(storage))
+        webview.start(smoke_check if smoke else None, private_mode=False, storage_path=str(storage), **_icon())
     finally:
         if watchdog:
             watchdog.cancel()                        # the window ended: nothing left to guard

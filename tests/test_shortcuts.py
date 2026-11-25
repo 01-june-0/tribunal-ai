@@ -5,6 +5,7 @@ dialog is ever shown. The installers themselves run for real only in GitHub Acti
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -239,3 +240,47 @@ def test_the_readme_shows_the_one_liners():
     readme = _text("README.md")
     assert "raw.githubusercontent.com/01-june-0/tribunal-ai/main/install.sh | sh" in readme
     assert "raw.githubusercontent.com/01-june-0/tribunal-ai/main/install.ps1 | iex" in readme
+
+
+# ---- the app icon (design/app-icon-mockup, candidate C) --------------------------------------------------------------
+
+def test_the_icon_files_are_there_and_whole():
+    icons = ROOT / "console" / "icons"
+    assert (icons / "tribunal.svg").read_text(encoding="utf-8").lstrip().startswith("<svg")
+    assert (icons / "tribunal.icns").read_bytes()[:4] == b"icns"
+    ico = (icons / "tribunal.ico").read_bytes()
+    reserved, kind, count = struct.unpack("<HHH", ico[:6])
+    sizes = [ico[6 + 16 * i] or 256 for i in range(count)]
+    assert (reserved, kind) == (0, 1) and {16, 32, 48, 256} <= set(sizes)
+    png = (icons / "tribunal-512.png").read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", png[16:24]) == (512, 512)
+    for kind in ("icns", "ico", "png"):
+        assert shortcuts.icon(kind).is_file()
+
+
+def test_each_shortcut_carries_the_icon(place):
+    shortcuts.create("mac")
+    app = shortcuts.locations("mac")[0]
+    assert (app / "Contents" / "Resources" / "tribunal.icns").read_bytes()[:4] == b"icns"
+    assert "<key>CFBundleIconFile</key><string>tribunal</string>" in (app / "Contents" / "Info.plist").read_text(encoding="utf-8")
+    shortcuts.create("linux")
+    entry = shortcuts.locations("linux")[0].read_text(encoding="utf-8")
+    assert f"Icon={shortcuts.icon('png')}\n" in entry
+
+
+def test_the_windows_shortcut_is_given_the_icon(place, monkeypatch):
+    seen = {}
+
+    def fake_run(argv, env=None, **kw):
+        seen.update(script=argv[-1], icon=env.get("TRIBUNAL_LNK_ICON"))
+        Path(env["TRIBUNAL_LNK"]).write_bytes(b"L")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(shortcuts.subprocess, "run", fake_run)
+    shortcuts._write_lnk(place / "x.lnk", ["pythonw.exe", "-I", "-m", "tribunal_cli", "app"])
+    assert seen["icon"] == str(shortcuts.icon("ico")) and "$s.IconLocation = $env:TRIBUNAL_LNK_ICON + ',0'" in seen["script"]
+
+
+def test_the_console_tab_shows_the_icon():
+    import companion_server
+    assert companion_server.STATIC_FILES["/icon.svg"] == "icons/tribunal.svg"
+    assert '<link rel="icon" href="/icon.svg" type="image/svg+xml">' in (ROOT / "console" / "index.html").read_text(encoding="utf-8")
