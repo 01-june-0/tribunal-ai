@@ -153,7 +153,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 
 | | 창 | 비고 |
 |---|---|---|
-| macOS | WebKit (pywebview + pyobjc) | 메뉴 막대는 "Tribunal AI"와 편집(복사 · 붙여넣기) · 보기 메뉴. Dock 그림은 앱 아이콘(pywebview 6.2부터), 이름은 아직 "Python" |
+| macOS | WebKit (pywebview + pyobjc) | 메뉴 막대는 "Tribunal AI"와 편집(복사 · 붙여넣기) · 보기 메뉴. Dock 그림은 앱 아이콘(pywebview 6.2부터). Dock · 앱 전환기 이름도 "Tribunal AI"(실행 중에 LaunchServices의 표시 이름을 바꿈. 공개 문서에 없는 호출이라 실패하면 "Python"으로 남고 다른 영향은 없음) |
 | Windows | Edge WebView2 (pywebview + pythonnet) | WebView2가 없으면 창 대신 브라우저로 엶(그때 pywebview는 IE로 넘어가는데, 콘솔이 돌지 않기 때문) |
 | Linux | 없음 → 브라우저 | 창 라이브러리가 시스템의 GTK · Qt를 써야 하는데 설치본(uv가 만든 환경)에서는 보이지 않음 |
 
@@ -168,7 +168,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 - 페이지 설정(언어 · 시작 연출을 본 기록 등)은 창을 다시 열어도 남습니다(`private_mode=False`).
 - 자동 시험: `tribunal app --smoke`(또는 `TRIBUNAL_APP_SMOKE=1`)는 창을 열어 콘솔이 그려졌는지 확인하고 스스로 닫습니다. 콘솔의
   보안 정책(CSP)이 `eval`을 막아 pywebview의 `evaluate_js` 대신 `run_js`로 읽습니다. 3분이 지나면 스스로 끝납니다.
-- 남은 것: Dock · 앱 전환기의 이름("Python"), 창 두 개를 거의 동시에 닫으면 콘솔이 켜진 채 남을 수 있음(드묾, 다음에 열고 닫으면 꺼짐).
+- 남은 것: 창 두 개를 거의 동시에 닫으면 콘솔이 켜진 채 남을 수 있음(드묾, 다음에 열고 닫으면 꺼짐).
 
 ## 8. 비용 안내 (도우미 첫 화면과 README에 들어갈 내용)
 

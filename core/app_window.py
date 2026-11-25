@@ -171,6 +171,37 @@ def _name_the_mac_app() -> None:
         pass
 
 
+def _name_in_dock(name: str = TITLE) -> bool:
+    """The name the Dock, the app switcher and Activity Monitor show. Python is the program running here, so macOS
+    calls it "Python"; LaunchServices keeps a display name per running app that can be set while it runs. The calls
+    are not in Apple's public headers (Chromium names its helper processes the same way), so any failure is ignored:
+    the name then stays "Python" and nothing else changes."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        import ctypes
+        ls = ctypes.CDLL("/System/Library/Frameworks/CoreServices.framework/CoreServices")
+        cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        ls._LSGetCurrentApplicationASN.restype = ctypes.c_void_p
+        ls._LSSetApplicationInformationItem.restype = ctypes.c_int
+        ls._LSSetApplicationInformationItem.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                                                        ctypes.c_void_p]
+        asn = ls._LSGetCurrentApplicationASN()
+        if not asn:
+            return False
+        key = ctypes.c_void_p.in_dll(ls, "_kLSDisplayNameKey")
+        value = cf.CFStringCreateWithCString(None, name.encode("utf-8"), 0x08000100)      # kCFStringEncodingUTF8
+        try:
+            return ls._LSSetApplicationInformationItem(-2, asn, key, value, None) == 0       # -2: this login session
+        finally:
+            cf.CFRelease(value)
+    except Exception:
+        return False
+
+
 def _icon() -> Dict[str, str]:
     """The Dock icon on macOS (otherwise Python's), the window and taskbar icon on Windows."""
     from core.shortcuts import icon
@@ -236,6 +267,12 @@ def show(url: str, will_stop_console: Callable[[], bool], smoke: bool = False,
             state["confirmed"] = True
             window.destroy()
 
+    def started() -> None:
+        """Runs once the window's GUI loop is up (on its own thread)."""
+        _name_in_dock()
+        if smoke:
+            smoke_check()
+
     if sys.platform == "darwin":
         _name_the_mac_app()
     storage = data_dir() / "app-window"              # the console keeps its settings in the page's storage
@@ -247,7 +284,7 @@ def show(url: str, will_stop_console: Callable[[], bool], smoke: bool = False,
         watchdog.daemon = True
         watchdog.start()
     try:
-        webview.start(smoke_check if smoke else None, private_mode=False, storage_path=str(storage), **_icon())
+        webview.start(started, private_mode=False, storage_path=str(storage), **_icon())
     finally:
         if watchdog:
             watchdog.cancel()                        # the window ended: nothing left to guard

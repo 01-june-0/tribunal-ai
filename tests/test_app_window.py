@@ -60,11 +60,18 @@ class FakeWebview:
 
     def start(self, func=None, **kw):
         self.started = kw
+        self.window.events.loaded.set()
         if func:
-            self.window.events.loaded.set()
-            func()
-        elif self.during:
+            func()                                         # what runs once the GUI loop is up
+        if self.during:
             self.during(self.window)
+
+
+@pytest.fixture(autouse=True)
+def no_dock_calls(monkeypatch):
+    named = []
+    monkeypatch.setattr(app_window, "_name_in_dock", lambda name=app_window.TITLE: named.append(name) or True)
+    return named
 
 
 @pytest.fixture
@@ -176,6 +183,16 @@ def test_the_checks_watchdog_is_called_off_when_the_window_ends(home, monkeypatc
     monkeypatch.setattr(threading, "Timer", spy)
     app_window.show("http://127.0.0.1:9", lambda: True, smoke=True, webview_module=FakeWebview(FakeWindow()))
     assert len(timers) == 1 and timers[0].finished.is_set()          # cancelled: it can no longer end the process
+
+
+def test_the_dock_is_told_the_apps_name_once_the_window_is_up(home, no_dock_calls):
+    app_window.show("http://127.0.0.1:9", lambda: True, smoke=True, webview_module=FakeWebview(FakeWindow()))
+    assert no_dock_calls == ["Tribunal AI"]
+
+
+def test_naming_the_dock_never_fails_where_it_cannot(monkeypatch):
+    monkeypatch.undo()                                     # the real one, outside any app (no LaunchServices entry)
+    assert app_window._name_in_dock() is False             # no app registered here, or not macOS: nothing happens
 
 
 def test_who_owns_the_console(home, monkeypatch):
