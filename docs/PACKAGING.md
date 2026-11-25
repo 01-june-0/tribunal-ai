@@ -153,7 +153,7 @@ Python 기준으로 바꿉니다(실행해 보기에서 Tribunal 3.13 / 시스�
 
 | | 창 | 비고 |
 |---|---|---|
-| macOS | WebKit (pywebview + pyobjc) | 메뉴 막대는 "Tribunal AI"와 편집(복사 · 붙여넣기) · 보기 메뉴. Dock 그림은 앱 아이콘(pywebview 6.2부터). Dock · 앱 전환기 이름도 "Tribunal AI"(실행 중에 LaunchServices의 표시 이름을 바꿈. 공개 문서에 없는 호출이라 실패하면 "Python"으로 남고 다른 영향은 없음) |
+| macOS | WebKit (pywebview + pyobjc) | 메뉴 막대는 "Tribunal AI"와 편집(복사 · 붙여넣기) · 보기 메뉴. Dock 그림은 앱 아이콘(pywebview 6.2부터). Dock은 아이콘(바로 가기 `Tribunal AI.app`)으로 열면 이름 "Tribunal AI"와 앱 아이콘을 보여 줌. 설치 마지막 단계도 그 앱을 엶. 터미널에서 `tribunal app`으로 띄우면 "python3.13"으로 보임 |
 | Windows | Edge WebView2 (pywebview + pythonnet) | WebView2가 없으면 창 대신 브라우저로 엶(그때 pywebview는 IE로 넘어가는데, 콘솔이 돌지 않기 때문) |
 | Linux | 없음 → 브라우저 | 창 라이브러리가 시스템의 GTK · Qt를 써야 하는데 설치본(uv가 만든 환경)에서는 보이지 않음 |
 

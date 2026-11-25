@@ -67,13 +67,6 @@ class FakeWebview:
             self.during(self.window)
 
 
-@pytest.fixture(autouse=True)
-def no_dock_calls(monkeypatch):
-    named = []
-    monkeypatch.setattr(app_window, "_name_in_dock", lambda name=app_window.TITLE: named.append(name) or True)
-    return named
-
-
 @pytest.fixture
 def home(monkeypatch, tmp_path):
     monkeypatch.setenv("TRIBUNAL_HOME", str(tmp_path))
@@ -183,16 +176,6 @@ def test_the_checks_watchdog_is_called_off_when_the_window_ends(home, monkeypatc
     monkeypatch.setattr(threading, "Timer", spy)
     app_window.show("http://127.0.0.1:9", lambda: True, smoke=True, webview_module=FakeWebview(FakeWindow()))
     assert len(timers) == 1 and timers[0].finished.is_set()          # cancelled: it can no longer end the process
-
-
-def test_the_dock_is_told_the_apps_name_once_the_window_is_up(home, no_dock_calls):
-    app_window.show("http://127.0.0.1:9", lambda: True, smoke=True, webview_module=FakeWebview(FakeWindow()))
-    assert no_dock_calls == ["Tribunal AI"]
-
-
-def test_naming_the_dock_never_fails_where_it_cannot(monkeypatch):
-    monkeypatch.undo()                                     # the real one, outside any app (no LaunchServices entry)
-    assert app_window._name_in_dock() is False             # no app registered here, or not macOS: nothing happens
 
 
 def test_who_owns_the_console(home, monkeypatch):
@@ -334,8 +317,23 @@ def test_detach_on_linux_opens_as_before(cli_home, monkeypatch):
     assert out.exit_code == 0 and "http://127.0.0.1:9" in out.output and cli_home["opened"] == ["http://127.0.0.1:9"]
 
 
-def test_detach_starts_the_icons_command_and_returns(monkeypatch):
+def test_detach_on_a_mac_opens_the_app_so_the_dock_names_it(monkeypatch, tmp_path):
     monkeypatch.setattr(app_window, "unavailable", lambda: None)
+    monkeypatch.setattr(tribunal_cli.sys, "platform", "darwin")
+    monkeypatch.setenv("TRIBUNAL_SHORTCUTS_HOME", str(tmp_path))
+    from core import shortcuts
+    monkeypatch.setattr(shortcuts, "system", lambda: "mac")
+    (tmp_path / "Applications" / "Tribunal AI.app").mkdir(parents=True)
+    ran = []
+    monkeypatch.setattr(tribunal_cli.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    monkeypatch.setattr(tribunal_cli.subprocess, "Popen", lambda *a, **k: pytest.fail("the app is there: open it"))
+    assert CliRunner().invoke(tribunal_cli.cli, ["app", "--detach"]).exit_code == 0
+    assert ran == [["open", str(tmp_path / "Applications" / "Tribunal AI.app")]]
+
+
+def test_detach_starts_the_icons_command_and_returns(monkeypatch, tmp_path):
+    monkeypatch.setattr(app_window, "unavailable", lambda: None)
+    monkeypatch.setenv("TRIBUNAL_SHORTCUTS_HOME", str(tmp_path))          # no app made: start the command itself
     started = []
     monkeypatch.setattr(tribunal_cli.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
     assert CliRunner().invoke(tribunal_cli.cli, ["app", "--detach"]).exit_code == 0

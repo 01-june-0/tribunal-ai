@@ -211,6 +211,13 @@ Codex 로그아웃 → 로그인, 계정 변경, 작업 중 로그아웃 거절.
   만든 `.icns` · `.ico` · `.png`(`scripts/make_icons.py`)를 macOS 앱 번들, Windows 바로 가기, Linux 앱 메뉴, 앱 창의 Dock · 작업
   표시줄, 콘솔 탭(favicon)에 붙임. 이 맥에서 Finder가 바로 가기에 이 아이콘을 보여 주는 것과 콘솔이 `/icon.svg`를 주는 것을 확인.
   critic 지적 2건 반영(Windows 아이콘 경로가 `%APPDATA%`로 접혀 돌아올 때의 CI 검사, pywebview 6.2 미만에서는 Dock 아이콘이 빠짐).
+- Dock 이름: 아이콘(`Tribunal AI.app`)으로 열면 Dock에 "Tribunal AI"와 앱 아이콘이 나옴을 실제 설치본과 같은 uv Python으로 확인.
+  macOS 설치 마지막 단계도 그 앱을 열도록 바꿈. 먼저 넣었던 LaunchServices 표시 이름 바꾸기는 Dock에 효과가 없어 뺌
+  ("Python"으로 보였던 것은 Homebrew Python이 자기 Python.app으로 다시 실행되거나 터미널에서 띄운 경우).
+- 앱 아이콘: 시안 다섯 가지 중 C(삼각형 — 꼭짓점마다 AI 하나, 가운데 결과물)를 사용자가 고름. `console/icons/`의 SVG 원본과 그것으로
+  만든 `.icns` · `.ico` · `.png`(`scripts/make_icons.py`)를 macOS 앱 번들, Windows 바로 가기, Linux 앱 메뉴, 앱 창의 Dock · 작업
+  표시줄, 콘솔 탭(favicon)에 붙임. 이 맥에서 Finder가 바로 가기에 이 아이콘을 보여 주는 것과 콘솔이 `/icon.svg`를 주는 것을 확인.
+  critic 지적 2건 반영(Windows 아이콘 경로가 `%APPDATA%`로 접혀 돌아올 때의 CI 검사, pywebview 6.2 미만에서는 Dock 아이콘이 빠짐).
 - 앱 창의 Dock · 앱 전환기 이름을 "Python"에서 "Tribunal AI"로: 창이 뜬 뒤 LaunchServices의 표시 이름(`LSDisplayName`)을 바꿈
   (`core/app_window.py` `_name_in_dock`, Chromium이 도우미 프로세스 이름을 바꾸는 방법과 같음). 공개 문서에 없는 호출이라 실패하면
   조용히 "Python"으로 남음. 이 맥에서 `lsappinfo`로 이름이 바뀐 것을 확인.

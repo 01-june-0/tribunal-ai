@@ -173,6 +173,11 @@ def _detach_app() -> None:
     """Start `tribunal app` on its own and return at once (the installers use it: the terminal must not wait for the
     window). It is the icon's own command, so a failure shows a dialog too."""
     from core import shortcuts
+    app = shortcuts.locations()[0]
+    if sys.platform == "darwin" and app.is_dir():
+        # Opened as the app it is, the Dock shows "Tribunal AI" and its icon; started directly it would be "Python".
+        subprocess.run(["open", str(app)], check=False, stdin=subprocess.DEVNULL, timeout=30)
+        return
     subprocess.Popen(shortcuts.launch_command(), cwd=str(Path.home()), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, **_spawn_flags())
 
