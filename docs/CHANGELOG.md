@@ -285,6 +285,8 @@ Codex 로그아웃 → 로그인, 계정 변경, 작업 중 로그아웃 거절.
 - `node_modules` · `.venv` 같은 설치물은 `.gitignore`로 결과에서 빠지고, 적용할 때 프로젝트에 같은 의존성을 설치한 뒤 다시 검증.
 - 실제 CLI로 확인(이 맥): pygame 벽돌깨기 미션이 제작 AI의 `.venv` 설치로 승인 없이 통과, 세 CLI 모두 `brew install` · `npm -g` · `git push`가 가로채짐. 그 과정에서 macOS `security`를 가로채면 Claude Code의 로그인이 풀려서 대상에서 뺌. Claude가 제작할 때는 사용자의 전역 CLAUDE.md도 함께 읽음(그대로 둠).
 
+- Codex가 설계 AI일 때 git 저장소가 아닌 새 폴더에서 채팅하면 'not inside a git repository'로 멈췄음(Windows에서 발견). 읽기 전용 호출이라 그런 폴더에서는 `--skip-git-repo-check`로 실행. Claude는 원래 문제가 없고, Antigravity는 git으로 만든 임시 폴더에서 돌아 해당 없음(셋 다 이 맥에서 실제로 호출해 확인).
+
 ### 이름
 
 | 예전 | 지금 |

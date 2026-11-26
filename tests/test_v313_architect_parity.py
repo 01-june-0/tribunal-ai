@@ -47,14 +47,19 @@ def test_codex_architect_without_project_does_not_require_git(capture, tmp_path,
     assert cap.calls[0]["timeout"] == 123 and cap.calls[0]["no_output_timeout"] == 45
 
 
-def test_codex_architect_with_project_still_requires_git(capture, tmp_path):
+def test_codex_architect_runs_in_a_new_folder_without_git(capture, tmp_path):
+    """Changed 2026-11-26 (found on Windows): a new project is not a git repository until its first task starts, and
+    ARCHITECT is asked about it before that. Claude and Antigravity never minded; Codex now runs there read-only with
+    --skip-git-repo-check instead of stopping. A folder that does not exist still stops."""
     cap, fake = capture
     plain = tmp_path / "project-without-git"
     plain.mkdir()
     architect = CodexArchitect(executable=str(fake))
+    architect._invoke_cli("hello", cwd=str(plain))
+    argv = cap.calls[-1]["argv"]
+    assert "--skip-git-repo-check" in argv and argv[argv.index("--sandbox") + 1] == "read-only"
     with pytest.raises(RuntimeError, match="CONFIG_ERROR"):
-        architect._invoke_cli("hello", cwd=str(plain))
-    assert not cap.calls
+        architect._invoke_cli("hello", cwd=str(tmp_path / "missing"))
 
 
 def test_both_heads_forward_the_same_timeouts(capture, tmp_path):

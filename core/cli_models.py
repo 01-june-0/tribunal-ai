@@ -139,12 +139,16 @@ def codex_model_args(describe: bool = False) -> List[str]:
     return args
 
 
-def codex_exec_argv(executable: str) -> List[str]:
-    return [executable, "exec", *codex_model_args(), "--sandbox", "read-only", "-"]
+def codex_exec_argv(executable: str, outside_git: bool = False) -> List[str]:
+    """outside_git: the folder is not a git repository yet (a new project before its first task), which `codex exec`
+    otherwise refuses; read-only, so nothing is written there either way."""
+    return [executable, "exec", *codex_model_args(), "--sandbox", "read-only",
+            *(["--skip-git-repo-check"] if outside_git else []), "-"]
 
 
-def codex_exec_description() -> str:
-    return " ".join(["codex", "exec", *codex_model_args(describe=True), "--sandbox", "read-only", "-", "<stdin>"])
+def codex_exec_description(outside_git: bool = False) -> str:
+    return " ".join(["codex", "exec", *codex_model_args(describe=True), "--sandbox", "read-only",
+                     *(["--skip-git-repo-check"] if outside_git else []), "-", "<stdin>"])
 
 
 def claude_extra_args() -> List[str]:

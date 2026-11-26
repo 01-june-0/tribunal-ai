@@ -107,25 +107,24 @@ class CodexArchitect(BaseArchitect):
 
         target_cwd = str(Path(cwd).resolve()) if cwd else os.getcwd()
 
-        # Strict git repository check only when a project directory was given: Codex CLI wants a trusted git
-        # directory for project work. With no project selected (console chat before choosing a folder) we behave
-        # exactly like ClaudeArchitect and let the CLI inherit the process cwd, so GPT<->Claude ARCHITECT switching is symmetric.
-        if cwd:
-            try:
-                from core.env_utils import run_capture
-                r = run_capture(["git", "rev-parse", "--show-toplevel"], cwd=target_cwd, timeout=15)
-                if r.returncode != 0:
-                    raise RuntimeError(
-                        f"CONFIG_ERROR: Codex ARCHITECT directory '{target_cwd}' is not inside a git repository: {r.stderr.strip()}"
-                    )
-            except FileNotFoundError:
-                raise RuntimeError("CONFIG_ERROR: git executable not found on system")
+        # `codex exec` refuses a folder that is not a git repository. A new project is one until its first task starts
+        # (the run makes it one), yet ARCHITECT is asked about it before that - from the console chat, with Codex as
+        # ARCHITECT when Claude is not available (found on Windows, 2026-11-26). The call is read-only, so such a folder
+        # gets --skip-git-repo-check instead of an error.
+        outside_git = False
+        if not Path(target_cwd).is_dir():
+            raise RuntimeError(f"CONFIG_ERROR: Codex ARCHITECT directory '{target_cwd}' does not exist")
+        try:
+            from core.env_utils import run_capture
+            outside_git = run_capture(["git", "rev-parse", "--show-toplevel"], cwd=target_cwd, timeout=15).returncode != 0
+        except FileNotFoundError:
+            raise RuntimeError("CONFIG_ERROR: git executable not found on system")
 
         # Official Codex CLI supports '-' / omitted PROMPT as stdin.  Never put potentially large ORDER,
         # review, or decision evidence on the Windows command line (WinError 206).
         from core.cli_models import codex_exec_argv, codex_exec_description
-        cmd = codex_exec_argv(self.executable)
-        invocation_desc = codex_exec_description()
+        cmd = codex_exec_argv(self.executable, outside_git)
+        invocation_desc = codex_exec_description(outside_git)
         self.logger.info(f"[Codex Architect] Invoking CLI via ProcessTreeRunner: {self.executable} (cwd={target_cwd})")
 
         sanitized_env = get_sanitized_env()

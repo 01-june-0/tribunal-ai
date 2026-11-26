@@ -291,3 +291,16 @@ def test_applying_does_not_run_node_tests_the_run_never_ran(tmp_path, monkeypatc
     (tmp_path / "node_modules").mkdir()
     out = Verifier.verify(str(tmp_path), test_cmd=None, git_checks=False, node_tests=False)
     assert (out.get("node_tests") or {}).get("command") is None
+
+
+def test_codex_architect_works_in_a_folder_that_is_not_a_git_repository_yet(monkeypatch):
+    """Found on Windows (2026-11-26): with Codex as ARCHITECT, the console chat about a new folder stopped with
+    'not inside a git repository'. The call is read-only, so it now runs with --skip-git-repo-check there."""
+    monkeypatch.setenv("DIRECTOR_TESTING", "1")
+    from core import cli_models
+    assert "--skip-git-repo-check" not in cli_models.codex_exec_argv("codex")
+    argv = cli_models.codex_exec_argv("codex", outside_git=True)
+    assert argv[-2:] == ["--skip-git-repo-check", "-"] and argv[argv.index("--sandbox") + 1] == "read-only"
+    assert "--skip-git-repo-check" in cli_models.codex_exec_description(True)
+    src = (Path(__file__).resolve().parents[1] / "agents" / "codex_architect.py").read_text(encoding="utf-8")
+    assert "is not inside a git repository" not in src and "codex_exec_argv(self.executable, outside_git)" in src
