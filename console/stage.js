@@ -539,7 +539,7 @@ function paintDelivery(m){
   if(state==='blocked'&&ms.applied&&ms.applied.blocks)box.append(el('small',blockText(ms.applied.blocks).slice(0,220),'ai-sub'));
   let seen=null;                               // what was applied stays readable: it is kept at the moment of applying
   if(state==='applied'&&ms.deliverableRun){seen=el('div','','delivery-actions');const see=el('button',T('변경 내용 보기'));see.type='button';see.className='ghost';see.dataset.act='view';
-    see.onclick=()=>openResult(ms);seen.append(see);box.append(seen);if(held==='view')see.focus();}
+    see.onclick=()=>openResult(ms);seen.append(runButton(ms),see);box.append(seen);if(held==='view')see.focus();else if(held==='run')seen.firstChild.focus();}
   if(state==='applied'&&ms.leftover){          // kept on purpose: the AIs' version of a skipped file exists only in there
     const skipped=((ms.applied||{}).skipped_conflicts||[]).map(c=>c.path).filter(Boolean);
     box.insertBefore(el('small',T('건너뛴 파일의 AI 버전이 작업 사본에 남아 있습니다.')+(skipped.length?' '+skipped.slice(0,6).join(', '):''),'ai-sub'),seen);
@@ -556,12 +556,17 @@ function paintDelivery(m){
     const more=el('button',T('이어서 진행'));more.type='button';more.dataset.act='extend';more.onclick=()=>decideMission(ms.id,'extend');
     const drop=el('button',T('폐기'));drop.type='button';drop.className='ghost';drop.dataset.act='discard';drop.onclick=()=>{if(confirm(T('이 작업의 결과물을 폐기할까요? 기록은 남습니다.')))decideMission(ms.id,'discard',ms.deliverableRun?{run_id:ms.deliverableRun}:{});};
     for(const b of [apply,more,drop])b.disabled=deliveryBusy;
+    if(ms.deliverableRun)row.append(runButton(ms));
     row.append(apply,more,drop);box.append(row);
     if(held){const again=row.querySelector('[data-act="'+held+'"]');if(again&&!again.disabled)again.focus();}
     if(state==='blocked')box.append(el('small',ms.deliverableRun?T('"변경 내용 보기"에서 "원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'):T('"원본에 적용"을 다시 누르면 충돌 파일만 건너뛰고 나머지를 적용합니다.'),'ai-sub'));
     else if(ms.status==='DONE'&&ms.deliverableRun)box.append(el('small',T('원본 프로젝트는 아직 그대로입니다. 변경 내용을 보고 정하세요.'),'ai-sub'));
   }
 }
+// 「▶ 실행해 보기」 on the result card itself (it was only inside "변경 내용 보기" and hard to find, 2026-11-26).
+// Before applying it runs in a copy of the work folder, after applying in the project; the command is shown first.
+function runButton(ms){const b=el('button','▶ '+T('실행해 보기'));b.type='button';b.dataset.act='run';
+  b.title=T('결과를 새 터미널 창에서 실행해 봅니다. 실행할 명령을 먼저 보여 줍니다.');b.onclick=()=>tryRun(ms.deliverableRun);return b;}
 function paintWork(m){
   for(const b of $('win-tabs').children){b.classList.toggle('on',b.dataset.win===win);b.setAttribute('aria-pressed',String(b.dataset.win===win));b.disabled=!m.windows[b.dataset.win];}
   const u=m.usage,total=u.total||{},approx=(total.exact_tokens||0)<(total.tokens||0);

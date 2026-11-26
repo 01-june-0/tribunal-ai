@@ -328,3 +328,11 @@ def test_a_step_that_is_not_finished_is_named_in_words(tmp_path):
 console.log(JSON.stringify([stepNote({index:2,state:'DECIDING'},true), stepNote({index:1,state:'BUILDING'},false), stepNote({index:1,state:'PASS'},true),
   stepNote({index:3,state:'SOMETHING_NEW'},true)]));""")
     assert json.loads(out) == ["2단계 · 판단 중에 멈춤", "1단계 · 제작 중", "1단계 · 통과", "3단계 · SOMETHING_NEW"]
+
+
+def test_the_result_card_has_its_own_run_button():
+    """Found on Windows (2026-11-26): 「실행해 보기」 was only inside 「변경 내용 보기」 and could not be found. The result
+    card on the stage shows it first, both while the result waits and after it was applied."""
+    assert "function runButton(ms){" in JS and "b.onclick=()=>tryRun(ms.deliverableRun)" in JS
+    assert "seen.append(runButton(ms),see)" in JS                                    # applied: before 변경 내용 보기
+    assert "if(ms.deliverableRun)row.append(runButton(ms));\n    row.append(apply,more,drop)" in JS   # waiting: first
