@@ -73,6 +73,7 @@ jobs:
     env:
       TRIBUNAL_SOURCE: ${{ github.workspace }}
       TRIBUNAL_NO_OPEN: "1"
+      TRIBUNAL_ACCEPT_TERMS: "1"
     steps:
       - uses: actions/checkout@v4
 

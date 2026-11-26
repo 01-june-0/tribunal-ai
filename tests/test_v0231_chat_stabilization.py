@@ -493,4 +493,5 @@ def test_m_subscription_only_no_sdk_or_keys():
     for p in list(Path("core").glob("*.py")) + list(Path("agents").glob("*.py")) + [Path("dashboard_server.py"), Path("director.py")]:
         for line in p.read_text(encoding="utf-8").splitlines():
             assert not forbidden.match(line), f"{p}: {line.strip()}"
-            assert "dangerously-skip-permissions" not in line
+            # agent mode opens the CLI's permissions in one place only, after the person's consent (docs/AGENT_MODE.md)
+            assert "dangerously-skip-permissions" not in line or p.as_posix() in ("core/cli_models.py", "core/agent_guard.py")

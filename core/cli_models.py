@@ -179,6 +179,31 @@ def agy_extra_args() -> List[str]:
     return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
 
 
+CLAUDE_AGENT_ARGS = ("--strict-mcp-config", "--disable-slash-commands", "--permission-mode", "bypassPermissions")
+
+
+def _claude_model_args() -> List[str]:
+    if os.environ.get("DIRECTOR_TESTING") == "1":
+        return []
+    return [a for a in claude_extra_args() if a not in CLAUDE_LIGHT_ARGS]
+
+
+def claude_agent_argv(executable: str, settings: Optional[str] = None) -> List[str]:
+    """Agent-mode Maker: every tool, no permission prompts (the person agreed at install). `settings` is the JSON
+    that gives its shell commands Tribunal's PATH (core/agent_guard.py)."""
+    return [executable, "--print", "--output-format", "json", *CLAUDE_AGENT_ARGS,
+            *(["--settings", settings] if settings else []), *_claude_model_args()]
+
+
+def codex_agent_argv(executable: str) -> List[str]:
+    return [executable, "exec", *codex_model_args(), "--dangerously-bypass-approvals-and-sandbox", "-"]
+
+
+def agy_agent_argv(executable: str) -> List[str]:
+    return [executable, "--input-format", "stream-json", "--output-format", "stream-json",
+            "--dangerously-skip-permissions", *agy_extra_args()]
+
+
 def claude_print_argv(executable: str, json_output: bool = True) -> List[str]:
     return [executable, "--print", *(["--output-format", "json"] if json_output else []), *claude_extra_args()]
 

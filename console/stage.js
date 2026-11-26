@@ -319,7 +319,7 @@ function paintAttention(m){
   const list=items=>{const ul=el('ul','','why');for(const it of items){const li=el('li',word(it));if(it.file){if(/\s/.test(it.file)&&it.file.length>40)li.append(el('p',it.file));else li.append(' · ',el('code',it.file));}ul.append(li);}return ul;};
   if(kind==='approve'){
     const items=ap.items||[];
-    box.append(el('strong',ap.stage==='POST_BUILD'?T('제작 결과에 확인이 필요합니다'):own?T('시작 전에 확인이 필요합니다'):T('새 작업이 승인을 기다립니다')));
+    box.append(el('strong',ap.stage==='GUARD'?T('AI가 실행 허락을 기다립니다'):ap.stage==='POST_BUILD'?T('제작 결과에 확인이 필요합니다'):own?T('시작 전에 확인이 필요합니다'):T('새 작업이 승인을 기다립니다')));
     if(!own&&ap.goal)box.append(el('p',ap.goal,'new-goal'));
     if(items[0]&&why(items[0]))box.append(el('p',why(items[0])));
     if(items.length)box.append(list(items));
@@ -1093,7 +1093,7 @@ function accountBox(p,key){
 function paintAI(force){
   const box=$('ai-cards');if($('ai-panel').hidden)return;
   if(!ai){box.replaceChildren(el('p',T('불러오는 중…'),'ai-note'));return;}
-  paintAITools();
+  paintAITools();paintPerms();
   if(!force&&box.contains(document.activeElement)&&/^(SELECT|INPUT)$/.test(document.activeElement.tagName))return;   // do not rebuild under an open list or while typing
   const held=box.contains(document.activeElement)?document.activeElement.dataset.k:null;   // a forced rebuild (after a save) keeps the field you are in
   box.replaceChildren(...AI_ORDER.map(p=>{const key=CLI_OF[p],l=ai.limits[key]||{},o=ai.options[key]||{models:[],efforts:[]},card=el('div','','ai-card');
@@ -1126,6 +1126,26 @@ function paintAI(force){
     warn.append(el('span',T('경고 임계치')),num,el('span','%'));card.append(warn);
     return card;}));
   if(held){const again=box.querySelector('[data-k="'+held+'"]');if(again)again.focus();}
+}
+// What the agent-mode Maker asks about first (core/agent_guard.py). On: the run stops and asks; off: it just runs.
+const PERMS=()=>[['system_install',T('시스템 전체 설치'),T('sudo, brew, apt, winget, npm -g, 가상환경 밖 pip')],
+  ['money_credentials',T('돈·자격 증명'),T('결제·송금 코드, 비밀번호·API 키')],
+  ['irreversible',T('되돌릴 수 없는 작업'),T('배포·게시, git push, 프로젝트 밖 파일 삭제')]];
+function paintPerms(){
+  const box=$('ai-perms');if(!box||!ai||!ai.permissions)return;
+  if(box.contains(document.activeElement))return;
+  const head=el('div','','ai-perms-head'),title=el('b',T('권한'));title.id='ai-perms-title';
+  head.append(title,el('p',T('켜 둔 항목은 AI가 실행하기 전에 작업을 멈추고 묻습니다. 그 밖의 설치·수정은 묻지 않습니다.'),'ai-note'));
+  const rows=PERMS().map(([key,name,what])=>{
+    const row=el('label','','ai-perm'),t=el('div'),cb=el('input'),state=el('span',ai.permissions[key]?T('묻기'):T('묻지 않음'),'ai-perm-state');
+    t.append(el('b',name),el('small',what));cb.type='checkbox';cb.checked=!!ai.permissions[key];cb.dataset.k='perm:'+key;
+    cb.onchange=async()=>{cb.disabled=true;
+      try{const res=await fetch('/ops/permissions',{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roleToken},body:JSON.stringify({category:key,ask:cb.checked})}),out=await res.json();
+        if(!res.ok)throw Error(out.error||T('저장 실패'));ai.permissions=out.permissions;notice(cb.checked?T('{0}: 실행 전에 묻습니다',name):T('{0}: 묻지 않고 실행합니다',name));}
+      catch(e){cb.checked=!cb.checked;notice(T('설정 저장 실패 · ')+e.message);}
+      cb.disabled=false;state.textContent=cb.checked?T('묻기'):T('묻지 않음');};
+    row.append(t,state,cb);return row;});
+  box.replaceChildren(head,...rows,el('p',T('항상 지킴: 작업 폴더 분리, .git과 Tribunal 내부 폴더 보호'),'ai-note'));
 }
 function paintAITools(){
   const sel=$('ai-interval'),mins=(ai.options.poll_minutes||[1,5,10,30]);

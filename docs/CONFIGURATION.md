@@ -19,9 +19,21 @@
 
 ```yaml
 architect: {provider: claude}                    # 설계 · 판단
-maker:     {provider: codex, mode: proposal}     # 제작 — 파일 전체를 JSON으로 제안
+maker:     {provider: codex, mode: agent}        # 제작 — 작업 폴더에서 직접 고치고 설치하고 테스트
 inspector: {provider: antigravity}               # 감리
 ```
+
+`maker.mode`는 두 가지입니다.
+
+- `agent`(기본): 제작 AI가 실행(worktree) 폴더에서 직접 파일을 고치고, 명령을 실행하고, 패키지를 프로젝트 안에(`.venv`,
+  `node_modules`) 설치하고, 테스트를 돌립니다. 권한을 묻지 않는 옵션으로 실행합니다(Claude `--permission-mode
+  bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox`, Antigravity `--dangerously-skip-permissions`).
+  처음 실행 도우미나 설치 과정에서 사용자가 약관에 동의해야 실행되고(`tribunal consent`), 시스템 전체 설치 · 돈과 자격 증명 ·
+  되돌릴 수 없는 작업은 AI 설정의 **권한**에서 켠 항목만 멈추고 묻습니다(`data/permissions.json`). 범위 검사에서 파일 수 ·
+  줄 수 한도, `allowed_paths`, 의존성 · 권한 · 빌드 설정 파일 검사는 하지 않고, `.git`과 내부 폴더 보호, 작업 폴더 밖 경로,
+  `protected_paths`, 삭제 검사는 그대로 합니다. 결과를 적용할 때 프로젝트에 같은 의존성을 설치한 뒤 다시 검증합니다.
+  시간 제한은 `timeouts.maker_agent`(기본 1800초)입니다. 자세한 내용은 [AGENT_MODE.md](AGENT_MODE.md).
+- `proposal`: 제작 AI가 도구 없이 파일 내용을 JSON으로 돌려주고 Tribunal이 검사해서 씁니다. 아무것도 설치하지 않습니다.
 
 `provider`는 `claude` / `codex` / `antigravity` 중 하나입니다. 실행 파일은 자동으로 찾습니다(`executable: null`). 그 CLI가 없는
 컴퓨터에서는 다른 것으로 바꾸면 되고, CLI 두 개로도 돌아갑니다. 콘솔의 역할 메뉴에서 바꾸면 그 선택이 다음 호출부터 적용됩니다.

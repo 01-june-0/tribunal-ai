@@ -180,7 +180,7 @@ def test_the_default_roles_in_config_are_codex_maker_and_antigravity_inspector()
     from pathlib import Path as _P
     cfg = yaml.safe_load((_P(__file__).resolve().parents[1] / "config.yaml").read_text(encoding="utf-8"))
     assert (cfg["architect"]["provider"], cfg["maker"]["provider"], cfg["inspector"]["provider"]) == ("claude", "codex", "antigravity")
-    assert cfg["maker"]["mode"] == "proposal"
+    assert cfg["maker"]["mode"] == "agent"                       # docs/AGENT_MODE.md
 
 
 def test_what_is_not_one_of_the_three_is_left_alone_and_shared_roles_all_move(tmp_path):

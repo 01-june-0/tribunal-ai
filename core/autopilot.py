@@ -87,6 +87,8 @@ USER_STOP_MARKERS = (
     # Roles chosen by the user and no ARCHITECT proxy: the user decides what replaces the AI that is out. Re-planning
     # would only send the next milestone to the same AI.
     "MANUAL_ROLE_UNAVAILABLE",
+    # agent mode: the Maker wanted a command the person keeps for themselves (core/agent_guard.py)
+    "GUARD_APPROVAL_REQUIRED",
 )
 
 

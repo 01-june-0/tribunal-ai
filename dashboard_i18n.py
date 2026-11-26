@@ -124,6 +124,9 @@ PROVIDER_LABEL: Dict[str, Tuple[str, str, str]] = {   # domain -> (display name,
 }
 
 REASON_TEXT: Dict[str, Tuple[str, str]] = {   # code -> (short title, explanation)
+    "system_install": ("프로젝트 밖 설치", "AI가 시스템 전체에 설치하려 했습니다. 실행하지 않았고, 허락하면 이 단계를 다시 돌리며 실행합니다."),
+    "money_credentials": ("돈·자격 증명", "AI가 결제나 비밀 정보 도구를 쓰려 했습니다. 실행하지 않았고, 허락하면 이 단계를 다시 돌리며 실행합니다."),
+    "irreversible": ("되돌릴 수 없는 작업", "AI가 게시·배포하거나 프로젝트 밖을 지우려 했습니다. 실행하지 않았고, 허락하면 이 단계를 다시 돌리며 실행합니다."),
     "SENSITIVE_FILE_IN_SCOPE": ("의존성·환경 설정 파일 변경 승인 필요", "실행 환경이나 의존성에 영향을 줄 수 있는 파일이 작업 범위에 포함되어 있습니다. 수정 전에 확인이 필요합니다."),
     "LIVE_MONEY_CODE": ("돈을 움직일 수 있는 코드", "주문이나 결제를 실행할 수 있는 코드가 추가되었습니다. 테스트가 이 코드를 실행하기 전에, 이 파일에 한해 사용자가 허용해야 합니다."),
     "DEPENDENCY_CONFIGURATION_MODIFIED": ("의존성 설정 파일 변경", "의존성 설정 파일이 실제로 변경되었습니다. 이 파일에 한해 승인하면 검증이 계속됩니다."),

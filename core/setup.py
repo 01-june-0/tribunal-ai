@@ -154,12 +154,42 @@ def acknowledged() -> Dict[str, Any]:
         return {}
 
 
+# The terms the person agrees to before the agent-mode Maker may run commands on this computer (docs/AGENT_MODE.md).
+# Changing what the Maker may do without asking means a new date here: everyone is asked again.
+AGENT_TERMS = "2026-11-26"
+
+
+AGENT_TERMS_TEXT = """Tribunal AI 이용 동의 / Agreement ({date})
+
+[한국어]
+- Tribunal의 제작 AI는 작업 폴더 안에서 직접 명령을 실행하고, 필요한 라이브러리를 설치하고, 파일을 고칩니다. 그때마다 묻지 않습니다.
+- 작업은 프로젝트와 분리된 작업 폴더에서 하고, 적용을 누를 때만 프로젝트에 반영됩니다.
+- 시스템 전체 설치, 돈·자격 증명, 되돌릴 수 없는 작업은 먼저 묻습니다. AI 설정의 권한에서 바꿀 수 있습니다.
+- 완전히 격리된 환경(컨테이너)은 아닙니다. AI가 실행한 명령은 이 컴퓨터에서 실행됩니다.
+- AI 사용량은 각 AI 계정의 요금제에서 차감됩니다.
+
+[English]
+- Tribunal's Maker AI runs commands, installs the libraries it needs and edits files in a work folder by itself. It does not ask each time.
+- It works in a folder separate from your project. Your project changes only when you press Apply.
+- System-wide installs, money and credentials, and things that cannot be undone are asked about first. You can change this under Permissions in AI settings.
+- This is not a fully isolated environment (a container). Commands the AI runs run on this computer.
+- AI use counts against the plan of each AI account.
+""".format(date=AGENT_TERMS)
+
+
+def agent_consented() -> bool:
+    return acknowledged().get("agent_terms") == AGENT_TERMS
+
+
 def acknowledge(what: str) -> Dict[str, Any]:
-    """Remember that the cost notice was read ("cost") or that the helper was finished ("done")."""
-    if what not in ("cost", "done"):
+    """Remember that the cost notice was read ("cost"), that the helper was finished ("done"), or that the person
+    agreed to the agent-mode terms ("agent": recorded with the terms' date, from the helper or an installer)."""
+    if what not in ("cost", "done", "agent"):
         raise ValueError("Unknown acknowledgement")
     data = acknowledged()
     data[what] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    if what == "agent":
+        data["agent_terms"] = AGENT_TERMS
     path = _ack_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -260,9 +290,11 @@ def status(accounts: Optional[Callable[[], Dict[str, Any]]] = None) -> Dict[str,
         "accounts": accounts(),
         "commands": commands(sysname),
         "started": started,
-        "acknowledged": {k: bool(ack.get(k)) for k in ("cost", "done")},
+        "acknowledged": {**{k: bool(ack.get(k)) for k in ("cost", "done")}, "agent": ack.get("agent_terms") == AGENT_TERMS},
+        "agent_terms": AGENT_TERMS,
         "practice": {lang: "~/" + practice_name(lang, sysname) for lang in ("ko", "en")},
-        "auto_open": not ack.get("cost") and not _has_history(),
+        # also for someone who finished the helper before: the new terms are asked once
+        "auto_open": (not ack.get("cost") and not _has_history()) or ack.get("agent_terms") != AGENT_TERMS,
     }
 
 

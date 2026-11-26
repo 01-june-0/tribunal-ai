@@ -152,8 +152,9 @@ class CompanionHandler(d.DashboardHandler):
             settings = cli_settings.load()
             limits = cli_limits.snapshot(settings['antigravity']['model'], settings['usage_poll_minutes'] * 60)
             from core import cli_accounts
+            from core import agent_guard
             return self._send_json({'settings': settings, 'options': cli_settings.options(), 'limits': limits,
-                                    'accounts': cli_accounts.snapshot(limits),
+                                    'accounts': cli_accounts.snapshot(limits), 'permissions': agent_guard.permissions(),
                                     'alerts': cli_limits.alerts(limits, {c: settings[c]['warn_percent'] for c in cli_settings.CLIS})})
         if path == '/ops/version':              # this copy's version and whether a newer release exists (core/updates.py)
             from core import updates
@@ -276,6 +277,22 @@ class CompanionHandler(d.DashboardHandler):
                     raise ValueError('Invalid settings request')
                 settings = cli_settings.save(json.loads(self.rfile.read(size)))
                 return self._send_json({'settings': settings})
+            except (ValueError, TypeError) as exc:
+                return self._send_json({'error': str(exc)[:300]}, 400)
+            except Exception as exc:
+                return self._send_json({'error': str(exc)[:300]}, 500)
+        if self.path == '/ops/permissions':     # what the agent-mode Maker asks about first (core/agent_guard.py)
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            try:
+                from core import agent_guard
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 512 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                    raise ValueError('Invalid permission request')
+                body = json.loads(self.rfile.read(size))
+                if not isinstance(body, dict) or not isinstance(body.get('ask'), bool):
+                    raise ValueError('Invalid permission request')
+                return self._send_json({'permissions': agent_guard.set_permission(str(body.get('category') or ''), body['ask'])})
             except (ValueError, TypeError) as exc:
                 return self._send_json({'error': str(exc)[:300]}, 400)
             except Exception as exc:

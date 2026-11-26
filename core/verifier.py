@@ -34,6 +34,7 @@ class Verifier:
             # second, so a fix written quickly over a same-size bug was not what got tested (seen on Linux). It also
             # keeps __pycache__ out of the worktree, whose files applying writes into the project.
             env["PYTHONDONTWRITEBYTECODE"] = "1"
+            env.setdefault("CI", "1")           # test runners that watch by default (vitest, jest --watch) run once
 
             if isinstance(cmd_str, list):
                 argv = list(cmd_str)
@@ -115,7 +116,8 @@ class Verifier:
         timeout: float = 120.0,
         git_checks: bool = True,
         on_line=None,
-        python_root: Optional[str] = None
+        python_root: Optional[str] = None,
+        node_tests: bool = True
     ) -> Dict[str, Any]:
         """`on_line(phase, text)` observes the commands' output while they run (phase: build / test / lint). The text
         comes in pieces as it arrives, not necessarily whole lines. `python_root`: where to look for the project's
@@ -140,7 +142,9 @@ class Verifier:
         test_res = cls._execute_cmd(test_cmd, wt, timeout=timeout, on_line=watch("test"), python_root=python_root)
         test_counts = cls._parse_test_counts(test_res.get("output", "")) if test_res.get("executed") else \
             {"passed": 0, "failed": 0, "total": 0}
-        node_cmd, node_note = (None, None) if cls._runs_node_already(test_cmd) else cls.node_test_command(wt)
+        # node_tests=False: re-checking where the run never ran Node tests (applying a result): a first, late run there
+        # could undo a passed result for tests that were never part of it
+        node_cmd, node_note = (None, None) if cls._runs_node_already(test_cmd) or not node_tests else cls.node_test_command(wt)
         node_info: Dict[str, Any] = {"command": None, "note": node_note}
         if node_cmd:
             node_res = cls._execute_cmd(node_cmd, wt, timeout=timeout, on_line=watch("test"))
@@ -218,11 +222,10 @@ class Verifier:
                 script = ""
         if not script or "no test specified" in script:
             return None, None
-        if deps:
-            # Tribunal's copies of a project never hold node_modules (it installs nothing), so a test script that needs
-            # packages could only run when applying into the user's folder: a first, late run that could undo a passed
-            # result. It never runs, here or there, and the summary says why.
-            return None, "package.json test script needs dependencies, which Tribunal does not install"
+        if deps and not (wt / "node_modules").is_dir():
+            # The packages are installed where the agent-mode Maker worked (node_modules in its worktree); a folder
+            # without them cannot run the script, and the summary says why instead of reporting a failure.
+            return None, "package.json test script needs dependencies that are not installed here (no node_modules)"
         npm = shutil.which("npm")
         if not npm:
             return None, "package.json has a test script but npm is not installed"

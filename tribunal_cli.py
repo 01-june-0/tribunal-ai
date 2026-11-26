@@ -368,6 +368,23 @@ def doctor(as_json):
                "아직 준비되지 않음: git과 AI CLI가 둘 이상 있어야 작업을 시킬 수 있습니다.")
 
 
+@cli.command()
+@click.option("--accept", is_flag=True, help="Record that the terms were read and accepted (installers use this)")
+def consent(accept):
+    """Show the agent-mode terms and record the agreement (the Maker runs nothing before it)."""
+    from core import setup
+    if setup.agent_consented():
+        click.echo(f"동의함 / agreed ({setup.AGENT_TERMS})")
+        return
+    click.echo(setup.AGENT_TERMS_TEXT)
+    if accept or click.confirm("동의합니까? / Do you agree?", default=False):
+        setup.acknowledge("agent")
+        click.echo("동의를 기록했습니다 / recorded")
+    else:
+        click.echo("동의하지 않았습니다. 제작 AI는 아무것도 실행하지 않습니다 / not agreed: the Maker runs nothing")
+        sys.exit(1)
+
+
 def _director_commands() -> None:
     """`tribunal do …`, `tribunal mission …` and the rest: the commands of director.py, unchanged."""
     import director

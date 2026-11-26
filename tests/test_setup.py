@@ -124,7 +124,7 @@ def test_status_reads_this_machine(monkeypatch, tmp_path):
     assert out["clis"]["openai"] == {"installed": True, "version": "0.171.0"}
     assert out["clis"]["antigravity"] == {"installed": False, "version": None}
     assert out["git"] == {"installed": False, "version": None} and out["accounts"] is accounts
-    assert out["auto_open"] is True and out["acknowledged"] == {"cost": False, "done": False}
+    assert out["auto_open"] is True and out["acknowledged"] == {"cost": False, "done": False, "agent": False}
     setup.status(accounts=lambda: accounts)
     assert len(probes) == 2                                                        # a version is asked once per file
 

@@ -342,6 +342,11 @@ body.broadcast #now-eta{display:none}
 #ai-close{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line2);background:transparent;font-size:var(--fs-sm);color:var(--muted);white-space:nowrap}
 #ai-close:hover{color:var(--text)}
 #ai-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+#ai-perms{margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.03);display:grid;gap:4px}
+#ai-perms .ai-perms-head p{margin:4px 0 6px}
+.ai-perm{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--line);cursor:pointer}
+.ai-perm>div{flex:1;display:grid;gap:2px}.ai-perm small{color:var(--muted)}
+.ai-perm-state{font-size:var(--fs-sm);color:var(--muted)}.ai-perm input{width:18px;height:18px;accent-color:#6aa5ff}
 .ai-card{--c:#fff;display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.035);border-top:2px solid var(--c)}
 .ai-card-head{display:flex;flex-wrap:nowrap;align-items:center;gap:6px 8px;min-width:0}
 .ai-card-head>*{flex:none}.ai-card-head>strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
@@ -664,6 +669,7 @@ body.inside #attention,body.inside #limit-alert{top:auto;bottom:84px}   /* a ban
 .su-facts li span{color:var(--muted)}
 .su-agree{display:flex;gap:10px;align-items:center;margin-top:20px;padding:12px 16px;border-radius:12px;border:1px solid var(--line2);cursor:pointer}
 .su-agree input{width:18px;height:18px;accent-color:#6aa5ff}
+.su-terms{margin-top:24px;padding-top:18px;border-top:1px solid var(--line2);display:grid;gap:10px}
 .su-count{margin-top:12px;font-size:var(--fs-sm);color:var(--muted)}
 .su-count b{color:var(--text)}
 .su-k{margin:0 0 6px}

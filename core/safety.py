@@ -424,7 +424,8 @@ class SafetyPolicy:
         raw_git_diff: Optional[str] = None,
         deleted_files: Optional[List[str]] = None,
         worktree_path: Optional[str] = None,
-        approved_waivers: Optional[List[dict]] = None
+        approved_waivers: Optional[List[dict]] = None,
+        agent_mode: bool = False
     ) -> Tuple[bool, List[str]]:
         """
         Post-build Scope Guard: Analyzes actual git diff changes.
@@ -461,14 +462,17 @@ class SafetyPolicy:
         for f in sorted(set(control_plane_hits)):
             violations.append(f"Control plane modified: {f}")
 
+        # Agent mode (the person agreed at install that the Maker installs and edits on its own): no file or line
+        # budget, no allowed_paths, dependency, permission or build-config gates. Control plane, worktree containment,
+        # protected paths and deletions are still checked.
         # 1. Check max files changed
-        if len(all_changed_files) > order.max_files_changed:
+        if not agent_mode and len(all_changed_files) > order.max_files_changed:
             violations.append(
                 f"Max files changed exceeded: {len(all_changed_files)} > {order.max_files_changed}"
             )
 
         # 2. Check max diff lines
-        if total_diff_lines > order.max_diff_lines:
+        if not agent_mode and total_diff_lines > order.max_diff_lines:
             violations.append(
                 f"Max diff lines exceeded: {total_diff_lines} > {order.max_diff_lines}"
             )
@@ -483,7 +487,7 @@ class SafetyPolicy:
         # 3. Check allowed / protected / sensitive paths for every changed file
         for f in all_changed_files:
             # Check allowed paths
-            if not cls.is_path_allowed(f, order.allowed_paths):
+            if not agent_mode and not cls.is_path_allowed(f, order.allowed_paths):
                 violations.append(f"File modified outside allowed_paths: {f}")
 
             # Check protected paths
@@ -492,6 +496,8 @@ class SafetyPolicy:
 
             # Check dependency files changed unexpectedly
             fname = Path(f).name.lower()
+            if agent_mode:
+                continue
             if fname in cls.DEPENDENCY_FILES:
                 violations.append(f"Dependency configuration modified: {f}")
 

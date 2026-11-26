@@ -21,6 +21,7 @@ main() {
     source_url="${TRIBUNAL_SOURCE:-https://github.com/01-june-0/tribunal-ai/archive/refs/heads/main.zip}"
     say ""
     say "Tribunal AI 설치를 시작합니다 / Installing Tribunal AI"
+    terms
 
     uv="$(find_uv)"
     if [ -z "$uv" ]; then
@@ -62,6 +63,7 @@ main() {
     say ""
     say "3/3 바로 가기 / shortcut"
     "$tribunal" shortcut || say "바로 가기는 만들지 못했습니다. 터미널에서 tribunal 로 열 수 있습니다 / no shortcut; run: tribunal"
+    "$tribunal" consent --accept >/dev/null || say "동의를 기록하지 못했습니다. 처음 실행 도우미가 다시 묻습니다 / the agreement was not recorded; the helper asks again"
 
     say ""
     say "설치했습니다 / Installed."
@@ -76,6 +78,34 @@ main() {
 
 say() {
     printf '%s\n' "$1"
+}
+
+# The agent-mode terms (core/setup.py AGENT_TERMS_TEXT). Asked on the terminal even when this script comes through a
+# pipe; TRIBUNAL_ACCEPT_TERMS=1 is for unattended installs by someone who has read them.
+terms() {
+    say ""
+    say "설치하기 전에 확인해 주세요 / Before installing"
+    say "  - 제작 AI는 작업 폴더 안에서 직접 명령을 실행하고, 라이브러리를 설치하고, 파일을 고칩니다. 그때마다 묻지 않습니다."
+    say "    The Maker AI runs commands, installs libraries and edits files in a work folder by itself, without asking each time."
+    say "  - 작업은 프로젝트와 분리된 폴더에서 하고, 적용을 누를 때만 프로젝트에 반영됩니다."
+    say "    It works in a folder separate from your project; your project changes only when you press Apply."
+    say "  - 시스템 전체 설치, 돈·자격 증명, 되돌릴 수 없는 작업은 먼저 묻습니다(AI 설정 > 권한에서 바꿈)."
+    say "    System-wide installs, money and credentials, and irreversible actions are asked about first (AI settings > Permissions)."
+    say "  - 완전히 격리된 환경은 아닙니다. AI가 실행한 명령은 이 컴퓨터에서 실행됩니다."
+    say "    This is not a fully isolated environment: commands the AI runs run on this computer."
+    if [ "${TRIBUNAL_ACCEPT_TERMS:-}" = "1" ]; then
+        say "동의함 (TRIBUNAL_ACCEPT_TERMS=1) / agreed"
+        return
+    fi
+    answer=""
+    if [ -r /dev/tty ]; then
+        printf '%s' "동의하면 y 를 입력하고 Enter / to agree, type y and press Enter: "
+        read -r answer < /dev/tty || answer=""
+    fi
+    case "$answer" in
+        y|Y|yes|YES|Yes) ;;
+        *) fail "동의하지 않아 아무것도 설치하지 않았습니다 / not agreed: nothing was installed" ;;
+    esac
 }
 
 fail() {

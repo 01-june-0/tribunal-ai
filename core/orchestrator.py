@@ -102,6 +102,12 @@ class Orchestrator:
         no_progress_timeout = self.timeouts.get("no_progress", 180)
         heartbeat_interval = self.timeouts.get("heartbeat", 30)
         cls = AntigravityMaker
+        if b_cfg.get('mode') == 'agent':
+            from agents.agent_maker import AgentMaker
+            return AgentMaker(provider=provider_override or b_cfg.get('provider', 'google'), approved_commands=approved,
+                model=model, executable=executable,
+                timeout=self._role_timeout("maker_agent", provider_override or b_cfg.get('provider', 'google'), 1800),
+                no_progress_timeout=max(no_progress_timeout, 600), heartbeat_interval=heartbeat_interval)
         if b_cfg.get('mode') == 'proposal':
             from agents.proposal_maker import ProposalMaker
             return ProposalMaker(provider=provider_override or b_cfg.get('provider', 'google'), approved_commands=approved,
@@ -316,7 +322,7 @@ class Orchestrator:
             dom = self._domain_of(roles[role])
             if dom in usable or dom in ("MOCK", "UNKNOWN"):
                 continue
-            if role == "maker" and self.config.get("maker", {}).get("mode") != "proposal":
+            if role == "maker" and self.config.get("maker", {}).get("mode") not in ("proposal", "agent"):
                 alt = None
             else:
                 others = {self._domain_of(roles[r]) for r in roles if r != role}
@@ -398,7 +404,7 @@ class Orchestrator:
         """Replace ARCHITECT/MAKER/INSPECTOR with another usable provider. Returns False when none is left."""
         others = {self._get_agent_domain(a) for r, a in (("architect", self.architect), ("maker", self.maker),
                                                            ("inspector", self.inspector)) if r != role}
-        if role == "maker" and self.config.get("maker", {}).get("mode") != "proposal":
+        if role == "maker" and self.config.get("maker", {}).get("mode") not in ("proposal", "agent"):
             return False
         alt = autopilot.pick_alternative(self.pm, exclude=set(tried), avoid=others)
         if alt is None:
@@ -434,7 +440,7 @@ class Orchestrator:
         for role in ("architect", "maker", "inspector"):
             want = assigned[f"{role}_provider"]
             if self._domain_of(want) != self._get_agent_domain(getattr(self, role)):
-                if role == "maker" and self.config.get("maker", {}).get("mode") != "proposal":
+                if role == "maker" and self.config.get("maker", {}).get("mode") not in ("proposal", "agent"):
                     continue
                 setattr(self, role, init[role](want))
         self.current_failover_mode = assigned["mode"]
@@ -659,12 +665,18 @@ class Orchestrator:
             if note not in order.acceptance_criteria:
                 order.acceptance_criteria.append(note)
                 self._save_json(run_id, 'order.json', order)
+        if hasattr(self.maker, "guard_log"):           # a new Maker stage: caught commands are collected afresh
+            try:
+                (self._get_run_dir(run_id) / "guard_requests.jsonl").unlink()
+            except OSError:
+                pass
         if maker_fn is None and self._proxy():
             return self._run_maker_autonomous(run_id, order, worktree_path, logger, provenance_records)
         if maker_fn is None:
             stop_trial = self._claim_trial_for(self.maker, run_id, "BUILDING", logger)
             if stop_trial:
                 return None, stop_trial
+        self._arm_guard(run_id)
         try:
             maker_result = self.maker.run(order, worktree_path, maker_fn=maker_fn)
         except Exception as e:
@@ -696,6 +708,9 @@ class Orchestrator:
                 self._record_provider_success(self.maker)
 
         err = str(maker_result.error or "")
+        guard = self._guard_stop(run_id, logger, provenance_records)   # asked even when the step failed without them
+        if guard:
+            return maker_result, guard
         if maker_result.status != "COMPLETED":
             if err.startswith("PERMISSION_"):
                 action = "PERMISSION_RESTORE_FAILED" if err.startswith("PERMISSION_RESTORE_FAILED") else "PERMISSION_SETUP_FAILED"
@@ -709,6 +724,43 @@ class Orchestrator:
             state = State.TIMEOUT if "TIMEOUT" in err else State.FAIL
             return maker_result, self._stop(run_id, state, f"Maker {'timeout' if state == State.TIMEOUT else 'failed'}: {err}", logger, provenance_records)
         return maker_result, None
+
+    GUARD_PREFIX = "GUARD_APPROVAL_REQUIRED: "
+
+    def _agent_mode(self) -> bool:
+        return self.config.get("maker", {}).get("mode") == "agent"
+
+    def _arm_guard(self, run_id: str) -> None:
+        """Agent mode: where this step's caught commands go, and the ones the person already allowed in this run."""
+        if hasattr(self.maker, "guard_log"):
+            log = self._get_run_dir(run_id) / "guard_requests.jsonl"
+            self.maker.guard_log = str(log)
+            self.maker.guard_allowed = list((self._load_json(run_id, "approvals.json") or {}).get("guard_allowed") or [])
+
+    def _guard_requests(self, run_id: str) -> list:
+        """Everything this Maker stage was refused (all attempts, all AIs), plus full-path calls seen in its output."""
+        if not hasattr(self.maker, "guard_log"):
+            return []
+        from core import agent_guard
+        asked = agent_guard.requests(self._get_run_dir(run_id) / "guard_requests.jsonl")
+        seen = {a["command"] for a in asked}
+        for extra in getattr(self.maker, "last_guard_requests", None) or []:
+            if extra.get("ran") and extra.get("command") not in seen:
+                asked.append(extra)
+        return asked
+
+    def _guard_stop(self, run_id: str, logger: logging.Logger, provenance_records: list) -> Optional[Dict[str, Any]]:
+        """After an agent-mode step: commands the Maker was not allowed to run on its own stop the run here, before
+        anything is verified or applied, so the person decides (core/agent_guard.py). Also after a failed step: a
+        refused install is often why it failed."""
+        asked = self._guard_requests(run_id)
+        if not asked:
+            return None
+        if hasattr(self.maker, "last_guard_requests"):
+            self.maker.last_guard_requests = []
+        self._save_json(run_id, "guard_pending.json", {"requests": asked})
+        text = " | ".join(f"{r.get('category')}: {r.get('command')}" + (" (already ran)" if r.get("ran") else "") for r in asked)
+        return self._stop(run_id, State.HUMAN_REQUIRED, self.GUARD_PREFIX + text[:1500], logger, provenance_records, "GUARD_APPROVAL")
 
     PROVIDER_DOWN = (ErrorCategory.QUOTA, ErrorCategory.AUTH, ErrorCategory.PROVIDER_UNAVAILABLE, ErrorCategory.CONFIG_ERROR)
 
@@ -746,6 +798,7 @@ class Orchestrator:
                 maker_result = MakerResultSchema(status="FAILED", files_modified=[], commands_run=[],
                                                      summary="Provider not ready", error=f"PROVIDER_UNAVAILABLE: {domain} recovering, no trial")
             else:
+                self._arm_guard(run_id)
                 try:
                     maker_result = self.maker.run(attempt_order, worktree_path, maker_fn=None)
                 except Exception as e:
@@ -768,8 +821,8 @@ class Orchestrator:
                 self._record_provider_success(self.maker)
                 break
             err = str(maker_result.error or "")
-            if err.startswith("PERMISSION_") or err.startswith("MAKER_BUSY"):
-                break
+            if err.startswith("PERMISSION_") or err.startswith("MAKER_BUSY") or self._guard_requests(run_id):
+                break                                     # refused commands: the person decides before another try
             if "REFERENCE_INPUT_UNAVAILABLE" in err:
                 # a defect of the ORDER itself: no retry or provider can fix it; fail fast so ARCHITECT re-plans
                 history.append({"attempt": attempt, "provider": domain, "category": "ORDER_INPUT", "error": err[:800]})
@@ -806,6 +859,9 @@ class Orchestrator:
 
         self._save_json(run_id, "maker.json", maker_result)
         self.sm.log_audit(run_id, getattr(self.maker, 'provider', 'google').upper(), "MAKER_EXECUTION", json.dumps(maker_result.model_dump()))
+        guard = self._guard_stop(run_id, logger, provenance_records)
+        if guard:
+            return maker_result, guard
         if maker_result.status == "COMPLETED":
             return maker_result, None
         err = str(maker_result.error or "")
@@ -994,7 +1050,7 @@ class Orchestrator:
         fs_hits = self._control_plane_fs_hits(worktree_path)      # git-invisible control-plane files (info/exclude)
         scope_ok, scope_violations = SafetyPolicy.validate_scope_post_build(
             order=order, numstat=numstat, untracked_files=untracked, raw_git_diff=diff,
-            deleted_files=deleted_files, worktree_path=worktree_path, approved_waivers=waivers)
+            deleted_files=deleted_files, worktree_path=worktree_path, approved_waivers=waivers, agent_mode=self._agent_mode())
         if fs_hits:
             scope_violations = list(scope_violations) + [f"Control plane modified: {h}" for h in fs_hits]
             scope_ok = False
@@ -1025,6 +1081,11 @@ class Orchestrator:
             except OSError:
                 pass
         money, _ = SafetyPolicy.apply_waivers(autopilot.money_code_findings(diff, new_files, root=worktree_path), waivers)
+        if money and self._agent_mode():
+            from core import agent_guard
+            if not agent_guard.permissions().get("money_credentials"):
+                logger.info("Money-moving code allowed without asking (permission setting): " + "; ".join(money))
+                money = []
         if money:
             msg = "Scope violation: " + "; ".join(money)
             logger.warning(f"Money-moving code detected before test execution: {msg}")
@@ -1974,6 +2035,14 @@ class Orchestrator:
                 (info["items"] if code in SafetyPolicy.APPROVABLE_ENTRY else info["blocking"]).append({"gate": code, "file": file, "text": part})
             info["approvable"] = (bool(info["items"]) and not info["blocking"] and info["order_present"] and not maker_ran
                                   and not info["rejected"] and not info["approved"])
+        elif last.startswith(self.GUARD_PREFIX):
+            info["stage"] = "GUARD"
+            asked = (self._load_json(run_id, "guard_pending.json") or {}).get("requests") or []
+            info["items"] = [{"gate": str(r.get("category") or ""), "file": str(r.get("command") or ""),
+                              "text": str(r.get("command") or ""), "ran": bool(r.get("ran"))} for r in asked]
+            info["approvable"] = (bool(info["items"]) and maker_ran and info["order_present"]
+                                  and bool(run.get("worktree_path")) and Path(run["worktree_path"]).exists()
+                                  and not info["rejected"] and not info["approved"])
         elif last.startswith(self.SCOPE_PREFIX):
             info["stage"] = "POST_BUILD"
             cls = SafetyPolicy.classify_post_build_violations([v.strip() for v in last[len(self.SCOPE_PREFIX):].split(";") if v.strip()])
@@ -2000,10 +2069,20 @@ class Orchestrator:
                   "approved_files": [i["file"] for i in st["items"] if i.get("file")],
                   "approved_gates": [i["gate"] for i in st["items"]],
                   "approved_scope": order.get("allowed_paths", []), "note": note[:300],
-                  "covers": ("entry APPROVAL_REQUIRED only" if stage == "ENTRY" else "listed post-build gate+file pairs only") +
+                  "covers": ("entry APPROVAL_REQUIRED only" if stage == "ENTRY" else "the listed commands only" if stage == "GUARD"
+                             else "listed post-build gate+file pairs only") +
                             "; canonical containment / traversal / outside-scope / regression / inspector / final gate unchanged"}
         self.sm.log_audit(run_id, "HUMAN", "HUMAN_APPROVAL", json.dumps(record, ensure_ascii=False))
-        if stage == "POST_BUILD":
+        if stage == "GUARD":
+            approvals = self._load_json(run_id, "approvals.json") or {}
+            allowed = list(approvals.get("guard_allowed") or [])
+            allowed += [i["file"] for i in st["items"] if i.get("file") and not i.get("ran") and i["file"] not in allowed]
+            approvals["guard_allowed"] = allowed
+            self._save_json(run_id, "approvals.json", approvals)
+            # the step runs again and the allowed commands now work; when every item had already run (a full-path
+            # call), there is nothing to run again: the checks go on from verification
+            target = State.VERIFYING if all(i.get("ran") for i in st["items"]) else State.BUILDING
+        elif stage == "POST_BUILD":
             approvals = self._load_json(run_id, "approvals.json") or {}
             waivers = list(approvals.get("post_build") or [])
             for i in st["items"]:

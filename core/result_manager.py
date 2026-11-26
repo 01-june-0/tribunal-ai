@@ -513,8 +513,11 @@ class ResultManager:
         (backup_dir / "backup_manifest.json").write_text(json.dumps(backup_manifest, indent=2), encoding="utf-8")
 
         applied: List[str] = []
+        created_installs: List[Path] = []
         def rollback(reason: str, state: str) -> Dict[str, Any]:
             errors = []
+            for folder in created_installs:            # packages installed for this result only
+                shutil.rmtree(folder, ignore_errors=True)
             for e in backup_manifest:
                 if e["path"] not in applied:
                     continue
@@ -558,13 +561,27 @@ class ResultManager:
         except Exception as e:
             return rollback(f"APPLY_FAILED: {e}", RESULT_APPLY_FAILED)
 
+        # A result built in agent mode had its packages installed in the worktree, which is not applied: the same are
+        # installed into the project (from its own files). A failed install is recorded, not fatal: the re-check below
+        # decides. What the install created is removed again if the result is rolled back.
+        if (self._load(run_id, "maker_cli.json") or {}).get("mode") == "agent":
+            from core import project_setup
+            for name in (".venv", "node_modules"):
+                if not (proj_root / name).exists():
+                    created_installs.append(proj_root / name)
+            installed = project_setup.install(proj_root)
+            self._save(run_id, "apply_setup.json", installed)
+            if not installed["ok"]:
+                self.sm.log_audit(run_id, applied_by, "APPLY_SETUP_FAILED", json.dumps(installed, ensure_ascii=False)[:2000])
+
         # verify in the main project with the same verifier
         v = self.config.get("verification", {}) or {}
         cmd = test_cmd if test_cmd is not None else v.get("test_command")
-        verification = Verifier.verify(worktree_path=str(proj_root), build_cmd=v.get("build_command"), test_cmd=cmd, lint_cmd=v.get("lint_command"), git_checks=False,
-                                       timeout=_verification_timeout(v))
-        self._save(run_id, "apply_verification.json", verification)
         post = self._load(run_id, "verification.json") or {}
+        ran_node = bool((post.get("node_tests") or {}).get("command")) or "node_tests" not in post
+        verification = Verifier.verify(worktree_path=str(proj_root), build_cmd=v.get("build_command"), test_cmd=cmd, lint_cmd=v.get("lint_command"), git_checks=False,
+                                       timeout=_verification_timeout(v), node_tests=ran_node)
+        self._save(run_id, "apply_verification.json", verification)
         expected = int((post.get("test_counts") or {}).get("passed", 0) or 0)
         got = int((verification.get("test_counts") or {}).get("passed", 0) or 0)
         if not verification.get("passed") or (expected > 0 and got < expected):

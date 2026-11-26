@@ -65,6 +65,9 @@ APPROVAL_REASONS = {
     "CONTROL_PLANE_IN_SCOPE": ("Tribunal control-plane path in scope", "Tribunal-owned control files (.agents, .director_worktrees, GEMINI.md) are never approvable."),
     "LIVE_MONEY_CODE": ("Code that could move real money", "The maker added code that could place an order or take a payment; a human must allow this specific file before the tests run it."),
     "DEPENDENCY_CONFIGURATION_MODIFIED": ("Dependency configuration modified", "The maker changed a dependency file; a human must approve this specific file before verification continues."),
+    "system_install": ("Install outside the project", "The Maker wanted to install something system-wide. It was not run; allow it and the step runs again with it."),
+    "money_credentials": ("Money or credentials", "The Maker wanted to use a payment or secret tool. It was not run; allow it and the step runs again with it."),
+    "irreversible": ("Cannot be undone", "The Maker wanted to publish, deploy or delete outside the project. It was not run; allow it and the step runs again with it."),
 }
 ARCHITECT_WORKING_MESSAGE = "ARCHITECT is working..."
 # v0.2.4.7: /status is served from a short-TTL cache; every state-changing action invalidates it
@@ -513,7 +516,7 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
         "required": approvable, "state": state, "run_id": run_id, "goal": goal, "in_mission": _run_in_mission(run_id),
         "reason_raw": details, "items": items,
         "blocking": blocking, "stage": stage,
-        "stage_label": {"ENTRY": "ENTRY / before build", "POST_BUILD": "POST-BUILD / VERIFYING"}.get(stage, "runtime gate"),
+        "stage_label": {"ENTRY": "ENTRY / before build", "POST_BUILD": "POST-BUILD / VERIFYING", "GUARD": "MAKER / command needs approval"}.get(stage, "runtime gate"),
         "maker": "COMPLETED" if st.get("maker_ran") else "NOT RUN",
         "rejected": bool(st.get("rejected")), "approved": bool(st.get("approved")),
         "maker_ran": bool(st.get("maker_ran")), "inflight": inflight,
@@ -614,7 +617,7 @@ def inspect_run(run_id: str) -> dict:
             diff_stat = [f"(diff unavailable: {e})"]
     stage_order = ["PLANNING", "ORDER_READY", "BUILDING", "VERIFYING", "REVIEWING", "DECIDING"]
     executed = [t["to_state"] for t in trans if t["to_state"] in stage_order]
-    resume_at = {"ENTRY": "ORDER_READY", "POST_BUILD": "VERIFYING"}.get(ap.get("stage"))
+    resume_at = {"ENTRY": "ORDER_READY", "POST_BUILD": "VERIFYING", "GUARD": "BUILDING"}.get(ap.get("stage"))
     upcoming = stage_order[stage_order.index(resume_at):] + ["FINAL_GATE"] if resume_at else []
     return {
         "run_id": run_id, "state": run["current_state"], "project_path": run.get("project_path"), "goal": run.get("goal"),

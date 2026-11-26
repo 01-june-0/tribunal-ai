@@ -318,7 +318,7 @@ def _call(server, path, body=None, token="tok", origin=None):
 
 def test_ai_endpoint_reads_and_saves_settings(console):
     status, data = _call(console, "/ops/ai")
-    assert status == 200 and set(data) == {"settings", "options", "limits", "accounts", "alerts"} and data["alerts"] == []
+    assert status == 200 and set(data) == {"settings", "options", "limits", "accounts", "alerts", "permissions"} and data["alerts"] == []
     assert data["settings"]["usage_poll_minutes"] == 5 and data["options"]["poll_minutes"] == [1, 5, 10, 30]
     assert "tok" not in json.dumps(data)
     assert [p["id"] for p in data["options"]["antigravity"]["plans"]][-1] == "other"

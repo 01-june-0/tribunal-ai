@@ -44,13 +44,14 @@ def test_package_test_script_is_used_and_placeholder_ignored(tmp_path, monkeypat
     assert Verifier.node_test_command(tmp_path) == (["/bin/npm", "test"], None)
 
 
-def test_a_test_script_needing_packages_never_runs(tmp_path, monkeypatch):
-    # Tribunal's copies have no node_modules; running it only when applying (where they exist) could undo a pass
+def test_a_test_script_needing_packages_runs_only_where_they_are_installed(tmp_path, monkeypatch):
+    # agent mode: the Maker installs into its worktree (node_modules there); a folder without them gets a note
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
     _write(tmp_path, "package.json", json.dumps({"scripts": {"test": "jest"}, "devDependencies": {"jest": "^29"}}))
-    (tmp_path / "node_modules").mkdir()
     cmd, note = Verifier.node_test_command(tmp_path)
-    assert cmd is None and "dependencies" in note
+    assert cmd is None and "node_modules" in note
+    (tmp_path / "node_modules").mkdir()
+    assert Verifier.node_test_command(tmp_path) == (["/bin/npm", "test"], None)
 
 
 @pytest.mark.parametrize("cmd, already", [

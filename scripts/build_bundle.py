@@ -233,6 +233,8 @@ Name: "{autoprograms}\Tribunal AI"; Filename: "{app}\python\pythonw.exe"; Parame
 Name: "{autodesktop}\Tribunal AI"; Filename: "{app}\python\pythonw.exe"; Parameters: "@ARGS@"; WorkingDir: "{userdocs}"; IconFilename: "{app}\tribunal.ico"
 
 [Run]
+; the license page above holds the agent-mode terms: accepting it is the agreement the Maker needs (core/setup.py)
+Filename: "{app}\python\python.exe"; Parameters: "-I -m tribunal_cli consent --accept"; Flags: runhidden waituntilterminated
 Filename: "{app}\python\pythonw.exe"; Parameters: "@ARGS@"; Description: "Open Tribunal AI"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
@@ -257,9 +259,15 @@ def build_windows(py: Path, work: Path, out: Path, iscc: str) -> Path:
     shutil.copyfile(ICONS / "tribunal.ico", src / "tribunal.ico")
     shutil.copyfile(ROOT / "LICENSE", src / "LICENSE.txt")
     shutil.move(str(work / "THIRD-PARTY-NOTICES.txt"), str(src / "THIRD-PARTY-NOTICES.txt"))
+    # The page the person must accept: the agent-mode terms first, then the MIT license. UTF-8 with a BOM, so Inno
+    # Setup shows the Korean text.
+    sys.path.insert(0, str(ROOT))
+    from core.setup import AGENT_TERMS_TEXT
+    terms = work / "TERMS.txt"
+    terms.write_text(AGENT_TERMS_TEXT + "\n\n" + (ROOT / "LICENSE").read_text(encoding="utf-8"), encoding="utf-8-sig")
     script = work / "tribunal.iss"
     script.write_text(ISS.replace("@VERSION@", version()).replace("@OUT@", str(out)).replace("@SRC@", str(src))
-                      .replace("@ICON@", str(ICONS / "tribunal.ico")).replace("@LICENSE@", str(ROOT / "LICENSE"))
+                      .replace("@ICON@", str(ICONS / "tribunal.ico")).replace("@LICENSE@", str(terms))
                       .replace("@ARGS@", " ".join(LAUNCH_ARGS)),
                       encoding="utf-8")
     run([iscc, "/Q", script])

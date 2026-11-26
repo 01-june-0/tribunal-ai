@@ -8,7 +8,8 @@ architect:
   executable: null        # Discovered automatically (PATH or the standard install folder)
 
 maker:
-  mode: proposal          # Maker returns whole files as JSON; Tribunal validates and writes them.
+  mode: agent             # Maker CLI works in the run's worktree itself: edits, installs, runs tests (docs/AGENT_MODE.md).
+                          # proposal: it returns whole files as JSON and Tribunal writes them (nothing is installed).
   provider: codex         # Primary MAKER: OpenAI Codex CLI (if it is down: claude, then antigravity)
   model: cli-default
   executable: null        # Discovered automatically via resolve_cli('codex')
@@ -28,6 +29,7 @@ inspector:
 timeouts:
   architect: 300
   maker: 600
+  maker_agent: 1800       # agent mode: installs and test runs happen inside the Maker's step
   inspector: 300
   no_progress: 180
   heartbeat: 30

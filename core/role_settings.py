@@ -33,7 +33,8 @@ def apply(config):
         roles = validate(json.loads(PATH.read_text(encoding='utf-8')))
         for role, provider in roles.items():
             config.setdefault(role, {}).update(provider=provider, executable=None, model='cli-default')
-        config['maker']['mode'] = 'proposal'
+        if config['maker'].get('mode') not in ('proposal', 'agent'):
+            config['maker']['mode'] = 'proposal'          # the legacy mode runs on Antigravity only
         config['manual_roles'] = True
     return config
 

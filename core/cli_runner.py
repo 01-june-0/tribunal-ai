@@ -45,6 +45,10 @@ class ReadOnlyCliRunner:
     (see `attempts` on the return value / `ProviderCallError`)."""
 
     MAX_ATTEMPTS = 2   # initial attempt + 1 bounded retry; never more
+    READ_ONLY = True   # the call must leave its workspace exactly as it found it
+
+    def _env(self) -> Dict[str, str]:
+        return get_sanitized_env()
 
     def __init__(self, executables: Optional[Dict[str, str]] = None, timeout: float = 300.0,
                  no_output_timeout: float = 180.0, heartbeat_interval: float = 30.0):
@@ -103,7 +107,7 @@ class ReadOnlyCliRunner:
             )
         workspace = Path(cwd).resolve()
         before = run_capture(["git", "status", "--porcelain=v1", "-uall"], cwd=workspace, timeout=20)
-        if before.returncode != 0:
+        if before.returncode != 0 and self.READ_ONLY:
             raise ProviderCallError(
                 f"CONFIG_ERROR: workspace is not a git worktree: {workspace}", retryable=False, meta=meta
             )
@@ -116,7 +120,7 @@ class ReadOnlyCliRunner:
         result = ProcessTreeRunner.run(
             argv=argv,
             cwd=str(workspace),
-            env=get_sanitized_env(),
+            env=self._env(),
             timeout=self.timeout,
             # Claude's official --print/JSON mode is intentionally silent until
             # the final document is ready.  A no-output watchdog would kill a
@@ -129,7 +133,7 @@ class ReadOnlyCliRunner:
         ended_at = datetime.utcnow().isoformat()
         meta.update({"ended_at": ended_at, "duration_sec": result.duration_sec, "exit_code": result.exit_code})
         after = run_capture(["git", "status", "--porcelain=v1", "-uall"], cwd=workspace, timeout=20)
-        if after.returncode != 0 or after.stdout != before.stdout:
+        if self.READ_ONLY and (after.returncode != 0 or after.stdout != before.stdout):
             raise ProviderCallError(
                 f"READ_ONLY_VIOLATION: {normalized} changed its isolated workspace",
                 retryable=False, meta=meta,
@@ -166,6 +170,7 @@ class ReadOnlyCliRunner:
             self._versions[normalized] = probe_version(executable)
         return {
             "output": output,
+            "stderr": (result.stderr or "")[-200_000:],
             "executable": meta["executable"],
             "version": self._versions[normalized],
             "invocation": invocation,
@@ -219,3 +224,36 @@ class ReadOnlyCliRunner:
         final.attempts = attempts
         final.failure_result = final_meta
         raise final
+
+
+class AgentCliRunner(ReadOnlyCliRunner):
+    """Agent mode: the CLI works in the run's worktree itself (edits, commands, installs), without permission prompts.
+    Its shell gets Tribunal's stand-ins first on PATH (core/agent_guard.py). One attempt: a step that timed out has
+    already changed the worktree, and the orchestrator decides what happens next."""
+
+    MAX_ATTEMPTS = 1
+    READ_ONLY = False
+
+    def __init__(self, env: Dict[str, str], **kwargs):
+        super().__init__(**kwargs)
+        self.step_env = dict(env)
+
+    def _env(self) -> Dict[str, str]:
+        return dict(self.step_env)
+
+    def _command(self, domain: str, executable: str, prompt: str):
+        from core import cli_models
+        if domain == "OPENAI":
+            argv = cli_models.codex_agent_argv(executable)
+            return argv, prompt, " ".join(["codex", *argv[1:], "<stdin>"])
+        if domain == "ANTHROPIC":
+            keep = {k: v for k, v in self.step_env.items() if k == "PATH" or k.startswith("TRIBUNAL_GUARD_")}
+            argv = cli_models.claude_agent_argv(executable, json.dumps({"env": keep}))
+            shown = [a if not a.startswith("{") else "<guard settings>" for a in argv[1:]]
+            return argv, prompt, " ".join(["claude", *shown, "<stdin>"])
+        if domain == "GOOGLE":
+            message = {"event": "user", "message": {"role": "user", "content": [{"type": "text", "text": prompt}]}}
+            argv = cli_models.agy_agent_argv(executable)
+            return argv, json.dumps(message, ensure_ascii=False) + "\n", " ".join(["agy", *argv[1:], "<stdin>"])
+        raise ValueError(f"unsupported provider: {domain}")
+

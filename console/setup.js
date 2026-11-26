@@ -22,7 +22,7 @@ const STEPS=[
   {name:T('첫 작업'),kicker:T('5 / 5 · 첫 작업'),title:T('연습용 폴더에서 첫 작업을 시켜 봅니다'),
    lead:T('원본 프로젝트가 아니라 연습용 폴더에서 시작합니다. 결과는 바로 적용하지 않고, 변경 내용을 본 뒤 적용하거나 버릴 수 있습니다.')}];
 const GOALS=[T('계산기 창 앱을 만들어줘'),T('할 일 목록 웹 페이지를 만들어줘'),T('지뢰찾기 게임을 만들어줘'),T('내 소개 웹 페이지를 만들어줘')];
-let st=null,token='',step=0,agreed=false,checking=false,goal=GOALS[0],npmRoute=false,practice=null,pending=null,timer=0,busy=false,lastInstalled=-1,opener=null;
+let st=null,token='',step=0,agreed=false,consent=false,checking=false,goal=GOALS[0],npmRoute=false,practice=null,pending=null,timer=0,busy=false,lastInstalled=-1,opener=null;
 
 async function getToken(){if(token)return token;const r=await fetch('/ops/roles',{cache:'no-store'});token=(await r.json()).csrf||'';return token;}
 async function post(path,body){
@@ -34,7 +34,7 @@ async function post(path,body){
 async function load(fresh){
   let r;
   if(fresh){const [res,out]=await post('/ops/setup/refresh',{});if(!res.ok)throw Error(out.error||(T('서버 응답 ')+res.status));st=out;}   // reading anew needs the token
-  else{r=await fetch('/ops/setup',{cache:'no-store'});if(!r.ok)throw Error(T('서버 응답 ')+r.status);st=await r.json();}agreed=agreed||st.acknowledged.cost;
+  else{r=await fetch('/ops/setup',{cache:'no-store'});if(!r.ok)throw Error(T('서버 응답 ')+r.status);st=await r.json();}agreed=agreed||st.acknowledged.cost;consent=consent||!!st.acknowledged.agent;
   const n=installed();
   if(lastInstalled>=0&&n>lastInstalled)fetch('/providers/refresh',{method:'POST',headers:{'Accept':'application/json','X-Requested-With':'fetch'}}).catch(()=>{});   // a new AI: the roles see it at once
   lastInstalled=n;return st;
@@ -44,7 +44,7 @@ function signedIn(a){const acc=(st.accounts||{})[a.key]||{};return a.key==='anti
 const ready=()=>st?AIS.filter(a=>st.clis[a.key].installed&&signedIn(a)).length:0;
 function stepState(i){
   if(!st)return '';
-  if(i===0)return agreed?'done':'';
+  if(i===0)return agreed&&consent?'done':'';
   if(i===1)return st.git.installed?'done':'need';
   if(i===2)return installed()>=2?'done':'need';
   if(i===3)return ready()>=2?'done':'need';
@@ -92,7 +92,19 @@ function paintBody(){
     const ag=el('label','','su-agree'),cb=el('input');cb.type='checkbox';cb.checked=agreed;
     cb.onchange=async()=>{agreed=cb.checked;paint();if(agreed&&!st.acknowledged.cost){try{const [res]=await post('/ops/setup/ack',{what:'cost'});if(res.ok)st.acknowledged.cost=true;}catch(e){/* asked again next time */}}};
     ag.append(cb,el('span',T('이해했습니다. 필요한 구독은 제가 각 회사에서 준비합니다.')));
-    b.append(cost,facts,ag);
+    // the agent-mode terms (docs/AGENT_MODE.md): without them the Maker runs nothing (core/setup.agent_consented)
+    const terms=el('div','','su-terms');terms.append(el('b',T('AI가 이 컴퓨터에서 직접 작업합니다')));
+    const tl=el('ul','','su-facts');
+    for(const line of [T('제작 AI는 작업 폴더 안에서 직접 명령을 실행하고, 필요한 라이브러리를 설치하고, 파일을 고칩니다. 그때마다 묻지 않습니다.'),
+      T('작업은 프로젝트와 분리된 작업 폴더에서 하고, 적용을 누를 때만 프로젝트에 반영됩니다.'),
+      T('시스템 전체 설치, 돈·자격 증명, 되돌릴 수 없는 작업은 먼저 묻습니다. AI 설정의 권한에서 바꿀 수 있습니다.'),
+      T('완전히 격리된 환경(컨테이너)은 아닙니다. AI가 실행한 명령은 이 컴퓨터에서 실행됩니다.')]){
+      const li=el('li'),t=el('div');t.append(el('span',line));li.append(t);tl.append(li);}
+    const ag2=el('label','','su-agree'),cb2=el('input');cb2.type='checkbox';cb2.checked=consent;
+    cb2.onchange=async()=>{consent=cb2.checked;paint();if(consent&&!st.acknowledged.agent){try{const [res]=await post('/ops/setup/ack',{what:'agent'});if(res.ok)st.acknowledged.agent=true;}catch(e){/* asked again next time */}}};
+    ag2.append(cb2,el('span',T('위 내용을 이해했고, AI가 이 컴퓨터에서 명령을 실행하는 데 동의합니다.')));
+    terms.append(tl,ag2);
+    b.append(cost,facts,ag,terms);
   }else if(step===1){
     const rows=el('div','','su-rows');
     if(checking)rows.append(row(mark('wait',''),'git',T('확인하는 중…'),spinner()));
@@ -161,6 +173,7 @@ function paint(){
   const next=$('su-next');next.textContent=step===4?T('이 작업 시작하기'):T('다음');
   let ok=!!st,why='';
   if(st&&step===0&&!agreed){ok=false;why=T('비용 안내를 읽고 체크해 주세요.');}
+  else if(st&&step===0&&!consent){ok=false;why=T('AI가 직접 작업하는 데 동의해 주세요.');}
   if(st&&step===1&&!st.git.installed){ok=false;why=T('git을 설치한 뒤 「다음」이 열립니다.');}
   if(st&&step===2&&installed()<2){ok=false;why=T('AI가 두 개 이상 있어야 합니다.');}
   if(st&&step===3&&ready()<2){ok=false;why=T('두 개 이상 로그인해야 작업을 시킬 수 있습니다.');}
@@ -222,14 +235,14 @@ async function finish(){
 function schedule(){clearTimeout(timer);if(!$('setup'))return;
   const watch=st&&(st.started.length||Object.values(st.accounts||{}).some(a=>a.pending||a.loading));
   timer=setTimeout(async()=>{if(!document.hidden&&!checking){try{await load();paint();}catch(e){/* next round */}}schedule();},watch?2000:5000);}
-function firstOpenStep(){if(!agreed)return 0;for(let i=1;i<4;i++)if(stepState(i)==='need')return i;return 4;}
+function firstOpenStep(){if(!agreed||!consent)return 0;for(let i=1;i<4;i++)if(stepState(i)==='need')return i;return 4;}
 function build(){
   const root=el('section','','su-root');root.id='setup';root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-labelledby','su-title');
   const wiz=el('div','','su-wizard glass'),rail=el('nav','','su-rail'),main=el('div','','su-main');rail.setAttribute('aria-label',T('준비 단계'));
   const brand=el('div','','su-brand'),bm=el('span','','brand-mark'),bt=el('div');bm.setAttribute('aria-hidden','true');bm.append(el('i'),el('i'),el('i'));
   bt.append(el('strong','TRIBUNAL AI'),el('span',T('시작하기')));brand.append(bm,bt);
   const steps=el('ol','','su-steps');steps.id='su-steps';
-  rail.append(brand,steps,el('p',T('Tribunal은 확인 없이 아무것도 설치하지 않습니다. 비밀번호와 로그인 토큰은 묻지도 읽지도 않습니다.'),'su-rail-note'));
+  rail.append(brand,steps,el('p',T('Tribunal은 확인 없이 프로젝트 밖에 아무것도 설치하지 않습니다. 비밀번호와 로그인 토큰은 묻지도 읽지도 않습니다.'),'su-rail-note'));
   const head=el('div','','su-head'),k=el('span','','kicker'),h=el('h2'),lead=el('p','','su-lead'),x=el('button',T('닫기'),'su-close');
   k.id='su-kicker';h.id='su-title';lead.id='su-lead';x.type='button';x.id='su-x';x.title=T('닫기 · AI 설정에서 다시 열 수 있습니다');
   head.append(x,k,h,lead);

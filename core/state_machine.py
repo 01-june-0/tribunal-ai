@@ -245,8 +245,9 @@ class StateMachine:
         continues through the normal resume pipeline (worktree, baseline, maker, scope guard, inspector, final gate).
         Atomic conditional UPDATE: exactly one caller wins even if Approve is clicked twice or from two processes."""
         target = target or State.ORDER_READY
-        if target not in (State.ORDER_READY, State.VERIFYING):
-            raise ValueError(f"human approval may only reopen at ORDER_READY (entry) or VERIFYING (post-build), not {target}")
+        if target not in (State.ORDER_READY, State.VERIFYING, State.BUILDING):
+            raise ValueError(f"human approval may only reopen at ORDER_READY (entry), BUILDING (a caught command the "
+                             f"Maker may now run) or VERIFYING (post-build), not {target}")
         now = datetime.utcnow().isoformat()
         with self._get_conn() as conn:
             conn.isolation_level = None

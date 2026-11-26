@@ -36,6 +36,21 @@ function Install-TribunalAI {
 
     Write-Host ''
     Write-Host 'Installing Tribunal AI'
+    Write-Host ''
+    Write-Host 'Before installing:'
+    Write-Host '  - The Maker AI runs commands, installs libraries and edits files in a work folder by itself, without asking each time.'
+    Write-Host '  - It works in a folder separate from your project; your project changes only when you press Apply.'
+    Write-Host '  - System-wide installs, money and credentials, and irreversible actions are asked about first (AI settings > Permissions).'
+    Write-Host '  - This is not a fully isolated environment: commands the AI runs run on this computer.'
+    if ($env:TRIBUNAL_ACCEPT_TERMS -eq '1') {
+        Write-Host 'Agreed (TRIBUNAL_ACCEPT_TERMS=1)'
+    } else {
+        $answer = Read-Host 'To agree, type y and press Enter'
+        if ($answer -notmatch '^(y|yes)$') {
+            Write-Host 'Not agreed: nothing was installed.' -ForegroundColor Yellow
+            return
+        }
+    }
 
     $uv = Find-TribunalUv
     if (-not $uv) {
@@ -97,6 +112,10 @@ function Install-TribunalAI {
     & $tribunal shortcut
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'No shortcut was made. Tribunal AI still opens with: tribunal' -ForegroundColor Yellow
+    }
+    & $tribunal consent --accept *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'The agreement was not recorded; the start-up helper asks again.' -ForegroundColor Yellow
     }
 
     Write-Host ''

@@ -160,13 +160,20 @@ MAX_COPY_FILES = 40_000                         # a worktree larger than this is
 def _copy(worktree: Path, sandbox: Path) -> bool:
     """A private copy of the worktree to run the extra tests in. False when it is too large to copy."""
     import os
+    installs = ("node_modules", ".venv", "venv")      # an agent-mode Maker's installs: linked, not copied or counted
     count = 0
     for _root, dirs, files in os.walk(worktree):
-        dirs[:] = [d for d in dirs if d not in (".git", ".director_worktrees")]
+        dirs[:] = [d for d in dirs if d not in (".git", ".director_worktrees") + installs]
         count += len(files)
         if count > MAX_COPY_FILES:
             return False
-    shutil.copytree(worktree, sandbox, symlinks=True, ignore=shutil.ignore_patterns(".git", ".director_worktrees"))
+    shutil.copytree(worktree, sandbox, symlinks=True, ignore=shutil.ignore_patterns(".git", ".director_worktrees", *installs))
+    for name in installs:
+        if (worktree / name).is_dir():
+            try:
+                (sandbox / name).symlink_to(worktree / name, target_is_directory=True)
+            except OSError:                              # no symlinks (Windows without the right): a copy
+                shutil.copytree(worktree / name, sandbox / name, symlinks=True)
     return True
 
 

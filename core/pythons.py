@@ -71,9 +71,10 @@ def original_project(path: Path) -> Path:
 def project_python(root: Path, needs: Optional[str] = None) -> str:
     """The Python a project's own command should run with. `needs` (e.g. "pytest"): use the project's environment
     only if it has that module, so a project venv without pytest does not turn a passing test run into a failure."""
-    own = project_venv_python(original_project(root))
-    if own and (needs is None or has_module(own, needs)):
-        return own
+    # The working copy's own environment first: an agent-mode Maker creates .venv where it works (core/agent_guard.py).
+    for own in dict.fromkeys(x for x in (project_venv_python(root), project_venv_python(original_project(root))) if x):
+        if needs is None or has_module(own, needs):
+            return own
     return tribunal_python()
 
 
