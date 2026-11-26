@@ -250,7 +250,8 @@ def _shim_dir() -> Path:
 
 def _write(path: Path, text: str, executable: bool) -> None:
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\r\n" if path.suffix == ".cmd" else "\n")   # text uses \n only
+    with open(tmp, "w", encoding="utf-8", newline="\r\n" if path.suffix == ".cmd" else "\n") as f:   # text uses \n only
+        f.write(text)                                  # (open, not write_text: Python 3.9 has no newline= there)
     if executable:
         tmp.chmod(0o755)
     os.replace(tmp, path)
