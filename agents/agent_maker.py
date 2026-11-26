@@ -58,26 +58,44 @@ def undo_commits(root: Path, before: str) -> bool:
     return True
 
 
-def keep_installs_out(root: Path) -> List[str]:
-    """Adds the install/cache folders that show up as changes to .gitignore, so node_modules or a .venv never become
-    part of the result (diff, review, apply). Returns the patterns added."""
-    seen = set()
+# Install/cache folder names that are unmistakable wherever they appear; the others (venv, .next, .cache, ...) are
+# excluded only at the place they showed up, so a project's own folder of that name elsewhere stays visible.
+ANYWHERE = {"node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+
+
+def exclude_installs(root: Path) -> List[str]:
+    """Keeps the install and cache folders that showed up as new files (node_modules, .venv, ...) out of every change:
+    git's own exclude list of the repository (.git/info/exclude, where Tribunal already keeps .director_worktrees
+    out), never the project's .gitignore - a project file the ORDER may protect (found on Windows, 2026-11-26).
+    Returns the patterns added."""
+    wanted = []
     for rel in changed_paths(root):
-        for part in Path(rel).parts[:-1]:
+        parts = Path(rel).parts
+        for i, part in enumerate(parts[:-1]):
             if part in INSTALLED:
-                seen.add(part)
+                pattern = f"{part}/" if part in ANYWHERE else "/" + "/".join(parts[:i + 1]) + "/"
+                if pattern not in wanted:
+                    wanted.append(pattern)
                 break
-    if not seen:
+    if not wanted:
         return []
-    ignore = root / ".gitignore"
+    out = run_capture(["git", "rev-parse", "--git-path", "info/exclude"], cwd=root, timeout=30)
+    if out.returncode != 0 or not out.stdout.strip():
+        return []
+    path = Path(out.stdout.strip())
+    if not path.is_absolute():
+        path = root / path
     try:
-        text = ignore.read_text(encoding="utf-8")
+        text = path.read_bytes().decode("utf-8", errors="surrogateescape")
     except OSError:
         text = ""
-    have = {line.strip().strip("/") for line in text.splitlines()}
-    added = [f"{name}/" for name in sorted(seen) if name not in have]
+    have = {line.strip() for line in text.splitlines()}
+    added = [w for w in wanted if w not in have]
     if added:
-        ignore.write_text(text + ("" if not text or text.endswith("\n") else "\n") + "\n".join(added) + "\n", encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        body = text + ("" if not text or text.endswith("\n") else "\n") + "# Tribunal AI: installed packages and caches\n" + "\n".join(added) + "\n"
+        with open(path, "ab" if text and body.startswith(text) else "wb") as f:      # appended: a line written meanwhile stays
+            f.write((body[len(text):] if text else body).encode("utf-8", errors="surrogateescape"))
     return added
 
 
@@ -105,7 +123,7 @@ class AgentMaker(ProposalMaker):
             "- Never install system-wide (sudo, brew, apt, winget, choco, npm -g, pip outside .venv), never publish or "
             "deploy (git push, npm publish, gh pr create, vercel ...), never read stored secrets: these need the user's "
             "approval. If Tribunal refuses such a command, continue without it and mention it in your summary.\n"
-            "- Keep a .gitignore that covers node_modules/, .venv/, __pycache__/ and build caches.\n"
+            "- node_modules, .venv and caches are kept out of the change by Tribunal: do not edit .gitignore for them.\n"
             "- Write real behavior tests and run them until they pass: Python with pytest (installed in .venv), "
             "JavaScript with the built-in node:test (`node --test`) unless the project already uses another runner. "
             "Browser behavior is tested through the logic a test can drive.\n"
@@ -169,6 +187,7 @@ class AgentMaker(ProposalMaker):
             os.close(handle)
             log = Path(name)
         before_head = head_of(root)
+        exclude_installs(root)
         before_control = self._control_plane_snapshot(root)
         before = set(changed_paths(root))
         prompt = self._prompt(order, root, referenced_documents(order))
@@ -191,7 +210,7 @@ class AgentMaker(ProposalMaker):
         output = result['output']
         self.last_guard_requests = self._guard_requests(log, output + "\n" + result.get('stderr', ''))
         undone = undo_commits(root, before_head)
-        added_ignores = keep_installs_out(root)
+        added_ignores = exclude_installs(root)
         self.last_execution_info = {'invocation_command': result['invocation'], 'exit_code': result['exit_code'],
                                     'execution_duration_sec': result['duration_sec'], 'output': output,
                                     'attempts': result.get('attempts', []), 'attempt_number': result.get('attempt_number', 1),

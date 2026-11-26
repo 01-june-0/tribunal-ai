@@ -172,9 +172,9 @@ def test_the_agent_maker_works_in_the_worktree_and_reports_caught_commands(home,
     maker.guard_log = str(tmp_path / "guard.jsonl")
     result = maker.run(_order(), str(root))
     assert result.status == "COMPLETED", result.error
-    assert "src/app.js" in result.files_modified and ".gitignore" in result.files_modified
-    assert not any(p.startswith("node_modules") for p in result.files_modified)       # kept out by .gitignore
-    assert "node_modules/" in (root / ".gitignore").read_text()
+    assert result.files_modified == ["src/app.js"]                                     # node_modules kept out
+    assert not (root / ".gitignore").exists()                                         # without touching the project's files
+    assert "node_modules/" in (root / ".git" / "info" / "exclude").read_text()
     assert [r["command"] for r in maker.last_guard_requests] == ["brew install ffmpeg"]
     assert maker.last_execution_info["setup"] == "npm install" and maker.last_execution_info["mode"] == "agent"
     assert "--dangerously-bypass-approvals-and-sandbox" in maker.last_execution_info["invocation_command"]
@@ -304,3 +304,77 @@ def test_codex_architect_works_in_a_folder_that_is_not_a_git_repository_yet(monk
     assert "--skip-git-repo-check" in cli_models.codex_exec_description(True)
     src = (Path(__file__).resolve().parents[1] / "agents" / "codex_architect.py").read_text(encoding="utf-8")
     assert "is not inside a git repository" not in src and "codex_exec_argv(self.executable, outside_git)" in src
+
+
+def test_installs_are_kept_out_through_git_not_the_projects_gitignore(tmp_path):
+    """Found on Windows (2026-11-26): ARCHITECT protected .gitignore, and the line Tribunal added there to hide .venv
+    stopped the run as 'Protected path modified'. The repository's own exclude list is used instead - for a run's
+    worktree that is the project's .git/info/exclude, where .director_worktrees is already kept out."""
+    from agents.agent_maker import changed_paths, exclude_installs
+    root = _repo(tmp_path / "proj")
+    (root / ".gitignore").write_text("*.log\n")
+    _git(root, "add", ".gitignore")
+    _git(root, "commit", "-qm", "ignore")
+    wt = tmp_path / "wt"
+    _git(root, "worktree", "add", "-q", str(wt))
+    (wt / ".venv" / "lib").mkdir(parents=True)
+    (wt / ".venv" / "lib" / "x.py").write_text("")
+    (wt / "node_modules" / "p").mkdir(parents=True)
+    (wt / "node_modules" / "p" / "i.js").write_text("")
+    (wt / "game.py").write_text("")
+    assert set(exclude_installs(wt)) >= {".venv/", "node_modules/"}
+    assert changed_paths(wt) == ["game.py"] and (wt / ".gitignore").read_text() == "*.log\n"
+    assert exclude_installs(wt) == []                                                  # once only
+
+
+@pytest.mark.parametrize("note,removal", [
+    ("Pass. The diff shows no existing functions, classes, tests or files deleted", False),
+    ("Nothing was removed; scope stays within allowed_paths", False),
+    ("기존 함수 삭제 없음", False),
+    ("The change does not delete any tests", False),
+    ("Removed the reset() method that callers still use", True),
+    ("tests/test_old.py was deleted", True),
+    ("restart 버튼 처리 코드를 제거함", True),
+    ("Score text alignment is slightly off", False),
+])
+def test_only_a_note_that_reports_a_removal_counts_as_one(note, removal):
+    """Found on Windows (2026-11-26): a step the Inspector passed was failed because a P2 note said nothing was
+    deleted, and any 'delet' / 'remove' in a note counted as a deletion warning."""
+    from core.orchestrator import Orchestrator
+    assert Orchestrator._reports_removal(note) is removal
+
+
+def test_only_folders_that_showed_up_are_excluded_and_odd_ones_at_their_place(tmp_path):
+    """critic: excluding every known name, unanchored, would hide a project's own venv/ or .next/ elsewhere."""
+    from agents.agent_maker import exclude_installs
+    root = _repo(tmp_path / "proj")
+    exclude = root / ".git" / "info" / "exclude"
+    exclude.write_bytes("# 한글 cp949 \xc7\xd1\n".encode("latin-1", errors="ignore") + b"\xc7\xd1\n")   # not UTF-8
+    assert exclude_installs(root) == []                                                # nothing installed yet
+    (root / "web" / ".next").mkdir(parents=True)
+    (root / "web" / ".next" / "b.js").write_text("")
+    (root / "venv").mkdir()
+    (root / "venv" / "x").write_text("")
+    assert sorted(exclude_installs(root)) == ["/venv/", "/web/.next/"]
+    assert exclude.read_bytes().startswith(b"# ") and b"\xc7\xd1" in exclude.read_bytes()   # the old bytes stay
+
+
+def test_a_baseline_install_writes_no_lock_file(tmp_path, monkeypatch):
+    """critic: npm install without a committed lock file wrote package-lock.json, so every baseline stopped as
+    'worktree not untouched'."""
+    import shutil
+    from core import project_setup
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"left-pad": "1"}}))
+    assert project_setup.steps(tmp_path, leave_files=True)[-1][-2:] == ["--no-package-lock", "--no-save"]
+    assert "--no-package-lock" not in project_setup.steps(tmp_path)[-1]               # applying keeps the lock file
+
+
+def test_in_agent_mode_the_order_tells_the_reviewers_that_scope_lists_are_guidance():
+    """Found on Windows (2026-11-26): the Scope Guard let the Maker past allowed_paths and the file budget, but the
+    Inspector and ARCHITECT still read them as limits and failed a step whose tests all passed."""
+    import inspect
+    from core.orchestrator import Orchestrator
+    note = Orchestrator.AGENT_SCOPE_NOTE
+    assert "guidance" in note and "never a P0/P1" in note and "protected_paths" in note
+    assert "self.AGENT_SCOPE_NOTE" in inspect.getsource(Orchestrator.run_maker_stage)

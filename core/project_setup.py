@@ -28,8 +28,10 @@ def _uses_pytest(root: Path) -> bool:
     return tests.is_dir() and any(p.name.startswith("test_") and p.suffix == ".py" for p in tests.rglob("*.py"))
 
 
-def steps(root: Path) -> List[List[str]]:
-    """The commands that would install this project's dependencies, in order (empty when there is nothing to do)."""
+def steps(root: Path, leave_files: bool = False) -> List[List[str]]:
+    """The commands that would install this project's dependencies, in order (empty when there is nothing to do).
+    leave_files: write no project file (no package-lock.json from npm): before a baseline, the worktree must stay
+    exactly as git has it."""
     from core.pythons import tribunal_python
     root = Path(root)
     out: List[List[str]] = []
@@ -55,15 +57,18 @@ def steps(root: Path) -> List[List[str]]:
         if isinstance(data, dict) and (data.get("dependencies") or data.get("devDependencies")):
             npm = shutil.which("npm")
             if npm:
-                out.append([npm, "ci" if (root / "package-lock.json").is_file() else "install", "--no-audit", "--no-fund"])
+                if (root / "package-lock.json").is_file():
+                    out.append([npm, "ci", "--no-audit", "--no-fund"])
+                else:
+                    out.append([npm, "install", "--no-audit", "--no-fund", *(["--no-package-lock", "--no-save"] if leave_files else [])])
     return out
 
 
-def install(root: Path, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def install(root: Path, env: Optional[Dict[str, str]] = None, leave_files: bool = False) -> Dict[str, Any]:
     """Runs steps(root) in the project. Returns {"ran": [...], "ok": bool, "output": tail}; a failure stops there."""
     from core.env_utils import get_sanitized_env
     ran, tail = [], ""
-    for argv in steps(Path(root)):
+    for argv in steps(Path(root), leave_files):
         try:
             res = subprocess.run(argv, cwd=str(root), env=env or get_sanitized_env(), capture_output=True, text=True,
                                  timeout=TIMEOUT, stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")

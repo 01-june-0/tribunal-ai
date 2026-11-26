@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import json
 import shutil
@@ -616,6 +617,24 @@ class Orchestrator:
             if not allow_measure:
                 msg = "BASELINE_MISSING: no persisted baseline evidence for this run and the worktree may already be modified; a baseline cannot be measured now."
                 return None, self._stop(run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "BASELINE_MISSING")
+            setup_note = ""
+            from core.setup import agent_consented
+            if self._agent_mode() and agent_consented():
+                # A new worktree holds only what git tracks: the packages a previous step (or the project) installed
+                # are not there, and without them the baseline would count every test that imports one as failing
+                # (found on Windows, 2026-11-26). They are installed first (writing no project file), then kept out of
+                # git's view. Only after the person agreed to agent mode: installing runs the packages' own scripts.
+                from agents.agent_maker import exclude_installs
+                from core import project_setup
+                installed = project_setup.install(Path(worktree_path), leave_files=True)
+                exclude_installs(Path(worktree_path))
+                if installed["ran"]:
+                    self._save_json(run_id, "baseline_setup.json", installed)
+                    self.sm.log_audit(run_id, "ORCHESTRATOR", "BASELINE_SETUP", json.dumps(installed, ensure_ascii=False)[:1500])
+                if not installed["ok"]:
+                    setup_note = (" Installing the project's dependencies first failed (" + " / ".join(installed["ran"])[-200:]
+                                  + "): " + installed["output"][-400:])
+                    logger.warning("[Baseline Gate]" + setup_note)
             if not self._worktree_is_pristine(worktree_path):
                 msg = "BASELINE_MISSING: worktree is not provably untouched (git status not clean); refusing to measure a baseline on possibly modified files."
                 return None, self._stop(run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "BASELINE_MISSING")
@@ -636,10 +655,12 @@ class Orchestrator:
                 # lose passing tests (validate_post_build / final_evidence enforce that against this baseline).
                 failing = sorted(autopilot.failing_tests(baseline))
                 msg = f"BASELINE_PREEXISTING_FAILURES: {baseline.get('summary')}; failing: {', '.join(failing[:20]) or 'unparsed'}"
+                if locals().get("setup_note"):
+                    msg += "." + setup_note
                 logger.warning("[ARCHITECT proxy] " + msg)
                 self.sm.log_audit(run_id, "ORCHESTRATOR", "BASELINE_PREEXISTING_FAILURES", msg)
                 return int((baseline.get("test_counts") or {}).get("passed", 0) or 0), None
-            msg = f"BASELINE_FAILED: baseline verification failed on the untouched worktree ({baseline.get('summary')}). Maker not executed."
+            msg = f"BASELINE_FAILED: baseline verification failed on the untouched worktree ({baseline.get('summary')}). Maker not executed." + (locals().get("setup_note") or "")
             return None, self._stop(run_id, State.HUMAN_REQUIRED, msg, logger, provenance_records, "BASELINE_FAILED")
         count = int((baseline.get("test_counts") or {}).get("passed", 0) or 0)
         logger.info(f"[Baseline Gate] Baseline tests passed: {count}")
@@ -649,6 +670,12 @@ class Orchestrator:
                           provenance_records: list):
         """Trial claim (real maker only), maker execution, provenance, BUSY/PERMISSION/provider failure handling.
         Returns (maker_result, stop)."""
+        if self._agent_mode() and self.AGENT_SCOPE_NOTE not in (order.context or ""):
+            # The Scope Guard no longer holds the Maker to these lists in agent mode; the Inspector and the ARCHITECT
+            # read the ORDER and must not either (found on Windows, 2026-11-26: a .gitignore "outside allowed_paths" and
+            # "five files against a four-file limit" failed a step whose tests all passed).
+            order.context = (order.context or "") + "\n" + self.AGENT_SCOPE_NOTE
+            self._save_json(run_id, 'order.json', order)
         bootstrap = self._load_json(run_id, 'bootstrap.json') or {}
         if bootstrap.get('test_path'):
             if bootstrap['test_path'] not in order.protected_paths:
@@ -726,6 +753,11 @@ class Orchestrator:
         return maker_result, None
 
     GUARD_PREFIX = "GUARD_APPROVAL_REQUIRED: "
+    AGENT_SCOPE_NOTE = ("AGENT MODE (the user agreed that the Maker edits, installs and runs commands on its own): "
+                        "allowed_paths, max_files_changed and max_diff_lines are guidance for the plan, not limits. A file "
+                        "the work needs outside them (package.json, a lock file, build or test configuration, .gitignore) "
+                        "is fine and is never a P0/P1 finding or a reason to FAIL. protected_paths and allowed_deletions "
+                        "still hold.")
 
     def _agent_mode(self) -> bool:
         return self.config.get("maker", {}).get("mode") == "agent"
@@ -1437,13 +1469,25 @@ class Orchestrator:
         self.sm.log_audit(run_id, "ORCHESTRATOR", "DECISION_FALLBACK", decision.rationale)
         return decision, None
 
+    _NEGATED_REMOVAL = re.compile(r"\b(no|not|nothing|none|never|without|neither|nor)\b|n't|없|않", re.I)
+
+    @classmethod
+    def _reports_removal(cls, text: str) -> bool:
+        """A review note that says something was removed or deleted. A note that says nothing was ("no existing
+        functions were deleted", "삭제된 것 없음") is not one: such notes turned passed steps into failures on
+        Windows (2026-11-26). Real deletions are caught by the Scope Guard from the diff anyway."""
+        low = (text or "").lower()
+        if not ("remove" in low or "delet" in low or "삭제" in low or "제거" in low):
+            return False
+        return not cls._NEGATED_REMOVAL.search(low)
+
     def apply_final_pass_gate(self, decision: DecisionSchema, review_result: ReviewResultSchema, logger: logging.Logger) -> str:
         """Orchestrator-level strict PASS rules (identical for run and resume). Mutates decision; returns final state.
         PASS survives only when: no P0, inspector verdict == 'pass', no P1/deletion warning, ARCHITECT and INSPECTOR are
         independent (not both Claude / same agent family)."""
         inspector_has_p0 = len(review_result.p0) > 0
         inspector_has_p1 = len(review_result.p1) > 0
-        has_deletion_warning = any("remove" in s.lower() or "delet" in s.lower() for s in (review_result.p1 + review_result.p2))
+        has_deletion_warning = any(self._reports_removal(s) for s in (review_result.p1 + review_result.p2))
         final_state = decision.decision
         if final_state != State.PASS:
             return final_state
