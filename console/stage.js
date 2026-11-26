@@ -1131,6 +1131,63 @@ function paintAI(force){
 const PERMS=()=>[['system_install',T('시스템 전체 설치'),T('sudo, brew, apt, winget, npm -g, 가상환경 밖 pip')],
   ['money_credentials',T('돈·자격 증명'),T('결제·송금 코드, 비밀번호·API 키')],
   ['irreversible',T('되돌릴 수 없는 작업'),T('배포·게시, git push, 프로젝트 밖 파일 삭제')]];
+// ------------------------------------------------------------------ 「새로 시작」 (core/workspace.py)
+function closeFreshMenu(focus){const m=$('fresh-menu');if(!m||m.hidden)return;m.hidden=true;document.body.classList.remove('fresh-open');$('top-fresh').setAttribute('aria-expanded','false');if(focus)$('top-fresh').focus();}
+function freshItem(icon,title,sub,act,danger){const b=el('button','',danger?'danger':'');b.type='button';b.setAttribute('role','menuitem');
+  const t=el('b');t.append(icon+' '+title);b.append(t,el('small',sub));
+  b.onclick=async()=>{closeFreshMenu();try{await act();}catch(err){notice(T('하지 못했습니다 · ')+err.message);}};return b;}
+async function afterFresh(r,done){
+  if(r.ok){notice(done);pollActivity();pollStatus();pollChat();if(lastModel)paintNow(lastModel);}
+  else notice(r.status==='busy'?(r.message?T(r.message):T('진행 중인 작업이 있습니다.')):T('하지 못했습니다 · ')+(r.message?T(r.message):(r.error||'')));
+}
+function setupFreshMenu(){
+  const btn=$('top-fresh'),menu=$('fresh-menu');if(!btn||!menu)return;
+  btn.onclick=e=>{e.stopPropagation();if(!menu.hidden){closeFreshMenu(true);return;}
+    const project=(status&&status.project_path)||'';
+    menu.replaceChildren(
+      freshItem('＋',T('새 작업'),T('같은 프로젝트에서 대화와 지난 작업 카드를 화면에서 치웁니다. 기록·결과물은 남습니다.'),
+        async()=>afterFresh(await startOver('/ops/fresh',{}),T('새로 시작했습니다'))),
+      freshItem('▣',T('새 프로젝트…'),T('빈 폴더를 만들어 그 폴더로 바꾸고 화면도 비웁니다.'),openNewProject),
+      freshItem('▤',T('다른 폴더 열기…'),T('이미 있는 폴더를 골라 바꾸고 화면을 비웁니다.'),async()=>{
+        try{const path=await pickFolderOnly();if(path)afterFresh(await startOver('/ops/fresh',{path}),T('작업 폴더를 바꿨습니다 · ')+path);}
+        catch(err){notice(T('폴더 선택 창을 열지 못했습니다 · ')+err.message);}}),
+      el('hr'),
+      freshItem('🗑',T('현재 프로젝트 버리기…'),project?T('{0} 폴더를 휴지통으로 옮기고 화면을 비웁니다.',project.split(/[\\/]/).filter(Boolean).pop()):T('선택된 프로젝트가 없습니다.'),
+        async()=>{if(!project){notice(T('선택된 프로젝트가 없습니다.'));return;}
+          if(!confirm(T('이 프로젝트 폴더를 휴지통으로 옮길까요?\n{0}\n\n휴지통에서 되살릴 수 있습니다. 이 프로젝트에서 적용하지 않은 결과물은 버림으로 처리됩니다.',project)))return;
+          afterFresh(await startOver('/ops/discard-project',{path:project}),T('프로젝트를 휴지통으로 옮겼습니다'));},true));
+    menu.hidden=false;document.body.classList.add('fresh-open');btn.setAttribute('aria-expanded','true');menu.querySelector('button').focus();};
+  document.addEventListener('click',e=>{if(!e.target.closest('#fresh-menu')&&e.target!==btn)closeFreshMenu();});
+  menu.addEventListener('focusout',e=>{if(!menu.contains(e.relatedTarget)&&e.relatedTarget!==btn)closeFreshMenu();});
+  $('np-dialog').addEventListener('keydown',e=>{
+    const leave=e.key==='Escape';if(leave){e.preventDefault();e.stopPropagation();closeNewProject();return;}
+    if(e.key!=='Tab')return;                     // the focus stays in the dialog while it is open
+    const f=[...$('np-dialog').querySelectorAll('input,button')].filter(x=>!x.disabled);if(!f.length)return;
+    if(e.shiftKey&&document.activeElement===f[0]){e.preventDefault();f[f.length-1].focus();}
+    else if(!e.shiftKey&&document.activeElement===f[f.length-1]){e.preventDefault();f[0].focus();}});
+  menu.addEventListener('keydown',e=>{if(e.key!=='Escape')return;e.preventDefault();e.stopPropagation();closeFreshMenu(true);});   // one layer: the page's own Escape handling waits
+  $('np-cancel').onclick=closeNewProject;
+  $('np-change').onclick=async()=>{try{const path=await pickFolderOnly();if(path)$('np-parent').textContent=path;}catch(err){$('np-error').textContent=err.message;}};
+  $('np-name').oninput=()=>{$('np-error').textContent='';};
+  $('np-name').onkeydown=e=>{if(e.key==='Enter')$('np-ok').click();};
+  $('np-ok').onclick=async()=>{const name=$('np-name').value.trim(),ok=$('np-ok');
+    if(!name){$('np-error').textContent=T('이름을 입력해 주세요.');$('np-name').focus();return;}
+    ok.disabled=true;
+    try{const r=await startOver('/ops/new-project',{name,parent:$('np-parent').dataset.custom&&$('np-parent').textContent!=='—'?$('np-parent').textContent:''});
+      if(r.ok){closeNewProject();afterFresh(r,T('새 프로젝트를 만들었습니다 · ')+(r.project_path||name));}
+      else $('np-error').textContent=r.message?T(r.message):T('만들지 못했습니다.');}
+    catch(err){$('np-error').textContent=err.message;}
+    finally{ok.disabled=false;}};
+  new MutationObserver(()=>{$('np-parent').dataset.custom=$('np-parent').textContent!==$('np-parent').dataset.base?'1':'';}).observe($('np-parent'),{childList:true,characterData:true,subtree:true});
+}
+async function openNewProject(){
+  const d=$('np-dialog');$('np-error').textContent='';$('np-name').value='';
+  try{const r=await getJSON('/ops/new-project');$('np-parent').dataset.base=r.parent;$('np-parent').textContent=r.parent;}
+  catch(e){$('np-parent').dataset.base='—';$('np-parent').textContent='—';}      // the server picks the default place then
+  d.hidden=false;$('np-name').focus();
+}
+function closeNewProject(){$('np-dialog').hidden=true;$('top-fresh').focus();}
+
 function paintPerms(){
   const box=$('ai-perms');if(!box||!ai||!ai.permissions)return;
   if(box.contains(document.activeElement))return;
@@ -1249,6 +1306,7 @@ function start(){
       const res=await fetch('/ops/open-project',{method:'POST',headers:{'X-Tribunal-Token':roleToken||''}}),out=await res.json().catch(()=>({}));
       notice(res.ok&&out.path?T('폴더를 열었습니다 · ')+out.path:res.status===403?T('잠시 뒤 다시 눌러 주세요.'):(out.error?T(out.error):T('파일 관리자를 열지 못했습니다.')));}
     catch(e){notice(T('폴더를 열지 못했습니다 · ')+e.message);}};
+  setupFreshMenu();
   $('top-project').onclick=async()=>{const b=$('top-project');if(b.disabled)return;b.disabled=true;b.textContent=T('폴더 선택 창이 열려 있습니다…');
     try{const r=await chooseProjectFolder();if(r)notice(r.ok?T('작업 폴더를 바꿨습니다 · ')+r.path:T('선택할 수 없는 폴더입니다 · ')+r.message);}
     catch(e){notice(T('폴더 선택 창을 열지 못했습니다 · ')+e.message+T(' (자세히 탭에서 경로를 직접 입력할 수 있습니다)'));}

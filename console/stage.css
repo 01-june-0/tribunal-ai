@@ -684,3 +684,28 @@ body.inside #attention,body.inside #limit-alert{top:auto;bottom:84px}   /* a ban
 .su-dialog{width:min(520px,100%);padding:20px 24px;background:rgba(9,13,24,.96)}
 .su-dialog h3{margin:0 0 8px;font-size:var(--fs-lg)}
 .su-dialog p{margin:0 0 12px;color:var(--muted)}
+
+/* 「새로 시작」 menu and the new-project dialog */
+.top-meta{position:relative}
+#top-fresh.fresh{color:#9cc3ff;border-color:rgba(106,165,255,.45)}
+#fresh-menu{position:absolute;top:calc(100% + 8px);left:0;z-index:200;width:min(340px,calc(100vw - 32px));padding:8px;border-radius:16px;background:rgba(7,10,19,.96);border:1px solid var(--line2);box-shadow:0 24px 60px #000b;display:flex;flex-direction:column;gap:2px}
+#fresh-menu[hidden]{display:none}
+#fresh-menu button{display:grid;gap:2px;padding:9px 12px;border-radius:10px;border:1px solid transparent;background:transparent;text-align:left;color:var(--text);font-size:var(--fs-sm);cursor:pointer}
+#fresh-menu button:hover,#fresh-menu button:focus-visible{background:rgba(255,255,255,.06)}
+#fresh-menu button small{color:var(--muted);white-space:normal;line-height:1.45}
+#fresh-menu button b{white-space:nowrap}
+#fresh-menu button.danger b{color:#ff8a8a}
+#fresh-menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+#np-dialog{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:60;width:min(440px,calc(100vw - 32px));padding:20px 22px;border-radius:18px;display:grid;gap:8px}
+#np-dialog[hidden]{display:none}
+#np-dialog h3{margin:0 0 6px}
+#np-dialog label,#np-dialog .np-label{font-size:var(--fs-sm);color:var(--muted);margin:0}
+#np-dialog input{height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line2);background:#0b1020;color:var(--text);font:inherit}
+#np-dialog .np-where{margin:0;font-size:var(--fs-sm);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#np-dialog .np-link{background:none;border:0;color:#9cc3ff;cursor:pointer;font:inherit;padding:0}
+#np-error{margin:0;min-height:1.2em;font-size:var(--fs-sm);color:#ff8a8a}
+#np-dialog .np-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+body.fresh-open #topbar{z-index:7}   /* the open 「새로 시작」 menu stays above the limit banner */
+#np-dialog .np-actions button{height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--text);font:inherit;font-size:var(--fs-sm);cursor:pointer}
+#np-dialog .np-actions button.primary{background:#6aa5ff;border-color:#6aa5ff;color:#06101c;font-weight:700}
+#np-dialog .np-actions button:disabled{opacity:.6;cursor:default}

@@ -13,6 +13,8 @@ import uuid
 import re
 from typing import Optional
 import collections
+import shutil
+import subprocess
 
 from core.chat_manager import ChatManager
 from core.provider_manager import ProviderManager, FailoverMode, ProviderStatus
@@ -23,7 +25,7 @@ from core.db_path import get_db_path, SOURCE_ROOT
 from core.paths import runs_dir
 from schemas.order import OrderSchema
 from director import load_config
-from core.result_manager import ResultManager
+from core.result_manager import ResultManager, RESULT_APPLIED, RESULT_DISCARDED
 from core import autopilot
 from core.mission import MissionRunner, MissionStore, missions_to_resume, latest_deliverable
 import dashboard_i18n as I18N
@@ -207,6 +209,113 @@ def new_chat_session() -> dict:
     cm.create_session(new_id, (sess.get("project_path") or "").strip(), sess.get("architect_provider") or _configured_architect_domain())
     cm.add_message(new_id, "SYSTEM", f"NEW_CHAT: new session started (previous history kept in {prev})")
     return {"status": "ok", "session_id": new_id, "previous_session_id": prev}
+
+
+def _busy_anywhere() -> Optional[str]:
+    """A reason the screen cannot be started over now (ARCHITECT answering, a task running), or None."""
+    if chat_in_flight():
+        return ARCHITECT_WORKING_MESSAGE
+    from core.result_manager import _APPLY_INFLIGHT
+    if _ACTIVE_PROJECTS or _APPROVAL_INFLIGHT or _APPLY_INFLIGHT:
+        return "진행 중인 작업이 있습니다. 끝나거나 「작업 정지」로 멈춘 뒤에 다시 해 주세요."
+    return None
+
+
+def start_fresh(project_path: Optional[str] = None) -> dict:
+    """「새로 시작」: a new conversation and a clean stage (the last task is no longer shown; records stay). With a
+    folder, that folder becomes the project too."""
+    busy = _busy_anywhere()
+    if busy:
+        return {"status": "busy", "message": busy}
+    from core import workspace
+    chosen = None
+    if project_path is not None:                    # the folder first: a refused one leaves the conversation as it was
+        msg = set_project(project_path)
+        if not msg.startswith("PROJECT_SELECTED"):
+            return {"status": "rejected", "message": msg.split(":", 1)[-1].strip()}
+        chosen = msg.split(":", 1)[1].strip()
+    out = new_chat_session()                        # keeps the project just selected
+    if out.get("status") != "ok":
+        return out
+    if chosen:
+        out["project_path"] = chosen
+    workspace.clear_screen()
+    invalidate_status_cache()
+    return out
+
+
+def create_new_project(name: str, parent: Optional[str] = None) -> dict:
+    """「새 프로젝트…」: an empty folder (Documents/Tribunal Projects/<name> unless another place is given), made the
+    project, on a clean screen."""
+    busy = _busy_anywhere()
+    if busy:
+        return {"status": "busy", "message": busy}
+    from core import workspace
+    try:
+        folder = workspace.create_project_folder(name, parent)
+    except (ValueError, OSError) as exc:
+        return {"status": "rejected", "message": str(exc)[:300]}
+    out = start_fresh(str(folder))
+    if out.get("status") != "ok":                   # only what was made just now: the folder and the .git made in it
+        if all(child.name == ".git" for child in folder.iterdir()):
+            shutil.rmtree(folder, ignore_errors=True)
+    return out
+
+
+def discard_current_project(expected_path: str) -> dict:
+    """「현재 프로젝트 버리기」: the project folder goes to the trash (restorable there), results waiting in it are marked
+    discarded, and the screen starts over without a project. Refused while anything runs, for a folder that is not the
+    current project (the page must name the one it showed), and for broad or Tribunal's own folders."""
+    from core import workspace
+    sid = active_session_id()
+    current = ((ChatManager().get_session(sid) or {}).get("project_path") or "").strip()
+    if not current or _project_key(current) != _project_key(expected_path or ""):
+        return {"status": "rejected", "message": "화면에 보인 프로젝트가 지금 프로젝트와 다릅니다. 화면을 새로 고친 뒤 다시 해 주세요."}
+    key = _project_key(current)
+    sm = StateMachine()
+    with _RUN_LOCK:                                 # checked and held as one: no task can start in it meanwhile
+        busy = _busy_anywhere()
+        if busy:
+            return {"status": "busy", "message": busy}
+        if _project_busy(sm, current):
+            return {"status": "busy", "message": "이 프로젝트에서 진행 중인 작업이 있습니다."}
+        _ACTIVE_PROJECTS[key] = "DISCARDING"
+    try:
+        others = {str(r.get("project_path") or "") for r in sm.list_runs()} | {str(m.get("project_path") or "") for m in MissionStore().all()}
+        why = workspace.discardable(Path(current), [o for o in others if o and _project_key(o) != key])
+        if why:
+            return {"status": "rejected", "message": why}
+        try:
+            moved = workspace.move_to_trash(Path(current))
+        except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            return {"status": "failed", "message": str(exc)[:300],
+                    "still_there": Path(current).exists()}
+        store = MissionStore()
+        for m in store.all():                       # its tasks cannot be continued: that would make the folder again
+            if _project_key(m.get("project_path") or "") == key and not m.get("closed"):
+                m["closed"] = True
+                store.save(m, force=True)
+    finally:
+        with _RUN_LOCK:
+            if _ACTIVE_PROJECTS.get(key) == "DISCARDING":
+                _ACTIVE_PROJECTS.pop(key, None)
+    discarded = []
+    try:                                                # results waiting in it can no longer be applied
+        rm = ResultManager(sm, load_config())
+        for r in sm.list_runs():
+            if _project_key(r.get("project_path") or "") == _project_key(current) and r["current_state"] == State.PASS \
+                    and rm.result_state(r["run_id"]).get("state") not in (RESULT_APPLIED, RESULT_DISCARDED):
+                if rm.discard(r["run_id"], by="HUMAN").get("status") == "discarded":
+                    discarded.append(r["run_id"])
+    except Exception:
+        pass
+    cm = ChatManager()
+    new_id = f"chat-{datetime.utcnow().strftime('%y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    cm.create_session(new_id, "", _configured_architect_domain())
+    cm.add_message(new_id, "SYSTEM", f"PROJECT_DISCARDED: {current} -> {moved['where']}")
+    workspace.clear_screen()
+    invalidate_status_cache()
+    return {"status": "ok", "project_path": current, "trash": moved["where"], "results_discarded": discarded, "session_id": new_id}
 
 
 def _mode_hint(mode: str, statuses: dict, candidates: list) -> str:
@@ -847,7 +956,10 @@ def build_activity_payload(limit_missions: int = 5) -> dict:
         _USAGE_BACKFILLED["done"] = True
     sm = StateMachine()
     views = [mission_view(m, sm) for m in missions[:limit_missions]]
-    focus = next((v for v in views if v["live"]), views[0] if views else None)
+    from core.workspace import cleared_at
+    since = cleared_at()                # 「새로 시작」: a task that is not running and is older than that is not shown
+    focus = next((v for v in views if v["live"]), None) or next(
+        (v for v, m in zip(views, missions) if not since or str(m.get("updated_at") or "") > since), None)
     running = usage.running_now()
     for r in running:
         r["stage_ko"] = STAGE_KO.get(r.get("stage"), r.get("stage") or "")

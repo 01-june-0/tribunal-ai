@@ -159,6 +159,9 @@ class CompanionHandler(d.DashboardHandler):
         if path == '/ops/version':              # this copy's version and whether a newer release exists (core/updates.py)
             from core import updates
             return self._send_json(updates.check())
+        if path == '/ops/new-project':          # where 「새 프로젝트…」 makes the folder unless another place is chosen
+            from core import workspace
+            return self._send_json({'parent': str(workspace.default_parent())})
         if path == '/ops/setup':                # first-run helper: what this machine still needs (core/setup.py)
             from core import setup
             return self._send_json(setup.status())
@@ -347,6 +350,26 @@ class CompanionHandler(d.DashboardHandler):
             import threading
             threading.Thread(target=self.server.shutdown, name='director-shutdown', daemon=True).start()
             return self._send_json({'stopping': True, 'message': 'Tribunal AI를 멈춥니다. 기록과 작업본은 남고, 다시 켜면 중단된 작업을 이어갑니다.'})
+        if self.path in ('/ops/fresh', '/ops/new-project', '/ops/discard-project'):
+            # 「새로 시작」 menu: a clean screen (optionally with another folder), a new project folder, or the current
+            # project to the trash. Local token only; the server re-checks that nothing runs.
+            if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
+                return self._send_json({'error': 'local authenticated request required'}, 403)
+            try:
+                size = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(size).decode('utf-8') or '{}') if 0 < size <= 4096 else {}
+            except (ValueError, OSError, UnicodeDecodeError):
+                body = {}
+            body = body if isinstance(body, dict) else {}
+            if self.path == '/ops/fresh':
+                folder = body.get('path')
+                out = d.start_fresh(str(folder) if isinstance(folder, str) and folder.strip() else None)
+            elif self.path == '/ops/new-project':
+                parent = body.get('parent')
+                out = d.create_new_project(str(body.get('name') or ''), str(parent) if isinstance(parent, str) and parent.strip() else None)
+            else:
+                out = d.discard_current_project(str(body.get('path') or ''))
+            return self._send_json(out, 200 if out.get('status') == 'ok' else 409)
         if self.path == '/ops/pick-folder':
             if not d.is_request_origin_allowed(self.headers, self.server.server_address[1])[0] or not self.authorized():
                 return self._send_json({'error': 'local authenticated request required'}, 403)

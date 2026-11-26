@@ -56,6 +56,7 @@ def test_stage_only_calls_known_read_endpoints_and_the_chat_post():
     js = (CONSOLE / "stage.js").read_text(encoding="utf-8")
     called = set(re.findall(r"(?:getJSON|fetch)\('(/[a-z/_]+)", js))
     assert called == {"/ops/activity", "/status", "/chat/messages", "/chat", "/ops/roles", "/ops/mission/decide", "/ops/call", "/ops/record", "/ops/ai", "/ops/ai/refresh", "/providers/refresh",
+                      "/ops/new",                       # /ops/new-project (the pattern stops at "-"): where a new project folder goes
                       "/ops/permissions",               # what the agent-mode Maker asks about first (AI settings > Permissions)
                       "/ops/open",                      # /ops/open-project (the pattern stops at "-"): opens the folder, changes nothing
                       "/result/clear",                  # the kept working copy of an applied result outside a task

@@ -99,6 +99,18 @@ async function chooseProjectFolder(){
  const res=await fetch('/project',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8','Accept':'application/json'},body:new URLSearchParams({path:picked.path}).toString()}).then(r=>r.json());
  return {path:picked.path,ok:res.status==='ok',message:res.text||res.message||''};       // text: the line in words, no internal code
 }
+// 「새로 시작」 menu (stage.js): a clean screen, a new project folder, the current project to the trash. Each carries
+// the local token; the server re-checks that nothing runs.
+async function startOver(path,body){
+ const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
+ const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Tribunal-Token':roles.csrf},body:JSON.stringify(body||{})});
+ const out=await res.json().catch(()=>({}));return {ok:res.ok&&out.status==='ok',...out};
+}
+async function pickFolderOnly(){            // the folder dialog alone: nothing is selected or changed
+ const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
+ const picked=await fetch('/ops/pick-folder',{method:'POST',headers:{'X-Tribunal-Token':roles.csrf}}).then(r=>r.json());
+ if(picked.error)throw Error(picked.error);return picked.path||null;
+}
 async function openProjectFolder(){        // the server opens the project it already has: the page sends no path
  try{const roles=await fetch('/ops/roles',{cache:'no-store'}).then(r=>r.json());
   return await fetch('/ops/open-project',{method:'POST',headers:{'X-Tribunal-Token':roles.csrf}}).then(r=>r.json());}

@@ -18,6 +18,8 @@
   <div class="top-meta">
     <button type="button" id="top-project" class="meta-chip" title="작업할 폴더 바꾸기">프로젝트 · —</button>
     <button type="button" id="top-open" class="meta-icon" title="프로젝트 폴더 열기" aria-label="프로젝트 폴더 열기"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+    <button type="button" id="top-fresh" class="meta-chip fresh" aria-haspopup="menu" aria-expanded="false" title="새 작업 · 새 프로젝트 · 다른 폴더 · 프로젝트 버리기">＋ 새로 시작</button>
+    <div id="fresh-menu" role="menu" hidden></div>
     <span id="top-live" class="live-chip" data-mode="idle"><i aria-hidden="true"></i><b>STANDBY</b></span>
     <span id="top-clock" class="meta-clock">--:--:--</span>
   </div>
@@ -153,4 +155,13 @@
 </section>
 <div id="toast" role="status" hidden></div>
 <div id="shell-error" role="alert" hidden></div>
+<section id="np-dialog" class="glass" role="dialog" aria-modal="true" aria-labelledby="np-title" hidden>
+  <h3 id="np-title">새 프로젝트</h3>
+  <label for="np-name">이름</label>
+  <input type="text" id="np-name" maxlength="80" autocomplete="off" spellcheck="false">
+  <p class="np-label">만들 위치</p>
+  <p class="np-where"><code id="np-parent">—</code> <button type="button" id="np-change" class="np-link">위치 바꾸기</button></p>
+  <p id="np-error" role="alert"></p>
+  <div class="np-actions"><button type="button" id="np-cancel">취소</button><button type="button" id="np-ok" class="primary">만들고 시작</button></div>
+</section>
 </body></html>
