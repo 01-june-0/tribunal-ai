@@ -450,7 +450,7 @@ def test_claudes_hook_blocks_before_running_and_lets_the_rest_through(home, tmp_
     assert [r["command"] for r in agent_guard.requests(log)] == ["sudo apt-get install x", "git push main origin"]
     settings = json.loads(agent_guard.claude_settings({"PATH": "/x", "TRIBUNAL_GUARD_LOG": "l", "HOME": "/h"}))
     assert settings["env"] == {"PATH": "/x", "TRIBUNAL_GUARD_LOG": "l"}
-    assert settings["hooks"]["PreToolUse"][0]["matcher"] == "Bash" and settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith("hook")
+    assert settings["hooks"]["PreToolUse"][0]["matcher"] == "Bash" and settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].rstrip('"').endswith("hook")   # Windows quotes every word
 
 
 def test_commands_the_cli_says_it_ran_past_every_guard_are_reported(tmp_path):
