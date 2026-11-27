@@ -60,7 +60,7 @@ Tribunal AI를 Claude Code · Codex · Antigravity처럼 **실제 개발 도구�
     점은 동의 화면에 적었습니다.
   - 허락은 명령 글자 그대로 맞춰 봅니다. 옵션 순서가 바뀌면 다시 묻습니다. `sudo`는 허락해도 비밀번호를 칠 터미널이 없어
     실행되지 않을 수 있습니다.
-  - Windows의 Git Bash에서 대리 실행 파일(확장자 없는 sh 스크립트)이 잡히는지는 아직 확인하지 않았습니다.
+  - Windows: GitHub Actions의 Windows 실행기에서 cmd · PowerShell · Git Bash(`bash -c`) · Git Bash 로그인 셸(`bash -lc`) 네 셸 모두 `brew install` · `npm install -g` · `git push` · `pip install --user`를 대리 실행 파일이 먼저 잡아 거절함을 확인(2026-11-27, `tests.yml`의 결과표 단계). PowerShell에서는 종료 코드가 126이 아니라 1로 보이지만 거절·기록은 같음.
   - 실제 CLI(특히 Claude Code의 셸 스냅샷)로는 아직 시험하지 않았습니다.
 
 ## 3. 바꾸는 곳
