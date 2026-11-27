@@ -55,11 +55,10 @@ Tribunal AI를 Claude Code · Codex · Antigravity처럼 **실제 개발 도구�
 - **커밋:** 제작 AI가 작업 폴더에서 커밋하면 모든 검사(HEAD와 비교)에서 빠지므로, 단계가 끝나면 HEAD를 원래대로 되돌립니다
   (파일은 그대로 남아 검사를 받음).
 - **한계:**
-  - `/usr/bin/sudo`처럼 전체 경로로 부르면 대리 실행 파일을 피해 갑니다. 단계의 출력(표준 출력과 오류 출력)에서 그런 호출을
-    찾지만, Claude(`--output-format json`)와 Antigravity는 최종 답만 돌려주므로 거의 잡지 못합니다. 완전한 격리가 아니라는
+  - **전체 경로로 부른 명령(2026-11-27 보강):** Claude는 명령 실행 직전 검사(hook, `--settings`)가 `/usr/bin/sudo`처럼 전체 경로로 부른 것도 막습니다(실제 호출로 확인). Codex · Antigravity는 막지 못하지만, 단계가 끝난 뒤 각 CLI의 실행 기록(Claude `stream-json`, Codex `--json`, Antigravity `run_command`)에서 찾아 "이미 실행됨"으로 묻습니다(Codex 실제 호출로 확인). 명령 줄 해석은 셸 예약어(`if … then`), 감싸는 명령(`env`, `timeout`, `nice`, `xargs` …), `eval`, `$(…)`, 백틱, `sh -c`, `cmd /c`, `powershell -Command`를 열고, 리다이렉션과 heredoc 본문은 뺍니다. `curl … | sh`는 시스템 설치로 묻습니다. hook이 오류 나면 막습니다.
     점은 동의 화면에 적었습니다.
-  - 허락은 명령 글자 그대로 맞춰 봅니다. 옵션 순서가 바뀌면 다시 묻습니다. `sudo`는 허락해도 비밀번호를 칠 터미널이 없어
-    실행되지 않을 수 있습니다.
+  - 허락은 프로그램 · 옵션(순서 무관) · 나머지 인자(순서 그대로)로 맞춰 봅니다. `sudo`처럼 비밀번호가 필요한 명령은 승인 카드가 "터미널에서 직접 실행한 뒤 승인"을 안내하고, 제작 AI는 그 명령을 다시 실행하지 않고 결과만 확인합니다.
+  - Tribunal이 부르는 Claude는 사용자의 `~/.claude` 설정(CLAUDE.md · hook · 플러그인)을 읽지 않습니다(`--setting-sources project,local`, 실제 호출로 확인). 프로젝트 자체의 설정은 읽습니다.
   - Windows: GitHub Actions의 Windows 실행기에서 cmd · PowerShell · Git Bash(`bash -c`) · Git Bash 로그인 셸(`bash -lc`) 네 셸 모두 `brew install` · `npm install -g` · `git push` · `pip install --user`를 대리 실행 파일이 먼저 잡아 거절함을 확인(2026-11-27, `tests.yml`의 결과표 단계). PowerShell에서는 종료 코드가 126이 아니라 1로 보이지만 거절·기록은 같음.
   - 실제 CLI(특히 Claude Code의 셸 스냅샷)로는 아직 시험하지 않았습니다.
 

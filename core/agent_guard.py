@@ -237,6 +237,130 @@ def classify(name: str, args: List[str], root: Optional[str] = None, cwd: Option
     return None
 
 
+def canon(text: str) -> str:
+    """One approval key per command: the program, its options in any order, its other words in their order. So
+    `npm install -g a --force` and `npm install --force -g a` are the same command, while `sudo cp a b` and
+    `sudo cp b a` or `rm "x y"` and `rm x y` are not (critic, 2026-11-27)."""
+    try:
+        parts = shlex.split(text, posix=True)
+    except ValueError:
+        parts = text.split()
+    if not parts:
+        return ""
+    rest = parts[1:]
+    return json.dumps([_norm(parts[0]), sorted(a for a in rest if a.startswith("-")), [a for a in rest if not a.startswith("-")]],
+                      ensure_ascii=False)
+
+
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
+_SPLIT = {";", "&&", "||", "|", "&", "(", ")", "{", "}", ";;", "|&"}
+NEEDS_PASSWORD = {"sudo", "doas", "su", "runas"}
+# Words that start shell syntax, not a program; the program comes after them.
+SHELL_WORDS = {"if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!", "{", "}", "time", "coproc", "esac"}
+# Programs that run the program named after them (with options of their own before it).
+WRAPPERS = {"env": {"-u", "-C", "-S"}, "command": set(), "builtin": set(), "exec": {"-a"}, "nohup": set(),
+            "nice": {"-n"}, "ionice": {"-c", "-n"}, "stdbuf": {"-i", "-o", "-e"}, "timeout": {"-s", "-k"},
+            "xargs": {"-n", "-I", "-P", "-L", "-d", "-s", "-E", "-a"}, "unbuffer": set(), "caffeinate": set(), "watch": {"-n"},
+            "chronic": set(), "setsid": set()}
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.S)
+_REDIRECT = re.compile(r"(?<![\w/=-])(?:\d*|&)(?:>>?|<)(?!\()(?:&\d+|&-|\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|()<>]+))")
+_SUBST = re.compile(r"\$\(([^()]*(?:\([^()]*\)[^()]*)*)\)|`([^`]*)`")
+
+
+def _program(argv: List[str]) -> List[str]:
+    """The program a simple command really runs: shell words and wrappers (env, timeout, nohup, xargs ...) and their
+    own options and VAR=value words are taken off the front."""
+    argv = list(argv)
+    while argv:
+        head = _norm(argv[0])
+        if argv[0] in SHELL_WORDS or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0]):
+            argv = argv[1:]
+            continue
+        if head in WRAPPERS:
+            takes = WRAPPERS[head]
+            argv = argv[1:]
+            while argv and (argv[0].startswith("-") or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0])):
+                opt = argv.pop(0)
+                if opt in takes and argv:
+                    argv.pop(0)
+            if head == "timeout" and argv and re.fullmatch(r"[\d.]+[smhd]?", argv[0]):
+                argv = argv[1:]
+            continue
+        return argv
+    return []
+
+
+def _lex(line: str) -> Optional[List[str]]:
+    lex = shlex.shlex(line, posix=True, punctuation_chars=";&|()")
+    lex.whitespace_split = True
+    lex.commenters = ""
+    try:
+        return list(lex)
+    except ValueError:
+        return None
+
+
+def split_commands(line: str, _depth: int = 0) -> List[List[str]]:
+    """The simple commands one shell line runs, each as the program and its words:
+    `if x; then /usr/bin/sudo brew install y 2>&1; fi` -> [[x], [/usr/bin/sudo, brew, install, y]].
+    Heredoc bodies and redirections are taken out; `sh -c '...'`, `cmd /c "..."`, `powershell -Command "..."`,
+    `eval ...`, `$(...)` and backticks are opened up. A line that cannot be read as shell words is split on ; & | and
+    new lines instead, so nothing in it is skipped."""
+    if _depth > 4:
+        return []
+    text = _HEREDOC.sub("\n", (line or "").replace("\r", ""))
+    out: List[List[str]] = []
+    for m in _SUBST.finditer(text):                      # $(...) and `...` run commands of their own
+        out.extend(split_commands(m.group(1) or m.group(2) or "", _depth + 1))
+    text = _REDIRECT.sub(" ", text).replace("\n", " ; ")
+    tokens = _lex(text)
+    if tokens is None:                                   # unbalanced quotes: no word may slip through
+        tokens = []
+        for chunk in re.split(r"[;&|\n]+", text):
+            tokens += chunk.split() + [";"]
+    cur: List[str] = []
+    for tok in tokens + [";"]:
+        if tok in _SPLIT or (tok and set(tok) <= set(";&|()")):
+            argv = _program(cur)
+            cur = []
+            if not argv or argv[0] in ("for", "case", "select", "function", "in"):
+                continue
+            head, rest = _norm(argv[0]), argv[1:]
+            flag = next((i for i, a in enumerate(rest) if a.startswith("-") and not a.startswith("--") and "c" in a[1:]), None)
+            if head in SHELLS and flag is not None and flag + 1 < len(rest):
+                out.extend(split_commands(rest[flag + 1], _depth + 1))          # sh -c '...', bash -e -c '...', zsh -lc '...'
+            elif head == "cmd" and any(a.lower() in ("/c", "/k") for a in rest):
+                i = next(i for i, a in enumerate(rest) if a.lower() in ("/c", "/k"))
+                out.extend(split_commands(" ".join(rest[i + 1:]), _depth + 1))
+            elif head in ("powershell", "pwsh") and any(a.lower() in ("-command", "-c") for a in rest):
+                i = next(i for i, a in enumerate(rest) if a.lower() in ("-command", "-c"))
+                out.extend(split_commands(" ".join(rest[i + 1:]), _depth + 1))
+            elif head == "eval":
+                out.extend(split_commands(" ".join(rest), _depth + 1))
+            else:
+                out.append(argv)
+        else:
+            cur.append(tok)
+    return out
+
+
+def _piped_shell(line: str) -> bool:
+    """`curl ... | sh`: a shell reading its commands from a pipe runs something nobody can see in advance."""
+    return bool(re.search(r"\|\s*(?:sudo\s+)?(?:\S*/)?(?:sh|bash|zsh|dash)\b(?!\s+-\w*c)(?:\s+-\w+)*\s*(?:$|[;&|)])", line or ""))
+
+
+def guarded_in(line: str, root: Optional[str] = None, cwd: Optional[str] = None) -> List[Dict[str, str]]:
+    """The commands in a shell line that belong to a category, called by any path (/usr/bin/sudo is sudo)."""
+    found = []
+    for argv in split_commands(line):
+        category = classify(argv[0], argv[1:], root, cwd)
+        if category:
+            found.append({"category": category, "command": command_text(argv[0], argv[1:])})
+    if _piped_shell(line):
+        found.append({"category": "system_install", "command": "(script piped into a shell) " + line.strip()[:160]})
+    return found
+
+
 def command_text(name: str, args: List[str]) -> str:
     return " ".join([_norm(name), *(shlex.quote(a) for a in args)])
 
@@ -314,6 +438,32 @@ def step_env(base: Dict[str, str], root: str, log: Path, allowed: Iterable[str] 
     return env
 
 
+def claude_settings(env: Dict[str, str]) -> str:
+    """The --settings JSON for an agent-mode Claude: its shell gets the stand-ins first on PATH, and a PreToolUse hook
+    checks every Bash command before it runs."""
+    from core.pythons import tribunal_python
+    here = str(Path(__file__).resolve())
+    keep = {k: v for k, v in env.items() if k == "PATH" or k.startswith("TRIBUNAL_GUARD_")}
+    command = " ".join(shlex.quote(x) if os.name != "nt" else f'"{x}"' for x in (tribunal_python(), "-I", here, "hook"))
+    return json.dumps({"env": keep, "disableAllHooks": False,          # a project's own settings must not switch the check off
+                       "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": command}]}]}})
+
+
+def ran_commands(lines: Iterable[str], log: Path, root: Optional[str] = None, allowed: Iterable[str] = ()) -> List[Dict[str, Any]]:
+    """Commands of a kept category the CLI's own record says it ran, that no stand-in or hook refused and the person
+    had not allowed (called by a full path, or past every guard): they have run already, and the person is told so.
+    Relative paths are read from the project folder, where the CLI works."""
+    refused = {canon(r["command"]) for r in requests(log)} | {canon(a) for a in allowed}
+    seen, out = set(), []
+    for line in lines:
+        for item in guarded_in(line, root, root):
+            key = canon(item["command"])
+            if key not in refused and key not in seen:
+                seen.add(key)
+                out.append({**item, "ran": True})
+    return out
+
+
 def requests(log: Path) -> List[Dict[str, Any]]:
     """The commands a step was not allowed to run, each once, in order."""
     seen, out = set(), []
@@ -350,24 +500,49 @@ def _real(name: str) -> Optional[str]:
     return shutil.which(name, path=path)
 
 
+def _refuse(category: str, text: str) -> None:
+    log = os.environ.get("TRIBUNAL_GUARD_LOG")
+    if log:
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"category": category, "command": text, "cwd": os.getcwd(),
+                                "at": time.strftime("%Y-%m-%dT%H:%M:%S")}, ensure_ascii=False) + "\n")
+    sys.stderr.write(f"[Tribunal] `{text}` was NOT run: it needs the user's approval ({category}). Continue without "
+                     "it. After this step Tribunal asks the user; if they allow it, this step runs again and the "
+                     "command will work then.\n")
+
+
+def hook() -> int:
+    """Claude Code PreToolUse hook (given with --settings): every Bash command is checked before it runs, by any path
+    (/usr/bin/sudo too). Exit 2 blocks the call and tells Claude why (stderr); 0 lets it run. Anything that goes wrong
+    here blocks too: a guard that fails must not fail open (critic, 2026-11-27)."""
+    try:
+        event = json.load(sys.stdin)
+        line = str(((event or {}).get("tool_input") or {}).get("command") or "")
+        ask = json.loads(os.environ.get("TRIBUNAL_GUARD_ASK") or "{}")
+        allowed = {canon(a) for a in json.loads(os.environ.get("TRIBUNAL_GUARD_ALLOW") or "[]")}
+        blocked = False
+        root = os.environ.get("TRIBUNAL_GUARD_ROOT")
+        for item in guarded_in(line, root, str((event or {}).get("cwd") or root or os.getcwd())):
+            if ask.get(item["category"], True) and canon(item["command"]) not in allowed:
+                _refuse(item["category"], item["command"])
+                blocked = True
+        return 2 if blocked else 0
+    except Exception as exc:                             # noqa: BLE001 - fail closed
+        sys.stderr.write(f"[Tribunal] the command check failed ({type(exc).__name__}); the command was NOT run.\n")
+        return 2
+
+
 def shim(name: str, args: List[str]) -> int:
     real = _real(name)
     category = classify(name, args, os.environ.get("TRIBUNAL_GUARD_ROOT"), os.getcwd(), real)
     try:
         ask = json.loads(os.environ.get("TRIBUNAL_GUARD_ASK") or "{}")
-        allowed = set(json.loads(os.environ.get("TRIBUNAL_GUARD_ALLOW") or "[]"))
+        allowed = {canon(a) for a in json.loads(os.environ.get("TRIBUNAL_GUARD_ALLOW") or "[]")}
     except ValueError:
         ask, allowed = {}, set()
     text = command_text(name, args)
-    if category and ask.get(category, True) and text not in allowed:
-        log = os.environ.get("TRIBUNAL_GUARD_LOG")
-        if log:
-            with open(log, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"category": category, "command": text, "cwd": os.getcwd(),
-                                    "at": time.strftime("%Y-%m-%dT%H:%M:%S")}, ensure_ascii=False) + "\n")
-        sys.stderr.write(f"[Tribunal] `{text}` was NOT run: it needs the user's approval ({category}). Continue without "
-                         "it. After this step Tribunal asks the user; if they allow it, this step runs again and the "
-                         "command will work then.\n")
+    if category and ask.get(category, True) and canon(text) not in allowed:
+        _refuse(category, text)
         return REFUSED_EXIT
     if not real:
         sys.stderr.write(f"{name}: command not found\n")
@@ -380,3 +555,5 @@ def shim(name: str, args: List[str]) -> int:
 
 if __name__ == "__main__" and len(sys.argv) >= 3 and sys.argv[1] == "shim":
     sys.exit(shim(sys.argv[2], sys.argv[3:]))
+if __name__ == "__main__" and len(sys.argv) == 2 and sys.argv[1] == "hook":
+    sys.exit(hook())

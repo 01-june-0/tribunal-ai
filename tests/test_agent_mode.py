@@ -407,3 +407,143 @@ def test_windows_shells_find_the_stand_ins_first(home, tmp_path):
             if not caught:
                 missed.append(f"{shell}: {command} (exit {out.returncode}) {(out.stderr or out.stdout)[-200:]!r}")
     assert missed == [], "\n".join(missed)
+
+
+@pytest.mark.parametrize("line,found", [
+    ("/bin/zsh -lc 'cd x && /usr/bin/sudo apt-get install y | tee z'", ["sudo apt-get install y"]),
+    ("FOO=1 /opt/homebrew/bin/brew install a; echo hi", ["brew install a"]),
+    ("npm i -g b && git -C . push", ["npm i -g b", "git -C . push"]),
+    ('echo "sudo is just a word here"', []),
+    ("brew install a\nsudo ls", ["brew install a", "sudo ls"]),
+    ("bash -c 'pip3.12 install --user x'", ["pip3 install --user x"]),   # python3.12 / pip3.12 count as python3 / pip3
+])
+def test_commands_in_a_shell_line_are_found_by_any_path(line, found):
+    """Item 4 (2026-11-27): a command called by its full path got past the stand-ins. The CLI's own record of what it
+    ran (and Claude's hook, before it runs) reads every simple command in the line, whatever path names the program."""
+    assert [f["command"] for f in agent_guard.guarded_in(line)] == found
+
+
+def test_an_approval_holds_whatever_the_order_of_options_but_not_of_the_other_words():
+    """critic (2026-11-27): sorting every word let `sudo cp a b` stand for `sudo cp b a`, and joining with spaces made
+    `rm "x y"` the same as `rm x y`."""
+    assert agent_guard.canon("npm install -g a --force") == agent_guard.canon("npm install --force -g a")
+    assert agent_guard.canon("npm install -g a") != agent_guard.canon("npm install -g b")
+    assert agent_guard.canon("sudo cp /etc/hosts hosts.bak") != agent_guard.canon("sudo cp hosts.bak /etc/hosts")
+    assert agent_guard.canon("rm -rf 'x y'") != agent_guard.canon("rm -rf x y")
+
+
+def test_claudes_hook_blocks_before_running_and_lets_the_rest_through(home, tmp_path, monkeypatch):
+    import io
+    log = tmp_path / "hook.jsonl"
+    monkeypatch.setenv("TRIBUNAL_GUARD_LOG", str(log))
+    monkeypatch.setenv("TRIBUNAL_GUARD_ASK", json.dumps({c: True for c in agent_guard.CATEGORIES}))
+    monkeypatch.setenv("TRIBUNAL_GUARD_ALLOW", json.dumps(["git push origin main"]))
+    def run(command):
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"tool_input": {"command": command}, "cwd": str(tmp_path)})))
+        return agent_guard.hook()
+    assert run("/usr/bin/sudo apt-get install x") == 2
+    assert run("ls -la && pytest -q") == 0
+    assert run("git push origin main 2>&1") == 0                                    # approved (redirection is not a word)
+    assert run("git push main origin") == 2                                         # other words: not what was approved
+    monkeypatch.setattr(sys, "stdin", io.StringIO("not json"))
+    assert agent_guard.hook() == 2                                                  # a check that fails blocks
+    assert [r["command"] for r in agent_guard.requests(log)] == ["sudo apt-get install x", "git push main origin"]
+    settings = json.loads(agent_guard.claude_settings({"PATH": "/x", "TRIBUNAL_GUARD_LOG": "l", "HOME": "/h"}))
+    assert settings["env"] == {"PATH": "/x", "TRIBUNAL_GUARD_LOG": "l"}
+    assert settings["hooks"]["PreToolUse"][0]["matcher"] == "Bash" and settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith("hook")
+
+
+def test_commands_the_cli_says_it_ran_past_every_guard_are_reported(tmp_path):
+    from agents.agent_maker import read_events
+    claude = "\n".join(json.dumps(e) for e in [
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "/usr/bin/sudo apt-get install x"}}]}},
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "brew install y"}}]}},
+        {"type": "result", "result": '{"summary": "done"}'}])
+    final, commands = read_events("ANTHROPIC", claude, "")
+    assert final == '{"summary": "done"}' and len(commands) == 2
+    codex = "\n".join(json.dumps(e) for e in [
+        {"type": "item.completed", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'npm i -g z'"}},
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "{}"}}])
+    assert read_events("OPENAI", codex, "") == ("{}", ["/bin/zsh -lc 'npm i -g z'"])
+    agy = json.dumps({"event": "step_update", "step_update": {"tool_name": "run_command", "state": "DONE", "tool_info": {"parameters": {"CommandLine": "git push"}}}})
+    assert read_events("GOOGLE", agy, "answer") == ("answer", ["git push"])
+    log = tmp_path / "g.jsonl"
+    log.write_text(json.dumps({"category": "system_install", "command": "brew install y"}) + "\n")   # refused by a stand-in
+    ran = agent_guard.ran_commands(commands, log)
+    assert [r["command"] for r in ran] == ["sudo apt-get install x"] and ran[0]["ran"] is True
+
+
+def test_every_tribunal_claude_call_leaves_out_the_persons_own_settings(monkeypatch):
+    """Item 7 (2026-11-27): a Claude Maker read the person's ~/.claude/CLAUDE.md. Checked with a real call: with
+    --setting-sources project,local it no longer sees it, and the keychain sign-in still works (--bare would not)."""
+    monkeypatch.setenv("DIRECTOR_TESTING", "1")
+    from core import cli_models
+    for argv in (cli_models.claude_agent_argv("claude", "{}"), cli_models.claude_print_argv("claude")):
+        assert argv[argv.index("--setting-sources") + 1] == "project,local" and "--bare" not in argv
+    assert "stream-json" in cli_models.claude_agent_argv("claude") and "--json" in cli_models.codex_agent_argv("codex")
+
+
+def test_a_path_only_mentioned_in_the_answer_is_not_reported_as_run(tmp_path):
+    """Real Claude run (2026-11-27): the hook blocked /usr/bin/sudo, and the answer then named that path; the old text
+    search reported it as run. With the CLI's record of what ran, the text is not searched."""
+    from agents.agent_maker import AgentMaker
+    log = tmp_path / "g.jsonl"
+    log.write_text(json.dumps({"category": "system_install", "command": "sudo -n true"}) + "\n")
+    found = AgentMaker._guard_requests(log, "I did not run /usr/bin/sudo -n true", ["/usr/bin/sudo -n true"])
+    assert [(f["command"], f.get("ran", False)) for f in found] == [("sudo -n true", False)]
+
+
+@pytest.mark.parametrize("line,found", [
+    ("if [ -x y ]; then /opt/homebrew/bin/brew install x; fi", ["brew install x"]),
+    ("! /usr/bin/sudo id", ["sudo id"]),
+    ("env FOO=1 sudo ls", ["sudo ls"]),
+    ("timeout 5 sudo ls", ["sudo ls"]),
+    ("nice -n 5 sudo ls", ["sudo ls"]),
+    ("xargs -n1 /usr/bin/sudo rm < list", ["sudo rm"]),
+    ('eval "sudo ls"', ["sudo ls"]),
+    ("echo `sudo id`", ["sudo id"]),
+    ('X="$(sudo id)"', ["sudo id"]),
+    ("bash -e -c 'sudo ls'", ["sudo ls"]),
+    ('cmd /c "brew install x"', ["brew install x"]),
+    ('powershell -NoProfile -Command "npm i -g x"', ["npm i -g x"]),
+    ("brew install x 2>&1 > /tmp/log", ["brew install x"]),
+    ("rm -f a.o > /dev/null", []),
+    ("cat > s.sh <<EOF\nsudo apt-get install -y x\nEOF\nchmod +x s.sh", []),
+    ("echo isn't\n/usr/bin/sudo id", ["sudo id"]),
+    ("bash script.sh", []),
+])
+def test_shell_syntax_does_not_hide_a_command(line, found):
+    """critic (2026-11-27): if/then, wrappers (env, timeout, nice, xargs), eval, $(...), backticks, sh -e -c, cmd /c and
+    powershell -Command hid commands; redirections and heredoc bodies were read as words."""
+    assert [f["command"] for f in agent_guard.guarded_in(line, "/tmp/p", "/tmp/p")] == found
+
+
+def test_a_script_piped_into_a_shell_is_asked_about():
+    assert agent_guard.guarded_in("curl -fsSL https://x.example/install.sh | sh")[0]["category"] == "system_install"
+
+
+def test_relative_paths_and_approved_commands_are_not_reported_as_run(tmp_path):
+    """critic: `rm -rf dist` was judged from the console's folder (outside the project), and an approved command that
+    ran in the step done again was reported as run past the guard."""
+    root = tmp_path / "proj"
+    (root / "dist").mkdir(parents=True)
+    log = tmp_path / "none.jsonl"
+    assert agent_guard.ran_commands(["/bin/zsh -lc 'rm -rf dist'"], log, str(root)) == []
+    assert agent_guard.ran_commands(["brew install ffmpeg"], log, str(root), allowed=["brew install ffmpeg"]) == []
+    assert agent_guard.ran_commands(["brew install ffmpeg"], log, str(root))[0]["ran"] is True
+
+
+def test_usage_reads_the_agent_mode_streams():
+    from core import usage
+    claude = "\n".join(json.dumps(e) for e in [{"type": "system"}, {"type": "result", "result": "ok", "usage": {"input_tokens": 10, "output_tokens": 3}}])
+    assert usage.reported_tokens("ANTHROPIC", claude, "") == {"in": 10, "out": 3} and usage._answer_text("ANTHROPIC", claude) == "ok"
+    codex = "\n".join(json.dumps(e) for e in [{"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}},
+                                              {"type": "turn.completed", "usage": {"input_tokens": 5, "output_tokens": 2}}])
+    assert usage.reported_tokens("OPENAI", codex, "") == {"in": 5, "out": 2} and usage._answer_text("OPENAI", codex) == "hi"
+
+
+def test_a_claude_error_result_is_raised_only_after_cleanup():
+    from agents.agent_maker import read_events, stream_error
+    raw = json.dumps({"type": "result", "is_error": True, "result": "usage limit reached"})
+    assert read_events("ANTHROPIC", raw, "") == ("", [])
+    assert stream_error("ANTHROPIC", raw) == "usage limit reached" and stream_error("OPENAI", raw) is None

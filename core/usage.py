@@ -50,13 +50,19 @@ def reported_tokens(provider: str, stdout: str, stderr: str) -> Optional[Dict[st
     """Token counts the CLI itself reported, when it did."""
     try:
         if provider == "ANTHROPIC":
-            envelope = json.loads(stdout)
-            use = envelope.get("usage") or {}
+            envelope = _last_event(stdout, lambda e: e.get("type") == "result") if "\n{" in (stdout or "").strip() else json.loads(stdout)
+            use = (envelope or {}).get("usage") or {}
             tin = sum(int(use.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
             tout = int(use.get("output_tokens") or 0)
             if tin or tout:
                 return {"in": tin, "out": tout}
         if provider == "OPENAI":
+            done = _last_event(stdout, lambda e: e.get("type") == "turn.completed")      # codex exec --json (agent mode)
+            if done and isinstance(done.get("usage"), dict):
+                use = done["usage"]
+                tin, tout = int(use.get("input_tokens") or 0), int(use.get("output_tokens") or 0)
+                if tin or tout:
+                    return {"in": tin, "out": tout}
             match = re.search(r"tokens used[:\s]*([\d,]+)", (stdout or "") + "\n" + (stderr or ""), re.I)
             if match:
                 total = int(match.group(1).replace(",", ""))
@@ -115,9 +121,32 @@ def call_started(argv: List[str], prompt: Optional[str], cwd: Optional[str] = No
         return cur.lastrowid
 
 
+def _last_event(stdout: str, wanted) -> Optional[dict]:
+    """The last JSON line of an event stream that `wanted` accepts."""
+    found = None
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and wanted(event):
+            found = event
+    return found
+
+
 def _answer_text(provider: str, stdout: str) -> str:
     """The model's actual answer: Antigravity's stream-json wraps it (and every intermediate event) in NDJSON, so
-    counting the raw stream would overstate output tokens several times over."""
+    counting the raw stream would overstate output tokens several times over. The agent-mode Maker's streams
+    (Claude stream-json, Codex --json) are read the same way."""
+    if provider == "ANTHROPIC" and "\n{" in (stdout or "").strip():
+        event = _last_event(stdout, lambda e: e.get("type") == "result")
+        return str((event or {}).get("result") or "")
+    if provider == "OPENAI" and (stdout or "").lstrip().startswith("{"):
+        event = _last_event(stdout, lambda e: e.get("type") == "item.completed" and (e.get("item") or {}).get("type") == "agent_message")
+        return str(((event or {}).get("item") or {}).get("text") or "")
     if provider != "GOOGLE":
         return stdout
     answer = None

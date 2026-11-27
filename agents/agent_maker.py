@@ -99,6 +99,59 @@ def exclude_installs(root: Path) -> List[str]:
     return added
 
 
+def read_events(domain: str, raw: str, fallback: str) -> "tuple[str, List[str]]":
+    """The final answer and the shell commands run, from each CLI's own event record: Claude stream-json (Bash tool
+    calls, the result event), Codex --json (command_execution items, the last agent_message), Antigravity stream-json
+    (run_command steps; its final answer is already taken out by the runner)."""
+    final, commands = "", []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if domain == "ANTHROPIC":
+            if event.get("type") == "assistant":
+                for part in ((event.get("message") or {}).get("content") or []):
+                    if isinstance(part, dict) and part.get("type") == "tool_use" and part.get("name") == "Bash":
+                        commands.append(str((part.get("input") or {}).get("command") or ""))
+            elif event.get("type") == "result":
+                final = "" if event.get("is_error") else str(event.get("result") or "")   # see stream_error
+        elif domain == "OPENAI":
+            item = event.get("item") or {}
+            if event.get("type") == "item.completed" and item.get("type") == "command_execution":
+                commands.append(str(item.get("command") or ""))
+            elif event.get("type") == "item.completed" and item.get("type") == "agent_message":
+                final = str(item.get("text") or "")
+        elif domain == "GOOGLE":
+            step = event.get("step_update") or {}
+            if step.get("tool_name") == "run_command" and step.get("state") == "DONE":
+                commands.append(str(((step.get("tool_info") or {}).get("parameters") or {}).get("CommandLine") or ""))
+    if domain == "GOOGLE" or not final:          # no event stream (or Antigravity, already answered): the text as is
+        final = fallback
+    return final, [c for c in commands if c]
+
+
+def stream_error(domain: str, raw: str) -> Optional[str]:
+    """The error a CLI reported in its event stream while still exiting 0 (Claude's result with is_error)."""
+    if domain != "ANTHROPIC":
+        return None
+    for line in reversed((raw or "").splitlines()):
+        line = line.strip()
+        if line.startswith("{") and '"result"' in line:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "result":
+                return str(event.get("result") or "error")[:300] if event.get("is_error") else None
+    return None
+
+
 class AgentMaker(ProposalMaker):
     """Same provider selection, provenance and records as the proposal Maker; a different way of working."""
 
@@ -140,7 +193,9 @@ class AgentMaker(ProposalMaker):
             f"Platform: {sys.platform}. Python for new environments: {python} "
             f"({self._project_python_version(root)}).\n"
             + ("The user APPROVED these commands that Tribunal refused earlier in this task; run them now where the task "
-               "needs them: " + json.dumps(self.guard_allowed, ensure_ascii=False) + "\n" if self.guard_allowed else "")
+               "needs them: " + json.dumps(self.guard_allowed, ensure_ascii=False) + ". A command that needs a password "
+               "(sudo, doas, su) cannot be answered here: the user ran it themselves, so do not run it; check that its "
+               "effect is in place and continue.\n" if self.guard_allowed else "")
             + "ORDER:\n" + order.model_dump_json() +
             ("\nREFERENCE DOCUMENTS:\n" + json.dumps(documents, ensure_ascii=False) if documents else ""))
 
@@ -207,20 +262,25 @@ class AgentMaker(ProposalMaker):
             undo_commits(root, before_head)
             self.last_guard_requests = self._guard_requests(log, "")
             raise
-        output = result['output']
-        self.last_guard_requests = self._guard_requests(log, output + "\n" + result.get('stderr', ''))
+        raw = result.get('raw_stdout') or result['output']
+        output, commands = read_events(domain, raw, result['output'])
+        self.last_guard_requests = self._guard_requests(log, output + "\n" + result.get('stderr', ''), commands, str(root),
+                                                        self.guard_allowed)
         undone = undo_commits(root, before_head)
         added_ignores = exclude_installs(root)
         self.last_execution_info = {'invocation_command': result['invocation'], 'exit_code': result['exit_code'],
                                     'execution_duration_sec': result['duration_sec'], 'output': output,
                                     'attempts': result.get('attempts', []), 'attempt_number': result.get('attempt_number', 1),
                                     'prompt_chars': len(prompt), 'mode': 'agent', 'gitignore_added': added_ignores,
-                                    'commits_undone': undone,
+                                    'commits_undone': undone, 'commands_seen': len(commands),
                                     'guard_requests': self.last_guard_requests}
         if self._control_plane_snapshot(root) != before_control:
             return MakerResultSchema(status='FAILED', files_modified=[], commands_run=[result['invocation']],
                                      summary='The Maker changed Tribunal control files',
                                      error='CONTROL_PLANE_MODIFIED: the Maker touched .agents/, GEMINI.md or .director_worktrees/')
+        failed = stream_error(domain, raw)              # raised only now: commits undone and caught commands kept first
+        if failed:
+            raise ValueError("Maker CLI returned an error result: " + failed)
         report = self._report(output)
         changed = [p for p in changed_paths(root) if not SafetyPolicy.is_control_plane_path(p)]
         from core.run_preview import clean_spec
@@ -237,10 +297,19 @@ class AgentMaker(ProposalMaker):
                                  summary=summary, run=clean_spec(report.get('run')))
 
     @staticmethod
-    def _guard_requests(log: Path, output: str) -> List[Dict[str, Any]]:
+    def _guard_requests(log: Path, output: str, commands: List[str] = (), root: Optional[str] = None,
+                        allowed: List[str] = ()) -> List[Dict[str, Any]]:
+        """Refused commands (stand-ins, Claude's hook), then commands of an asked-about category the CLI's own record
+        says it ran past every guard (a full path such as /usr/bin/sudo): those have run, and the person is told."""
         found = agent_guard.requests(log)
         ask = agent_guard.permissions()
-        if ask.get("system_install"):
+        seen = {agent_guard.canon(f["command"]) for f in found}
+        for item in agent_guard.ran_commands(commands, log, root, allowed):   # an allowed command that ran is no news
+            if ask.get(item["category"]) and agent_guard.canon(item["command"]) not in seen:
+                seen.add(agent_guard.canon(item["command"]))
+                found.append(item)
+        if ask.get("system_install") and not commands:   # no record of what ran: the text is all there is to go by
             for call in agent_guard.full_path_calls(output):
-                found.append({"category": "system_install", "command": call, "ran": True})
+                if agent_guard.canon(call) not in seen and not any(call in f["command"] for f in found):
+                    found.append({"category": "system_install", "command": call, "ran": True})
         return found

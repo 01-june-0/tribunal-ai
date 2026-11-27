@@ -184,6 +184,10 @@ def agy_extra_args() -> List[str]:
 
 
 CLAUDE_AGENT_ARGS = ("--strict-mcp-config", "--disable-slash-commands", "--permission-mode", "bypassPermissions")
+# Every Claude call Tribunal makes leaves out the person's own Claude settings (~/.claude: CLAUDE.md, hooks, plugins,
+# permissions): a role must behave the same on every computer. The project's own settings and CLAUDE.md still count.
+# (--bare would also do it, but it turns off the keychain sign-in Tribunal relies on.)
+CLAUDE_OWN_SETTINGS = ("--setting-sources", "project,local")
 
 
 def _claude_model_args() -> List[str]:
@@ -195,12 +199,12 @@ def _claude_model_args() -> List[str]:
 def claude_agent_argv(executable: str, settings: Optional[str] = None) -> List[str]:
     """Agent-mode Maker: every tool, no permission prompts (the person agreed at install). `settings` is the JSON
     that gives its shell commands Tribunal's PATH (core/agent_guard.py)."""
-    return [executable, "--print", "--output-format", "json", *CLAUDE_AGENT_ARGS,
+    return [executable, "--print", "--output-format", "stream-json", "--verbose", *CLAUDE_AGENT_ARGS, *CLAUDE_OWN_SETTINGS,
             *(["--settings", settings] if settings else []), *_claude_model_args()]
 
 
 def codex_agent_argv(executable: str) -> List[str]:
-    return [executable, "exec", *codex_model_args(), "--dangerously-bypass-approvals-and-sandbox", "-"]
+    return [executable, "exec", *codex_model_args(), "--json", "--dangerously-bypass-approvals-and-sandbox", "-"]
 
 
 def agy_agent_argv(executable: str) -> List[str]:
@@ -209,7 +213,7 @@ def agy_agent_argv(executable: str) -> List[str]:
 
 
 def claude_print_argv(executable: str, json_output: bool = True) -> List[str]:
-    return [executable, "--print", *(["--output-format", "json"] if json_output else []), *claude_extra_args()]
+    return [executable, "--print", *(["--output-format", "json"] if json_output else []), *CLAUDE_OWN_SETTINGS, *claude_extra_args()]
 
 
 def claude_print_description(json_output: bool = True) -> str:

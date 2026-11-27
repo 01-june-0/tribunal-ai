@@ -604,6 +604,15 @@ def approval_info(run_id: str, state: str, details: str) -> dict:
     for i in st.get("items") or []:
         title, why = APPROVAL_REASONS.get(i["gate"], (i["gate"].replace("_", " ").capitalize(), "This gate requires a human decision."))
         items.append({"code": i["gate"], "file": i.get("file", ""), "title": title, "why": why, "approvable": True, **_reason_ko(i["gate"])})
+    if st.get("stage") == "GUARD" and items:
+        from core.agent_guard import NEEDS_PASSWORD, split_commands, _norm
+        if any((split_commands(i["file"]) or [[""]])[0][0] and _norm(split_commands(i["file"])[0][0]) in NEEDS_PASSWORD for i in items):
+            # Tribunal runs commands with no terminal: a password prompt cannot be answered there
+            items[0]["why"] = (items[0]["why"] + " A command here needs your password (sudo): Tribunal cannot type it. "
+                               "Run it yourself in a terminal first, then approve: the Maker checks its effect instead.")
+            if items[0].get("why_ko"):
+                items[0]["why_ko"] += (" 비밀번호가 필요한 명령(sudo)은 Tribunal이 대신 실행할 수 없습니다. 터미널에서 직접 실행한 뒤 "
+                                       "승인하면, 제작 AI가 그 결과가 적용됐는지 확인하고 이어서 진행합니다.")
     blocking = []
     for b in st.get("blocking") or []:
         if isinstance(b, dict):

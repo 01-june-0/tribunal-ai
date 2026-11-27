@@ -18,13 +18,13 @@ def local_config(tmp_path, monkeypatch):
 
 
 def test_unit_tests_get_upstream_argv():
-    assert cli_models.claude_print_argv("claude") == ["claude", "--print", "--output-format", "json"]
+    assert cli_models.claude_print_argv("claude") == ["claude", "--print", "--output-format", "json", *cli_models.CLAUDE_OWN_SETTINGS]
     assert cli_models.codex_exec_argv("codex") == ["codex", "exec", "--sandbox", "read-only", "-"]
 
 
 def test_claude_is_light_by_default_even_without_a_file(local_config):
     argv = cli_models.claude_print_argv("claude", json_output=False)
-    assert argv == ["claude", "--print", *cli_models.CLAUDE_LIGHT_ARGS]
+    assert argv == ["claude", "--print", *cli_models.CLAUDE_OWN_SETTINGS, *cli_models.CLAUDE_LIGHT_ARGS]
     # --tools without --strict-mcp-config inlines every MCP schema; they must travel together.
     assert "--strict-mcp-config" in argv and "--tools" in argv
 

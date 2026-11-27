@@ -144,6 +144,8 @@ class ReadOnlyCliRunner:
             )
         if result.exit_code != 0:
             error = (result.stderr or result.stdout or "provider call failed").strip()
+            if not self.READ_ONLY:                       # event streams: the error is at the end, the start is setup noise
+                error = ((result.stderr or "").strip() + " " + (result.stdout or "")[-1500:]).strip() or "provider call failed"
             message = f"{normalized} CLI exit {result.exit_code}: {error[:500]}"
             raise ProviderCallError(message, retryable=self._is_retryable(message), meta=meta)
         output = result.stdout
@@ -171,6 +173,7 @@ class ReadOnlyCliRunner:
         return {
             "output": output,
             "stderr": (result.stderr or "")[-200_000:],
+            "raw_stdout": (result.stdout or "")[-50_000_000:],    # agent mode reads the CLI's own record of what it ran
             "executable": meta["executable"],
             "version": self._versions[normalized],
             "invocation": invocation,
@@ -247,8 +250,8 @@ class AgentCliRunner(ReadOnlyCliRunner):
             argv = cli_models.codex_agent_argv(executable)
             return argv, prompt, " ".join(["codex", *argv[1:], "<stdin>"])
         if domain == "ANTHROPIC":
-            keep = {k: v for k, v in self.step_env.items() if k == "PATH" or k.startswith("TRIBUNAL_GUARD_")}
-            argv = cli_models.claude_agent_argv(executable, json.dumps({"env": keep}))
+            from core.agent_guard import claude_settings
+            argv = cli_models.claude_agent_argv(executable, claude_settings(self.step_env))
             shown = [a if not a.startswith("{") else "<guard settings>" for a in argv[1:]]
             return argv, prompt, " ".join(["claude", *shown, "<stdin>"])
         if domain == "GOOGLE":

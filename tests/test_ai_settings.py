@@ -82,7 +82,7 @@ def test_codex_model_list_comes_from_the_cli_cache(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- settings reach the command lines
 def test_unit_tests_keep_upstream_commands_even_with_settings_saved():
     cli_settings.save({"claude": {"model": "opus", "effort": "max"}, "antigravity": {"model": "m"}, "openai": {"model": "g"}})
-    assert cli_models.claude_print_argv("claude") == ["claude", "--print", "--output-format", "json"]
+    assert cli_models.claude_print_argv("claude") == ["claude", "--print", "--output-format", "json", *cli_models.CLAUDE_OWN_SETTINGS]
     assert cli_models.codex_exec_argv("codex") == ["codex", "exec", "--sandbox", "read-only", "-"]
     assert cli_models.agy_extra_args() == []
 
@@ -427,7 +427,7 @@ def test_plan_is_a_choice_from_the_list_and_never_reaches_a_command_line(tmp_pat
     monkeypatch.setattr(cli_models, "LOCAL_CONFIG", tmp_path / "none.yaml")
     cli_settings.save({"antigravity": {"plan": "ai_ultra"}, "openai": {"plan": "pro"}, "claude": {"plan": "max_20x"}})
     joined = " ".join(cli_models.claude_print_argv("claude") + cli_models.codex_exec_argv("codex") + cli_models.agy_extra_args())
-    assert "ultra" not in joined and "max_20x" not in joined and " pro" not in joined
+    assert "ultra" not in joined and "max_20x" not in joined and "pro" not in joined.split()
 
 
 def test_antigravity_usage_is_turned_from_remaining_into_used():
