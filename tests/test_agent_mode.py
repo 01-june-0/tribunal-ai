@@ -378,3 +378,30 @@ def test_in_agent_mode_the_order_tells_the_reviewers_that_scope_lists_are_guidan
     note = Orchestrator.AGENT_SCOPE_NOTE
     assert "guidance" in note and "never a P0/P1" in note and "protected_paths" in note
     assert "self.AGENT_SCOPE_NOTE" in inspect.getsource(Orchestrator.run_maker_stage)
+
+
+GIT_BASH = r"C:\Program Files\Git\bin\bash.exe"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows shells")
+def test_windows_shells_find_the_stand_ins_first(home, tmp_path):
+    """Windows: Codex runs commands in PowerShell, Claude Code in Git Bash, scripts in cmd. Each must reach the
+    stand-ins first. A Git Bash login shell (bash -l) rebuilds PATH in /etc/profile with /mingw64/bin and /usr/bin in
+    front, so it is checked too. Every shell and command is tried and the full table printed before asserting."""
+    root = _repo(tmp_path / "proj")
+    shells = {"cmd": lambda c: ["cmd", "/c", c], "powershell": lambda c: ["powershell", "-NoProfile", "-Command", c]}
+    if Path(GIT_BASH).exists():
+        shells["bash -c"] = lambda c: [GIT_BASH, "-c", c]
+        shells["bash -lc"] = lambda c: [GIT_BASH, "-lc", c]
+    commands = ["brew install cowsay", "npm install -g cowsay", "git push origin main", "pip install --user cowsay"]
+    missed = []
+    for shell, argv in shells.items():
+        for command in commands:
+            log = tmp_path / f"{shell.replace(' ', '_')}-{commands.index(command)}.jsonl"
+            env = agent_guard.step_env(dict(os.environ), str(root), log)
+            out = subprocess.run(argv(command), cwd=root, env=env, capture_output=True, text=True, timeout=120)
+            caught = [r["command"] for r in agent_guard.requests(log)]
+            print(f"{shell:12} {command:28} exit={out.returncode:<4} caught={caught}")
+            if not caught:
+                missed.append(f"{shell}: {command} (exit {out.returncode}) {(out.stderr or out.stdout)[-200:]!r}")
+    assert missed == [], "\n".join(missed)
