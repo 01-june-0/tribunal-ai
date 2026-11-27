@@ -50,6 +50,10 @@ jobs:
       - name: Test suite
         run: python -m pytest -q -p no:cacheprovider -W ignore
 
+      - name: Windows shells reach Tribunal's stand-ins (table)
+        if: runner.os == 'Windows'
+        run: python -m pytest tests/test_agent_mode.py -k windows_shells -s -rA -p no:cacheprovider -W ignore
+
       - name: Package builds and installs
         if: matrix.python == '3.13'
         run: |

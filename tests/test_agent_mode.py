@@ -393,6 +393,8 @@ def test_windows_shells_find_the_stand_ins_first(home, tmp_path):
     if Path(GIT_BASH).exists():
         shells["bash -c"] = lambda c: [GIT_BASH, "-c", c]
         shells["bash -lc"] = lambda c: [GIT_BASH, "-lc", c]
+    elif os.environ.get("GITHUB_ACTIONS"):
+        pytest.fail("Git Bash is missing on the Windows runner: the shell Claude Code uses was not checked")
     commands = ["brew install cowsay", "npm install -g cowsay", "git push origin main", "pip install --user cowsay"]
     missed = []
     for shell, argv in shells.items():
